@@ -18,9 +18,21 @@ func _ready():
 	mouse_exited.connect(_on_mouse_exited)
 	gui_input.connect(_on_gui_input)
 
-	# Make sure the background panel doesn't block mouse input
+	# Make sure all child elements pass clicks through to this Control
 	if card_bg:
 		card_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# Set all labels and containers to ignore mouse so clicks reach parent
+	var vbox = get_node_or_null("VBoxContainer")
+	if vbox:
+		vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# Also set all children of VBoxContainer
+		for child in vbox.get_children():
+			if child is Control:
+				child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	if cost_label:
+		cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 func set_card(card: Card):
 	card_data = card
