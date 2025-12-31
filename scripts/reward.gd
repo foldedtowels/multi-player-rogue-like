@@ -71,9 +71,11 @@ func start_rare_reward():
 		card_visual.set_card(rare_choices[i])
 		card_visual.set_playable(true)
 		card_visual.mouse_filter = Control.MOUSE_FILTER_STOP  # Ensure card receives mouse events
+		print("[Reward] Connecting rare card ", i, " signal for: ", rare_choices[i].card_name)
 		card_visual.card_clicked.connect(_on_rare_card_selected.bind(i))
 
 func _on_rare_card_selected(card_index: int):
+	print("[Reward] *** RARE CARD SELECTED CALLBACK TRIGGERED! Index: ", card_index, " ***")
 	var chosen_card = rare_choices[card_index]
 	var chosen_player = game_manager.players[chosen_player_index]
 

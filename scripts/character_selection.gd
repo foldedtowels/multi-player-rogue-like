@@ -18,6 +18,15 @@ func _ready():
 	start_button.disabled = true
 	info_panel.visible = false
 
+	# Add version indicator
+	var version_label = Label.new()
+	version_label.text = "✨ SUPER GOOD REFACTORED VERSION ✨"
+	version_label.add_theme_font_size_override("font_size", 32)
+	version_label.add_theme_color_override("font_color", Color(0, 1, 0))  # Bright green
+	version_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	version_label.position = Vector2(400, 20)
+	add_child(version_label)
+
 	create_hero_buttons()
 	update_selected_label()
 
