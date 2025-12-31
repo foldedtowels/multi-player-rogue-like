@@ -1,0 +1,8 @@
+<svg width="128" height="128" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" fill="#1a1a2e"/>
+  <rect x="20" y="30" width="88" height="68" rx="8" fill="#16213e" stroke="#e94560" stroke-width="3"/>
+  <circle cx="40" cy="55" r="8" fill="#e94560"/>
+  <circle cx="64" cy="55" r="8" fill="#e94560"/>
+  <circle cx="88" cy="55" r="8" fill="#e94560"/>
+  <text x="64" y="90" font-family="Arial" font-size="20" fill="#0f3460" text-anchor="middle" font-weight="bold">DM</text>
+</svg>

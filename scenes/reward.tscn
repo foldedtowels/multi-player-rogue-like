@@ -1,0 +1,172 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/reward.gd" id="1"]
+
+[node name="Reward" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.1, 0.05, 0.2, 1)
+
+[node name="WizardContainer" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="RareRewardPanel" type="Panel" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = -200.0
+offset_right = 400.0
+offset_bottom = 100.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TitleLabel" type="Label" parent="RareRewardPanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 40.0
+grow_horizontal = 2
+text = "Choose Rare Card"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CardContainer" type="HBoxContainer" parent="RareRewardPanel"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -360.0
+offset_top = -100.0
+offset_right = 360.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="CommonRewardPanel" type="Panel" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 50.0
+offset_top = 50.0
+offset_right = -50.0
+offset_bottom = -100.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TitleLabel" type="Label" parent="CommonRewardPanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 50.0
+grow_horizontal = 2
+text = "All Players Choose"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="PlayerChoices" type="HBoxContainer" parent="CommonRewardPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 50.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Player1Choice" type="VBoxContainer" parent="CommonRewardPanel/PlayerChoices"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="NameLabel" type="Label" parent="CommonRewardPanel/PlayerChoices/Player1Choice"]
+layout_mode = 2
+text = "Player 1"
+horizontal_alignment = 1
+
+[node name="HealButton" type="Button" parent="CommonRewardPanel/PlayerChoices/Player1Choice"]
+layout_mode = 2
+text = "Heal 50 HP"
+
+[node name="CardsContainer" type="HBoxContainer" parent="CommonRewardPanel/PlayerChoices/Player1Choice"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Player2Choice" type="VBoxContainer" parent="CommonRewardPanel/PlayerChoices"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="NameLabel" type="Label" parent="CommonRewardPanel/PlayerChoices/Player2Choice"]
+layout_mode = 2
+text = "Player 2"
+horizontal_alignment = 1
+
+[node name="HealButton" type="Button" parent="CommonRewardPanel/PlayerChoices/Player2Choice"]
+layout_mode = 2
+text = "Heal 50 HP"
+
+[node name="CardsContainer" type="HBoxContainer" parent="CommonRewardPanel/PlayerChoices/Player2Choice"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Player3Choice" type="VBoxContainer" parent="CommonRewardPanel/PlayerChoices"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="NameLabel" type="Label" parent="CommonRewardPanel/PlayerChoices/Player3Choice"]
+layout_mode = 2
+text = "Player 3"
+horizontal_alignment = 1
+
+[node name="HealButton" type="Button" parent="CommonRewardPanel/PlayerChoices/Player3Choice"]
+layout_mode = 2
+text = "Heal 50 HP"
+
+[node name="CardsContainer" type="HBoxContainer" parent="CommonRewardPanel/PlayerChoices/Player3Choice"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ContinueButton" type="Button" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -100.0
+offset_top = -60.0
+offset_right = 100.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "Continue to Next Boss"
