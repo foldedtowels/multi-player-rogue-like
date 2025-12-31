@@ -7,9 +7,6 @@ class_name Character
 @export var starting_energy: int = 3
 @export var starting_deck: Array[Card] = []
 
-# Card limits
-const MAX_HAND_SIZE: int = 10
-
 # Character stats
 var current_health: int
 var current_energy: int
@@ -45,8 +42,8 @@ func reset_deck():
 	deck.shuffle()
 
 func draw_card() -> Card:
-	# Check hand size limit
-	if hand.size() >= MAX_HAND_SIZE:
+	# Check hand size limit against game constant
+	if hand.size() >= GameConstants.MAX_HAND_SIZE:
 		print("[Character] Hand full, cannot draw more cards")
 		return null
 
@@ -89,8 +86,9 @@ func take_damage(amount: int, is_piercing: bool = false):
 
 	var actual_damage = amount
 
+	# Apply vulnerable status effect damage multiplier
 	if vulnerable > 0:
-		actual_damage = int(actual_damage * 1.5)
+		actual_damage = int(actual_damage * GameConstants.VULNERABLE_DAMAGE_MULTIPLIER)
 
 	if not is_piercing and shield > 0:
 		var shield_absorbed = min(shield, actual_damage)
@@ -115,7 +113,8 @@ func gain_shield(amount: int):
 		push_warning("Negative shield attempted: " + str(amount))
 		return
 	shield += amount
-	shield = min(shield, 999)  # Cap shield at reasonable value
+	# Cap shield to prevent infinite stacking exploits
+	shield = min(shield, GameConstants.SHIELD_CAP)
 
 func start_turn():
 	print("[Character] ", character_name, " starting turn. Deck: ", deck.size(), " cards")
@@ -136,17 +135,19 @@ func end_turn():
 	# Reset shield
 	shield = 0
 
-	# Decay status effects
+	# Decay status effects at end of turn
 	if vulnerable > 0:
-		vulnerable -= 1
+		vulnerable -= GameConstants.STATUS_DECAY_AMOUNT
 	if weakness > 0:
-		weakness -= 1
+		weakness -= GameConstants.STATUS_DECAY_AMOUNT
 
 func apply_status_effects():
+	# Poison: deals damage, then decays
 	if poison > 0:
 		take_damage(poison, true)
-		poison = max(0, poison - 1)
+		poison = max(0, poison - GameConstants.POISON_DECAY_AMOUNT)
 
+	# Burn: deals damage each turn, does not decay
 	if burn > 0:
 		take_damage(burn, true)
 

@@ -1,7 +1,41 @@
 extends Node
-
-# Card database for all cards in the game
-# Inspired by Magic: The Gathering mechanics
+## Central repository for all player and boss cards
+##
+## This autoload singleton creates and manages all cards in the game.
+## Cards are defined using the create_card() factory function with parameters:
+##
+## create_card(name, description, card_type, target_type, cost, dmg, heal, shield, draw)
+##
+## PARAMETER GUIDE:
+## - name: Display name shown on the card
+## - description: Flavor text explaining what the card does
+## - card_type: ATTACK | SPELL | BUFF | DEBUFF | HEAL
+## - target_type: SELF | SINGLE_ALLY | SINGLE_ENEMY | RANDOM_ENEMY | ALL_ALLIES | ALL_ENEMIES
+## - cost: Energy required to play the card (0-5 typically)
+## - dmg: Base damage dealt to target(s) (0 if non-damaging)
+## - heal: HP restored to target (0 if no healing, negative to damage self)
+## - shield: Temporary HP gained (0 if no shield)
+## - draw: Number of cards drawn when played (0 if no card draw)
+##
+## EXAMPLE:
+## create_card("Lightning Bolt", "Fast damage", ATTACK, SINGLE_ENEMY, 1, 12, 0, 0, 0)
+##                                                                     ↑  ↑↑  ↑   ↑  ↑
+##                                                                  cost |  |   |   |
+##                                                                    damage |   |   |
+##                                                                       healing |   |
+##                                                                          shield   |
+##                                                                              card draw
+##
+## ADVANCED PROPERTIES (set after create_card):
+## - aoe_damage: true = hits all targets instead of just one
+## - apply_burn: Apply burn status (damage per turn)
+## - apply_poison: Apply poison status (damage per turn, decays)
+## - apply_strength: Increase attack damage
+## - apply_vulnerable: Increase damage taken
+## - apply_weakness: Reduce damage dealt
+## - apply_armor: Permanent damage reduction
+## - lifesteal: true = heal for damage dealt
+## - piercing: true = ignores shield and armor
 
 var all_cards = {}
 
@@ -424,6 +458,21 @@ func _create_all_cards():
 		2, 0, 0, 12, 2
 	)
 
+## Factory function for creating cards with basic stats
+##
+## @param name: Card display name
+## @param desc: Description text shown on card
+## @param type: Card type (ATTACK, SPELL, BUFF, DEBUFF, HEAL)
+## @param target: Who can be targeted (SELF, SINGLE_ENEMY, ALL_ENEMIES, etc.)
+## @param cost: Energy required to play (0-5 typically)
+## @param dmg: Base damage dealt (0 if no damage)
+## @param heal: HP restored (0 if no healing, can be negative for self-harm)
+## @param shield: Temporary HP gained (0 if no shield)
+## @param draw: Cards drawn when played (0 if no card draw)
+## @returns: New Card instance with properties set
+##
+## NOTE: For advanced effects (burn, poison, lifesteal, etc.), set properties
+##       on the returned Card object after calling this function.
 func create_card(name: String, desc: String, type: Card.CardType, target: Card.TargetType,
 				 cost: int, dmg: int, heal: int, shield: int, draw: int) -> Card:
 	var card = Card.new()
