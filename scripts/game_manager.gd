@@ -31,6 +31,7 @@ var round_number: int = 1
 
 var hero_db: Node
 var boss_db: Node
+var minion_db: Node
 
 # Network tracking
 var network_player_mapping: Dictionary = {}  # peer_id -> player_index
@@ -43,6 +44,7 @@ var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 func _ready():
 	hero_db = get_node("/root/HeroDatabase")
 	boss_db = get_node("/root/BossDatabase")
+	minion_db = get_node("/root/MinionDatabase")
 
 func start_new_game():
 	players.clear()
@@ -79,11 +81,20 @@ func start_boss_encounter():
 	round_number = 1
 	current_player_index = 0
 
-	# Setup enemies array (just boss for now, minions added in Phase 4)
+	# Setup enemies array - FIRST spawn minions for this boss
 	enemies.clear()
-	current_boss.character_role = Character.CharacterRole.BOSS
-	enemies.append(current_boss)
-	combat_phase = CombatPhase.BOSS_PHASE_1
+	var minions = minion_db.get_minions_for_boss(boss_index)
+
+	if minions.size() > 0:
+		# Start with minion combat phase
+		combat_phase = CombatPhase.MINION_COMBAT
+		for minion in minions:
+			enemies.append(minion)
+	else:
+		# No minions, go straight to boss
+		combat_phase = CombatPhase.BOSS_PHASE_1
+		current_boss.character_role = Character.CharacterRole.BOSS
+		enemies.append(current_boss)
 
 	# Characters are already initialized via their constructors
 	# Don't call _init() manually - it's automatically called by Character.new()
@@ -208,11 +219,41 @@ func start_enemies_turn():
 func check_combat_victory():
 	var alive_enemies = enemies.filter(func(e): return e.is_alive())
 	if alive_enemies.is_empty():
-		boss_defeated()
+		# Check combat phase
+		if combat_phase == CombatPhase.MINION_COMBAT:
+			# Minions defeated! Transition to buff selection
+			transition_to_buff_phase()
+		else:
+			# Boss defeated!
+			boss_defeated()
 		return
 
 	# Continue to next round
 	end_boss_turn()
+
+func transition_to_buff_phase():
+	# TODO: Implement buff selection scene
+	# For now, go straight to boss phase 1
+	print("[GameManager] Minions defeated! TODO: Show buff selection")
+	await get_tree().create_timer(2.0).timeout
+	start_boss_phase_1()
+
+func start_boss_phase_1():
+	# Clear minions, add boss
+	enemies.clear()
+	current_boss.character_role = Character.CharacterRole.BOSS
+	enemies.append(current_boss)
+	combat_phase = CombatPhase.BOSS_PHASE_1
+
+	# Reset combat state
+	round_number = 1
+	current_player_index = 0
+
+	# Restart combat (this will reload the combat scene)
+	if multiplayer.is_server():
+		NetworkManager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
+	else:
+		get_tree().change_scene_to_file("res://scenes/combat.tscn")
 
 @rpc("any_peer", "call_local", "reliable")
 func client_enemy_turn_started(enemy_index: int):

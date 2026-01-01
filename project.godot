@@ -21,6 +21,7 @@ NetworkManager="*res://scripts/network_manager.gd"
 CardDatabase="*res://scripts/card_database.gd"
 HeroDatabase="*res://scripts/hero_database.gd"
 BossDatabase="*res://scripts/boss_database.gd"
+MinionDatabase="*res://scripts/minion_database.gd"
 GameManager="*res://scripts/game_manager.gd"
 
 [display]
