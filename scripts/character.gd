@@ -47,12 +47,8 @@ func reset_deck():
 	hand.clear()
 	discard_pile.clear()
 	exhaust_pile.clear()
-	# Use game manager's deterministic RNG for multiplayer
-	var game_manager = get_node_or_null("/root/GameManager")
-	if game_manager and game_manager.rng:
-		deck.shuffle_custom(game_manager.rng)
-	else:
-		deck.shuffle()
+	# Shuffling handled by game_manager when needed
+	deck.shuffle()
 
 func draw_card() -> Card:
 	# Check hand size limit against game constant
@@ -65,12 +61,8 @@ func draw_card() -> Card:
 			return null
 		deck = discard_pile.duplicate()
 		discard_pile.clear()
-		# Use game manager's deterministic RNG for multiplayer
-		var game_manager = get_node_or_null("/root/GameManager")
-		if game_manager and game_manager.rng:
-			deck.shuffle_custom(game_manager.rng)
-		else:
-			deck.shuffle()
+		# Shuffling handled by built-in shuffle (deterministic via seed)
+		deck.shuffle()
 
 	var card = deck.pop_front()
 	hand.append(card)
@@ -201,11 +193,9 @@ func duplicate_character() -> Character:
 
 	return new_char
 
-# Network synchronization functions
-func sync_state_to_clients():
-	# Server syncs state to all clients
-	if not multiplayer.is_server(): return
-	rpc("receive_state_sync", {
+# Network synchronization - data only, RPCs handled by GameManager
+func get_state_dict() -> Dictionary:
+	return {
 		"current_health": current_health,
 		"max_health": max_health,
 		"current_energy": current_energy,
@@ -217,10 +207,9 @@ func sync_state_to_clients():
 		"vulnerable": vulnerable,
 		"weakness": weakness,
 		"armor": armor
-	})
+	}
 
-@rpc("any_peer", "call_local", "reliable")
-func receive_state_sync(state: Dictionary):
+func apply_state_dict(state: Dictionary):
 	current_health = state.current_health
 	max_health = state.max_health
 	current_energy = state.current_energy
@@ -233,17 +222,13 @@ func receive_state_sync(state: Dictionary):
 	weakness = state.weakness
 	armor = state.armor
 
-# Private hand sync (only to owner)
-func sync_hand_to_owner():
-	if not multiplayer.is_server(): return
-	if network_owner_id == -1: return
+func get_hand_dict() -> Array[Dictionary]:
 	var hand_data: Array[Dictionary] = []
 	for card in hand:
 		hand_data.append(card.serialize())
-	rpc_id(network_owner_id, "receive_hand_sync", hand_data)
+	return hand_data
 
-@rpc("any_peer", "call_local", "reliable")
-func receive_hand_sync(hand_data: Array):
+func apply_hand_dict(hand_data: Array):
 	hand.clear()
 	for card_dict in hand_data:
 		hand.append(Card.deserialize(card_dict))

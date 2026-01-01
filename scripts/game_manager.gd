@@ -115,6 +115,42 @@ func sync_game_seed(seed: int):
 	game_seed = seed
 	rng.seed = seed
 
+# Character state sync RPCs
+@rpc("any_peer", "call_local", "reliable")
+func sync_character_state(char_index: int, is_player: bool, state: Dictionary):
+	var character: Character
+	if is_player:
+		character = players[char_index]
+	else:
+		character = enemies[char_index]
+	character.apply_state_dict(state)
+
+@rpc("any_peer", "call_local", "reliable")
+func sync_character_hand(char_index: int, hand_data: Array):
+	if char_index >= 0 and char_index < players.size():
+		players[char_index].apply_hand_dict(hand_data)
+
+func broadcast_character_state(character: Character):
+	if not multiplayer.is_server(): return
+
+	var is_player = players.has(character)
+	var char_index = -1
+	if is_player:
+		char_index = players.find(character)
+	else:
+		char_index = enemies.find(character)
+
+	if char_index >= 0:
+		rpc("sync_character_state", char_index, is_player, character.get_state_dict())
+
+func send_hand_to_owner(character: Character):
+	if not multiplayer.is_server(): return
+	if character.network_owner_id == -1: return
+
+	var char_index = players.find(character)
+	if char_index >= 0:
+		rpc_id(character.network_owner_id, "sync_character_hand", char_index, character.get_hand_dict())
+
 func assign_characters_to_network_peers():
 	# Server assigns character indices to network peers
 	if not multiplayer.is_server(): return
@@ -155,8 +191,8 @@ func _server_start_player_turn(player_index: int):
 
 	player.start_turn()
 	# Sync state to all clients
-	player.sync_state_to_clients()
-	player.sync_hand_to_owner()
+	broadcast_character_state(player)
+	send_hand_to_owner(player)
 	# Notify all clients
 	rpc("client_player_turn_started", player_index)
 
@@ -181,7 +217,7 @@ func _server_end_player_turn():
 	var player = players[current_player_index]
 	player.end_turn()
 	# Sync state to all clients
-	player.sync_state_to_clients()
+	broadcast_character_state(player)
 
 	# Move to next player
 	_server_start_player_turn(current_player_index + 1)
@@ -204,7 +240,7 @@ func start_enemies_turn():
 
 		enemy.start_turn()
 		# Sync state to all clients
-		enemy.sync_state_to_clients()
+		broadcast_character_state(enemy)
 		# Notify all clients
 		rpc("client_enemy_turn_started", enemies.find(enemy))
 
@@ -283,7 +319,7 @@ func play_enemy_turn(enemy: Character):
 
 	enemy.end_turn()
 	# Sync state to all clients
-	enemy.sync_state_to_clients()
+	broadcast_character_state(enemy)
 
 func select_boss_target(card: Card) -> Character:
 	# Legacy function for backward compatibility
@@ -371,19 +407,19 @@ func _server_play_card(caster: Character, card: Card, target: Character):
 	apply_card_effects(caster, card, target)
 
 	# Sync all affected characters
-	caster.sync_state_to_clients()
+	broadcast_character_state(caster)
 	if caster.network_owner_id != -1:
-		caster.sync_hand_to_owner()
+		send_hand_to_owner(caster)
 	if target != caster:
-		target.sync_state_to_clients()
+		broadcast_character_state(target)
 
 	# Sync all enemies (for AoE effects)
 	for enemy in enemies:
-		enemy.sync_state_to_clients()
+		broadcast_character_state(enemy)
 
 	# Sync all players (for AoE effects)
 	for player in players:
-		player.sync_state_to_clients()
+		broadcast_character_state(player)
 
 	# Notify all clients
 	var caster_index = -1
