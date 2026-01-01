@@ -91,4 +91,9 @@ func _on_start_pressed():
 	if selected_heroes.size() == 3:
 		var game_manager = get_node("/root/GameManager")
 		game_manager.select_heroes(selected_heroes)
-		get_tree().change_scene_to_file("res://scenes/combat.tscn")
+		# Synchronized scene change for multiplayer
+		var network_manager = get_node_or_null("/root/NetworkManager")
+		if network_manager and multiplayer.is_server():
+			network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
+		else:
+			get_tree().change_scene_to_file("res://scenes/combat.tscn")

@@ -190,4 +190,9 @@ func _on_continue_pressed():
 	# Start next boss encounter and load combat scene
 	game_manager.start_boss_encounter()
 	game_manager.start_player_turn(0)
-	get_tree().change_scene_to_file("res://scenes/combat.tscn")
+	# Synchronized scene change for multiplayer
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if network_manager and multiplayer.is_server():
+		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
+	else:
+		get_tree().change_scene_to_file("res://scenes/combat.tscn")

@@ -28,6 +28,10 @@ var boss_db: Node
 var network_player_mapping: Dictionary = {}  # peer_id -> player_index
 var local_player_index: int = -1  # Which character this client controls
 
+# Deterministic RNG for multiplayer
+var game_seed: int = 0
+var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+
 func _ready():
 	hero_db = get_node("/root/HeroDatabase")
 	boss_db = get_node("/root/BossDatabase")
@@ -70,10 +74,21 @@ func start_boss_encounter():
 	# Characters are already initialized via their constructors
 	# Don't call _init() manually - it's automatically called by Character.new()
 
+	# Initialize deterministic RNG for multiplayer
+	if multiplayer.is_server():
+		game_seed = randi()
+		rpc("sync_game_seed", game_seed)
+	rng.seed = game_seed
+
 	# Assign network ownership
 	assign_characters_to_network_peers()
 
 	# Don't start turn here - let combat scene do it after _ready()
+
+@rpc("any_peer", "call_local", "reliable")
+func sync_game_seed(seed: int):
+	game_seed = seed
+	rng.seed = seed
 
 func assign_characters_to_network_peers():
 	# Server assigns character indices to network peers
@@ -93,9 +108,15 @@ func receive_character_assignment(peer_id: int, character_index: int):
 		players[character_index].network_owner_id = peer_id
 
 func start_player_turn(player_index: int):
+	# Server controls turn flow
+	if multiplayer.is_server():
+		_server_start_player_turn(player_index)
+	# Clients will receive RPC
+
+func _server_start_player_turn(player_index: int):
 	if player_index >= players.size():
 		# All players have gone, now boss turn
-		start_boss_turn()
+		_server_start_boss_turn()
 		return
 
 	current_player_index = player_index
@@ -104,31 +125,67 @@ func start_player_turn(player_index: int):
 	if not player.is_alive():
 		# Skip dead players
 		print("[Game] Skipping turn for dead player: ", player.character_name)
-		end_player_turn()
+		_server_end_player_turn()
 		return
 
 	player.start_turn()
+	# Sync state to all clients
+	player.sync_state_to_clients()
+	player.sync_hand_to_owner()
+	# Notify all clients
+	rpc("client_player_turn_started", player_index)
+
+@rpc("any_peer", "call_local", "reliable")
+func client_player_turn_started(player_index: int):
+	current_player_index = player_index
 	player_turn_started.emit(player_index)
 
 func end_player_turn():
+	# Server controls turn flow
+	if multiplayer.is_server():
+		_server_end_player_turn()
+	else:
+		# Client sends request to server
+		rpc_id(1, "server_end_player_turn")
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_end_player_turn():
+	_server_end_player_turn()
+
+func _server_end_player_turn():
 	var player = players[current_player_index]
 	player.end_turn()
+	# Sync state to all clients
+	player.sync_state_to_clients()
 
 	# Move to next player
-	start_player_turn(current_player_index + 1)
+	_server_start_player_turn(current_player_index + 1)
 
 func start_boss_turn():
+	# Server controls boss turn
+	if multiplayer.is_server():
+		_server_start_boss_turn()
+	# Clients will receive RPC
+
+func _server_start_boss_turn():
 	if not current_boss.is_alive():
 		# Boss defeated!
 		boss_defeated()
 		return
 
 	current_boss.start_turn()
-	boss_turn_started.emit()
+	# Sync state to all clients
+	current_boss.sync_state_to_clients()
+	# Notify all clients
+	rpc("client_boss_turn_started")
 
 	# AI: Boss plays cards automatically
 	await get_tree().create_timer(1.0).timeout
 	play_boss_turn()
+
+@rpc("any_peer", "call_local", "reliable")
+func client_boss_turn_started():
+	boss_turn_started.emit()
 
 func play_boss_turn():
 	# Simple AI: Play cards until out of energy
@@ -150,10 +207,10 @@ func select_boss_target(card: Card) -> Character:
 		Card.TargetType.SELF:
 			return current_boss
 		Card.TargetType.SINGLE_ENEMY, Card.TargetType.RANDOM_ENEMY:
-			# Target random alive player
+			# Target random alive player using deterministic RNG
 			var alive_players = players.filter(func(p): return p.is_alive())
 			if alive_players.size() > 0:
-				return alive_players[randi() % alive_players.size()]
+				return alive_players[rng.randi() % alive_players.size()]
 		Card.TargetType.ALL_ENEMIES:
 			return players[0]  # Will be handled as AoE
 
@@ -178,14 +235,67 @@ func end_boss_turn():
 	start_player_turn(0)
 
 func play_card(caster: Character, card: Card, target: Character):
-	if not caster.play_card(card):
+	# Server validates and processes
+	if not multiplayer.is_server():
+		# Client sends request to server
+		var caster_index = players.find(caster)
+		var target_index = -1
+		if target == current_boss:
+			target_index = -2  # Special index for boss
+		else:
+			target_index = players.find(target)
+		rpc_id(1, "server_play_card", card.serialize(), caster_index, target_index)
 		return
 
-	card_played.emit(caster, card, target)
+	# Server processes card
+	_server_play_card(caster, card, target)
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_play_card(card_data: Dictionary, caster_index: int, target_index: int):
+	# Reconstruct card and characters
+	var card = Card.deserialize(card_data)
+	var caster = players[caster_index]
+	var target: Character
+	if target_index == -2:
+		target = current_boss
+	else:
+		target = players[target_index]
+
+	_server_play_card(caster, card, target)
+
+func _server_play_card(caster: Character, card: Card, target: Character):
+	if not caster.play_card(card):
+		return
 
 	# Apply card effects
 	apply_card_effects(caster, card, target)
 
+	# Sync all affected characters
+	caster.sync_state_to_clients()
+	caster.sync_hand_to_owner()
+	if target != caster:
+		target.sync_state_to_clients()
+
+	# Notify all clients
+	var caster_index = players.find(caster)
+	var target_index = -1
+	if target == current_boss:
+		target_index = -2
+	else:
+		target_index = players.find(target)
+	rpc("client_card_played", card.serialize(), caster_index, target_index)
+
+@rpc("any_peer", "call_local", "reliable")
+func client_card_played(card_data: Dictionary, caster_index: int, target_index: int):
+	var card = Card.deserialize(card_data)
+	var caster = players[caster_index]
+	var target: Character
+	if target_index == -2:
+		target = current_boss
+	else:
+		target = players[target_index]
+
+	card_played.emit(caster, card, target)
 	game_state_changed.emit()
 
 func apply_card_effects(caster: Character, card: Card, target: Character):
@@ -264,8 +374,11 @@ func boss_defeated():
 	if boss_index >= 5:
 		victory()
 	else:
-		# Load reward scene
-		get_tree().change_scene_to_file("res://scenes/reward.tscn")
+		# Load reward scene (synchronized for multiplayer)
+		if multiplayer.is_server():
+			NetworkManager.change_scene_synchronized.rpc("res://scenes/reward.tscn")
+		else:
+			get_tree().change_scene_to_file("res://scenes/reward.tscn")
 
 func game_over():
 	current_state = GameState.GAME_OVER

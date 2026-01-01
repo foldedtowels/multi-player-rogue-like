@@ -42,7 +42,12 @@ func reset_deck():
 	hand.clear()
 	discard_pile.clear()
 	exhaust_pile.clear()
-	deck.shuffle()
+	# Use game manager's deterministic RNG for multiplayer
+	var game_manager = get_node_or_null("/root/GameManager")
+	if game_manager and game_manager.rng:
+		deck.shuffle_custom(game_manager.rng)
+	else:
+		deck.shuffle()
 
 func draw_card() -> Card:
 	# Check hand size limit against game constant
@@ -55,7 +60,12 @@ func draw_card() -> Card:
 			return null
 		deck = discard_pile.duplicate()
 		discard_pile.clear()
-		deck.shuffle()
+		# Use game manager's deterministic RNG for multiplayer
+		var game_manager = get_node_or_null("/root/GameManager")
+		if game_manager and game_manager.rng:
+			deck.shuffle_custom(game_manager.rng)
+		else:
+			deck.shuffle()
 
 	var card = deck.pop_front()
 	hand.append(card)
