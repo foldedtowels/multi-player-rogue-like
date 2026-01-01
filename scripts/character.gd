@@ -27,6 +27,11 @@ var hand: Array[Card] = []
 var discard_pile: Array[Card] = []
 var exhaust_pile: Array[Card] = []
 
+# Character role
+enum CharacterRole { PLAYER, MINION, BOSS }
+var character_role: CharacterRole = CharacterRole.PLAYER
+var is_minion: bool = false
+
 # Network ownership
 var network_owner_id: int = -1  # Which peer owns this character
 

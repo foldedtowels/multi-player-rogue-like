@@ -65,17 +65,13 @@ func _setup_character_displays():
 	update_boss_binding()
 
 func update_boss_binding():
-	# Disconnect old boss binding if it exists
-	if boss_display.gui_input.is_connected(_on_character_clicked):
-		var connections = boss_display.gui_input.get_connections()
-		for connection in connections:
-			if connection["signal"].get_name() == "gui_input":
-				boss_display.gui_input.disconnect(_on_character_clicked)
-				break
+	# Clear old boss display
+	for child in boss_display.get_children():
+		if child.name != "Background":
+			child.queue_free()
 
-	# Connect to current boss
-	if game_manager.current_boss:
-		boss_display.gui_input.connect(_on_character_clicked.bind(game_manager.current_boss))
+	# Create displays for all enemies
+	update_enemy_displays()
 
 	# Update boss visual
 	update_boss_visual()
@@ -124,6 +120,54 @@ func _on_combat_ended(victory: bool):
 
 	end_turn_button.disabled = true
 
+func update_enemy_displays():
+	# Clear existing enemy UI
+	for child in boss_display.get_children():
+		if child.name != "Background":
+			child.queue_free()
+
+	# Create UI for each enemy
+	for i in game_manager.enemies.size():
+		var enemy = game_manager.enemies[i]
+		var enemy_panel = Panel.new()
+		enemy_panel.name = "Enemy" + str(i)
+		boss_display.add_child(enemy_panel)
+
+		# Add background
+		var bg = Panel.new()
+		bg.name = "Background"
+		bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+		enemy_panel.add_child(bg)
+
+		# Add VBoxContainer for labels
+		var vbox = VBoxContainer.new()
+		vbox.name = "VBoxContainer"
+		vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+		vbox.add_theme_constant_override("separation", 5)
+		enemy_panel.add_child(vbox)
+
+		# Add labels
+		var name_label = Label.new()
+		name_label.name = "NameLabel"
+		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vbox.add_child(name_label)
+
+		var hp_label = Label.new()
+		hp_label.name = "HPLabel"
+		hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vbox.add_child(hp_label)
+
+		var status_label = Label.new()
+		status_label.name = "StatusLabel"
+		status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vbox.add_child(status_label)
+
+		# Connect click handler
+		enemy_panel.gui_input.connect(_on_character_clicked.bind(enemy))
+
+		# Update display
+		update_character_display(enemy_panel, enemy, false)
+
 func update_displays():
 	# Update player displays
 	for i in game_manager.players.size():
@@ -131,9 +175,8 @@ func update_displays():
 		var display = player_displays[i]
 		update_character_display(display, player, i == game_manager.current_player_index)
 
-	# Update boss display
-	if game_manager.current_boss:
-		update_character_display(boss_display, game_manager.current_boss, false)
+	# Update enemy displays
+	update_enemy_displays()
 
 	# Update top bar
 	if current_player:
@@ -224,7 +267,10 @@ func _on_card_clicked(card: Card):
 			selected_card = null
 		Card.TargetType.ALL_ALLIES, Card.TargetType.ALL_ENEMIES:
 			# Play immediately, no targeting needed
-			game_manager.play_card(current_player, card, game_manager.current_boss)
+			# Use first alive enemy as target (AoE will handle all)
+			var first_enemy = game_manager.enemies[0] if game_manager.enemies.size() > 0 else null
+			if first_enemy:
+				game_manager.play_card(current_player, card, first_enemy)
 			selected_card = null
 		_:
 			# Need to select a target
@@ -243,7 +289,7 @@ func _on_character_clicked(event: InputEvent, character: Character):
 			Card.TargetType.SINGLE_ALLY:
 				valid_target = game_manager.players.has(character)
 			Card.TargetType.SINGLE_ENEMY, Card.TargetType.RANDOM_ENEMY:
-				valid_target = (character == game_manager.current_boss)
+				valid_target = game_manager.enemies.has(character)
 
 		if valid_target:
 			game_manager.play_card(current_player, selected_card, character)

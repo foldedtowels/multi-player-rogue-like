@@ -14,9 +14,17 @@ enum GameState {
 	VICTORY
 }
 
+enum CombatPhase {
+	MINION_COMBAT,
+	BOSS_PHASE_1,
+	BOSS_PHASE_2
+}
+
 var current_state: GameState = GameState.CHARACTER_SELECTION
 var players: Array[Character] = []
-var current_boss: Character
+var enemies: Array[Character] = []  # Up to 3 enemies (minions + boss)
+var current_boss: Character  # Points to boss in enemies array
+var combat_phase: CombatPhase = CombatPhase.BOSS_PHASE_1
 var boss_index: int = 0
 var current_player_index: int = 0
 var round_number: int = 1
@@ -70,6 +78,12 @@ func start_boss_encounter():
 	current_state = GameState.COMBAT
 	round_number = 1
 	current_player_index = 0
+
+	# Setup enemies array (just boss for now, minions added in Phase 4)
+	enemies.clear()
+	current_boss.character_role = Character.CharacterRole.BOSS
+	enemies.append(current_boss)
+	combat_phase = CombatPhase.BOSS_PHASE_1
 
 	# Characters are already initialized via their constructors
 	# Don't call _init() manually - it's automatically called by Character.new()
@@ -168,44 +182,76 @@ func start_boss_turn():
 	# Clients will receive RPC
 
 func _server_start_boss_turn():
-	if not current_boss.is_alive():
-		# Boss defeated!
+	# Start turns for all alive enemies
+	start_enemies_turn()
+
+func start_enemies_turn():
+	# Each enemy takes a turn sequentially
+	for enemy in enemies:
+		if not enemy.is_alive():
+			continue
+
+		enemy.start_turn()
+		# Sync state to all clients
+		enemy.sync_state_to_clients()
+		# Notify all clients
+		rpc("client_enemy_turn_started", enemies.find(enemy))
+
+		# AI: Enemy plays cards automatically
+		await get_tree().create_timer(1.0).timeout
+		play_enemy_turn(enemy)
+		await get_tree().create_timer(0.5).timeout
+
+	# All enemies finished, check victory
+	check_combat_victory()
+
+func check_combat_victory():
+	var alive_enemies = enemies.filter(func(e): return e.is_alive())
+	if alive_enemies.is_empty():
 		boss_defeated()
 		return
 
-	current_boss.start_turn()
-	# Sync state to all clients
-	current_boss.sync_state_to_clients()
-	# Notify all clients
-	rpc("client_boss_turn_started")
+	# Continue to next round
+	end_boss_turn()
 
-	# AI: Boss plays cards automatically
-	await get_tree().create_timer(1.0).timeout
-	play_boss_turn()
+@rpc("any_peer", "call_local", "reliable")
+func client_enemy_turn_started(enemy_index: int):
+	boss_turn_started.emit()
 
 @rpc("any_peer", "call_local", "reliable")
 func client_boss_turn_started():
 	boss_turn_started.emit()
 
 func play_boss_turn():
-	# Simple AI: Play cards until out of energy
-	var boss_hand = current_boss.hand.duplicate()
+	# Legacy function for backward compatibility
+	# Now handled by play_enemy_turn in start_enemies_turn()
+	pass
 
-	for card in boss_hand:
-		if not card.can_afford(current_boss.current_energy):
+func play_enemy_turn(enemy: Character):
+	# Simple AI: Play cards until out of energy
+	var enemy_hand = enemy.hand.duplicate()
+
+	for card in enemy_hand:
+		if not card.can_afford(enemy.current_energy):
 			continue
 
-		var target = select_boss_target(card)
+		var target = select_enemy_target(enemy, card)
 		if target:
-			play_card(current_boss, card, target)
+			play_card(enemy, card, target)
 			await get_tree().create_timer(0.5).timeout
 
-	end_boss_turn()
+	enemy.end_turn()
+	# Sync state to all clients
+	enemy.sync_state_to_clients()
 
 func select_boss_target(card: Card) -> Character:
+	# Legacy function for backward compatibility
+	return select_enemy_target(current_boss, card)
+
+func select_enemy_target(enemy: Character, card: Card) -> Character:
 	match card.target_type:
 		Card.TargetType.SELF:
-			return current_boss
+			return enemy
 		Card.TargetType.SINGLE_ENEMY, Card.TargetType.RANDOM_ENEMY:
 			# Target random alive player using deterministic RNG
 			var alive_players = players.filter(func(p): return p.is_alive())
@@ -238,28 +284,41 @@ func play_card(caster: Character, card: Card, target: Character):
 	# Server validates and processes
 	if not multiplayer.is_server():
 		# Client sends request to server
-		var caster_index = players.find(caster)
-		var target_index = -1
-		if target == current_boss:
-			target_index = -2  # Special index for boss
+		var caster_index = -1
+		var caster_is_player = players.has(caster)
+		if caster_is_player:
+			caster_index = players.find(caster)
 		else:
+			caster_index = enemies.find(caster)
+
+		var target_index = -1
+		var target_is_player = players.has(target)
+		if target_is_player:
 			target_index = players.find(target)
-		rpc_id(1, "server_play_card", card.serialize(), caster_index, target_index)
+		else:
+			target_index = enemies.find(target)
+
+		rpc_id(1, "server_play_card", card.serialize(), caster_index, caster_is_player, target_index, target_is_player)
 		return
 
 	# Server processes card
 	_server_play_card(caster, card, target)
 
 @rpc("any_peer", "call_remote", "reliable")
-func server_play_card(card_data: Dictionary, caster_index: int, target_index: int):
+func server_play_card(card_data: Dictionary, caster_index: int, caster_is_player: bool, target_index: int, target_is_player: bool):
 	# Reconstruct card and characters
 	var card = Card.deserialize(card_data)
-	var caster = players[caster_index]
-	var target: Character
-	if target_index == -2:
-		target = current_boss
+	var caster: Character
+	if caster_is_player:
+		caster = players[caster_index]
 	else:
+		caster = enemies[caster_index]
+
+	var target: Character
+	if target_is_player:
 		target = players[target_index]
+	else:
+		target = enemies[target_index]
 
 	_server_play_card(caster, card, target)
 
@@ -272,28 +331,50 @@ func _server_play_card(caster: Character, card: Card, target: Character):
 
 	# Sync all affected characters
 	caster.sync_state_to_clients()
-	caster.sync_hand_to_owner()
+	if caster.network_owner_id != -1:
+		caster.sync_hand_to_owner()
 	if target != caster:
 		target.sync_state_to_clients()
 
+	# Sync all enemies (for AoE effects)
+	for enemy in enemies:
+		enemy.sync_state_to_clients()
+
+	# Sync all players (for AoE effects)
+	for player in players:
+		player.sync_state_to_clients()
+
 	# Notify all clients
-	var caster_index = players.find(caster)
-	var target_index = -1
-	if target == current_boss:
-		target_index = -2
+	var caster_index = -1
+	var caster_is_player = players.has(caster)
+	if caster_is_player:
+		caster_index = players.find(caster)
 	else:
+		caster_index = enemies.find(caster)
+
+	var target_index = -1
+	var target_is_player = players.has(target)
+	if target_is_player:
 		target_index = players.find(target)
-	rpc("client_card_played", card.serialize(), caster_index, target_index)
+	else:
+		target_index = enemies.find(target)
+
+	rpc("client_card_played", card.serialize(), caster_index, caster_is_player, target_index, target_is_player)
 
 @rpc("any_peer", "call_local", "reliable")
-func client_card_played(card_data: Dictionary, caster_index: int, target_index: int):
+func client_card_played(card_data: Dictionary, caster_index: int, caster_is_player: bool, target_index: int, target_is_player: bool):
 	var card = Card.deserialize(card_data)
-	var caster = players[caster_index]
-	var target: Character
-	if target_index == -2:
-		target = current_boss
+	var caster: Character
+	if caster_is_player:
+		caster = players[caster_index]
 	else:
+		caster = enemies[caster_index]
+
+	var target: Character
+	if target_is_player:
 		target = players[target_index]
+	else:
+		target = enemies[target_index]
 
 	card_played.emit(caster, card, target)
 	game_state_changed.emit()
@@ -308,17 +389,21 @@ func apply_card_effects(caster: Character, card: Card, target: Character):
 		Card.TargetType.SINGLE_ALLY:
 			targets.append(target)
 		Card.TargetType.ALL_ALLIES:
-			if caster == current_boss:
-				targets.append(current_boss)
+			if enemies.has(caster):
+				# Enemy targeting all enemies
+				targets = enemies.duplicate()
 			else:
+				# Player targeting all players
 				targets = players.duplicate()
 		Card.TargetType.SINGLE_ENEMY, Card.TargetType.RANDOM_ENEMY:
 			targets.append(target)
 		Card.TargetType.ALL_ENEMIES:
-			if caster == current_boss:
+			if enemies.has(caster):
+				# Enemy targeting all players
 				targets = players.duplicate()
 			else:
-				targets.append(current_boss)
+				# Player targeting all enemies
+				targets = enemies.filter(func(e): return e.is_alive())
 
 	# Apply effects to all targets
 	for t in targets:
