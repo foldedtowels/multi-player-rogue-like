@@ -168,6 +168,14 @@ func receive_character_assignment(peer_id: int, character_index: int):
 	if character_index < players.size():
 		players[character_index].network_owner_id = peer_id
 
+# Hero selection sync for character selection screen
+@rpc("any_peer", "call_local", "reliable")
+func receive_hero_selection(peer_id: int, hero_index: int):
+	# Broadcast to character selection scene
+	var char_select = get_tree().current_scene
+	if char_select and char_select.has_method("on_player_selected_hero"):
+		char_select.on_player_selected_hero(peer_id, hero_index)
+
 func start_player_turn(player_index: int):
 	# Server controls turn flow
 	if multiplayer.is_server():

@@ -1,7 +1,10 @@
 extends Control
 
 var hero_db: Node
-var selected_heroes: Array[int] = []
+var network_manager: Node
+var my_selection: int = -1  # -1 = not selected
+var all_selections: Dictionary = {}  # peer_id -> hero_index
+
 var hero_buttons: Array[Button] = []
 
 @onready var hero_container: HBoxContainer = $VBoxContainer/HeroContainer
@@ -14,18 +17,20 @@ var hero_buttons: Array[Button] = []
 
 func _ready():
 	hero_db = get_node("/root/HeroDatabase")
+	network_manager = get_node("/root/NetworkManager")
+
 	start_button.pressed.connect(_on_start_pressed)
 	start_button.disabled = true
 	info_panel.visible = false
 
-	# Add version indicator
-	var version_label = Label.new()
-	version_label.text = "✨ SUPER GOOD REFACTORED VERSION ✨"
-	version_label.add_theme_font_size_override("font_size", 32)
-	version_label.add_theme_color_override("font_color", Color(0, 1, 0))  # Bright green
-	version_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	version_label.position = Vector2(400, 20)
-	add_child(version_label)
+	# Add multiplayer status indicator
+	var status_label = Label.new()
+	status_label.text = "Multiplayer: Each player picks ONE hero"
+	status_label.add_theme_font_size_override("font_size", 20)
+	status_label.add_theme_color_override("font_color", Color(1, 1, 0))
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_label.position = Vector2(400, 20)
+	add_child(status_label)
 
 	create_hero_buttons()
 	update_selected_label()
@@ -45,13 +50,20 @@ func create_hero_buttons():
 		hero_buttons.append(button)
 
 func _on_hero_button_pressed(index: int):
-	if selected_heroes.has(index):
+	# In multiplayer, each player picks ONE hero
+	if my_selection == index:
 		# Deselect
-		selected_heroes.erase(index)
+		my_selection = -1
 	else:
-		# Select if less than 3
-		if selected_heroes.size() < 3:
-			selected_heroes.append(index)
+		# Select this hero
+		my_selection = index
+
+	# Broadcast selection to all clients
+	var game_manager = get_node("/root/GameManager")
+	if multiplayer.is_server():
+		game_manager.rpc("receive_hero_selection", multiplayer.get_unique_id(), my_selection)
+	else:
+		game_manager.rpc_id(1, "receive_hero_selection", multiplayer.get_unique_id(), my_selection)
 
 	update_hero_buttons()
 	update_selected_label()
@@ -72,28 +84,56 @@ func _on_hero_button_hovered(index: int):
 func update_hero_buttons():
 	for i in hero_buttons.size():
 		var button = hero_buttons[i]
-		if selected_heroes.has(i):
+		if my_selection == i:
+			# My selection - green
 			button.modulate = Color(0.5, 1.0, 0.5)
-		else:
-			button.modulate = Color.WHITE
-
-		# Disable if 3 already selected and this isn't one of them
-		if selected_heroes.size() >= 3 and not selected_heroes.has(i):
+		elif is_hero_taken_by_others(i):
+			# Taken by another player - red
+			button.modulate = Color(1.0, 0.5, 0.5)
 			button.disabled = true
 		else:
+			button.modulate = Color.WHITE
 			button.disabled = false
 
+func is_hero_taken_by_others(hero_index: int) -> bool:
+	for peer_id in all_selections.keys():
+		if peer_id != multiplayer.get_unique_id() and all_selections[peer_id] == hero_index:
+			return true
+	return false
+
 func update_selected_label():
-	selected_label.text = "Selected Heroes: %d/3" % selected_heroes.size()
-	start_button.disabled = (selected_heroes.size() != 3)
+	var count = all_selections.size()
+	var player_count = NetworkManager.players.size()
+	selected_label.text = "Players Ready: %d/%d" % [count, player_count]
+
+	# Enable start button only for host when all players selected
+	if network_manager.is_host:
+		start_button.disabled = (count < player_count)
+		start_button.visible = true
+	else:
+		start_button.visible = false
+
+func on_player_selected_hero(peer_id: int, hero_index: int):
+	# Called by GameManager RPC when any player selects a hero
+	if hero_index == -1:
+		all_selections.erase(peer_id)
+	else:
+		all_selections[peer_id] = hero_index
+
+	update_hero_buttons()
+	update_selected_label()
 
 func _on_start_pressed():
+	# Host starts the game - collect all selections
+	var selected_heroes: Array[int] = []
+	var peer_ids = NetworkManager.players.keys()
+	peer_ids.sort()  # Ensure consistent order
+
+	for peer_id in peer_ids:
+		if all_selections.has(peer_id):
+			selected_heroes.append(all_selections[peer_id])
+
 	if selected_heroes.size() == 3:
 		var game_manager = get_node("/root/GameManager")
 		game_manager.select_heroes(selected_heroes)
-		# Synchronized scene change for multiplayer
-		var network_manager = get_node_or_null("/root/NetworkManager")
-		if network_manager and multiplayer.is_server():
-			network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
-		else:
-			get_tree().change_scene_to_file("res://scenes/combat.tscn")
+		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
