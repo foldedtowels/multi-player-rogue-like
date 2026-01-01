@@ -90,7 +90,7 @@ func update_boss_visual():
 	if game_manager.current_boss:
 		boss_visual = Node2D.new()
 		boss_visual.set_script(load("res://scripts/boss_visuals.gd"))
-		boss_visual.position = Vector2(600, 300)  # Position on screen
+		boss_visual.position = Vector2(600, 400)  # Position on screen
 		add_child(boss_visual)
 		boss_visual.set_boss(game_manager.current_boss.character_name)
 

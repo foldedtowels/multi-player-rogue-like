@@ -74,7 +74,7 @@ func start_rare_reward():
 		print("[Reward] Connecting rare card ", i, " signal for: ", rare_choices[i].card_name)
 		card_visual.card_clicked.connect(_on_rare_card_selected.bind(i))
 
-func _on_rare_card_selected(card_index: int):
+func _on_rare_card_selected(card: Card, card_index: int):
 	print("[Reward] *** RARE CARD SELECTED CALLBACK TRIGGERED! Index: ", card_index, " ***")
 	var chosen_card = rare_choices[card_index]
 	var chosen_player = game_manager.players[chosen_player_index]
@@ -135,7 +135,8 @@ func start_common_reward():
 			card_visual.set_card(common_choices_per_player[i][j])
 			card_visual.set_playable(true)
 			card_visual.mouse_filter = Control.MOUSE_FILTER_STOP  # Ensure card receives mouse events
-			card_visual.custom_minimum_size = Vector2(150, 200)  # Smaller cards
+			card_visual.custom_minimum_size = Vector2(120, 160)  # Smaller cards
+			card_visual.size_flags_vertical = Control.SIZE_SHRINK_CENTER  # Don't stretch vertically
 			card_visual.card_clicked.connect(_on_common_card_selected.bind(i, j))
 
 func _on_heal_selected(player_index: int):
@@ -150,7 +151,7 @@ func _on_heal_selected(player_index: int):
 	players_ready += 1
 	check_all_ready()
 
-func _on_common_card_selected(player_index: int, card_index: int):
+func _on_common_card_selected(card: Card, player_index: int, card_index: int):
 	var chosen_card = common_choices_per_player[player_index][card_index]
 	var player = game_manager.players[player_index]
 
