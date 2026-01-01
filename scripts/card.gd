@@ -86,3 +86,56 @@ func get_full_description() -> String:
 
 func can_afford(current_energy: int) -> bool:
 	return current_energy >= energy_cost
+
+# Network serialization
+func serialize() -> Dictionary:
+	return {
+		"card_name": card_name,
+		"description": description,
+		"card_type": card_type,
+		"target_type": target_type,
+		"energy_cost": energy_cost,
+		"damage": damage,
+		"heal_amount": heal_amount,
+		"shield_amount": shield_amount,
+		"draw_cards": draw_cards,
+		"is_upgraded": is_upgraded,
+		"apply_poison": apply_poison,
+		"apply_burn": apply_burn,
+		"apply_weakness": apply_weakness,
+		"apply_vulnerable": apply_vulnerable,
+		"apply_strength": apply_strength,
+		"apply_armor": apply_armor,
+		"piercing": piercing,
+		"lifesteal": lifesteal,
+		"multi_hit": multi_hit,
+		"aoe_damage": aoe_damage,
+		"generate_cards": generate_cards,
+		"scry_amount": scry_amount
+	}
+
+static func deserialize(data: Dictionary) -> Card:
+	var card = Card.new()
+	card.card_name = data.card_name
+	card.description = data.description
+	card.card_type = data.card_type as CardType
+	card.target_type = data.target_type as TargetType
+	card.energy_cost = data.energy_cost
+	card.damage = data.damage
+	card.heal_amount = data.heal_amount
+	card.shield_amount = data.shield_amount
+	card.draw_cards = data.draw_cards
+	card.is_upgraded = data.is_upgraded
+	card.apply_poison = data.apply_poison
+	card.apply_burn = data.apply_burn
+	card.apply_weakness = data.apply_weakness
+	card.apply_vulnerable = data.apply_vulnerable
+	card.apply_strength = data.apply_strength
+	card.apply_armor = data.apply_armor
+	card.piercing = data.piercing
+	card.lifesteal = data.lifesteal
+	card.multi_hit = data.multi_hit
+	card.aoe_damage = data.aoe_damage
+	card.generate_cards = data.generate_cards
+	card.scry_amount = data.scry_amount
+	return card

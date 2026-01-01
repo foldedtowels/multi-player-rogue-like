@@ -27,6 +27,9 @@ var hand: Array[Card] = []
 var discard_pile: Array[Card] = []
 var exhaust_pile: Array[Card] = []
 
+# Network ownership
+var network_owner_id: int = -1  # Which peer owns this character
+
 func _init():
 	current_health = max_health
 	max_energy = starting_energy
@@ -182,3 +185,50 @@ func duplicate_character() -> Character:
 	new_char.reset_deck()  # Initialize deck now that starting_deck is populated
 
 	return new_char
+
+# Network synchronization functions
+func sync_state_to_clients():
+	# Server syncs state to all clients
+	if not multiplayer.is_server(): return
+	rpc("receive_state_sync", {
+		"current_health": current_health,
+		"max_health": max_health,
+		"current_energy": current_energy,
+		"max_energy": max_energy,
+		"shield": shield,
+		"poison": poison,
+		"burn": burn,
+		"strength": strength,
+		"vulnerable": vulnerable,
+		"weakness": weakness,
+		"armor": armor
+	})
+
+@rpc("any_peer", "call_local", "reliable")
+func receive_state_sync(state: Dictionary):
+	current_health = state.current_health
+	max_health = state.max_health
+	current_energy = state.current_energy
+	max_energy = state.max_energy
+	shield = state.shield
+	poison = state.poison
+	burn = state.burn
+	strength = state.strength
+	vulnerable = state.vulnerable
+	weakness = state.weakness
+	armor = state.armor
+
+# Private hand sync (only to owner)
+func sync_hand_to_owner():
+	if not multiplayer.is_server(): return
+	if network_owner_id == -1: return
+	var hand_data: Array[Dictionary] = []
+	for card in hand:
+		hand_data.append(card.serialize())
+	rpc_id(network_owner_id, "receive_hand_sync", hand_data)
+
+@rpc("any_peer", "call_local", "reliable")
+func receive_hand_sync(hand_data: Array):
+	hand.clear()
+	for card_dict in hand_data:
+		hand.append(Card.deserialize(card_dict))

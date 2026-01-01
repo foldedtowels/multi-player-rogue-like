@@ -24,6 +24,10 @@ var round_number: int = 1
 var hero_db: Node
 var boss_db: Node
 
+# Network tracking
+var network_player_mapping: Dictionary = {}  # peer_id -> player_index
+var local_player_index: int = -1  # Which character this client controls
+
 func _ready():
 	hero_db = get_node("/root/HeroDatabase")
 	boss_db = get_node("/root/BossDatabase")
@@ -66,7 +70,27 @@ func start_boss_encounter():
 	# Characters are already initialized via their constructors
 	# Don't call _init() manually - it's automatically called by Character.new()
 
+	# Assign network ownership
+	assign_characters_to_network_peers()
+
 	# Don't start turn here - let combat scene do it after _ready()
+
+func assign_characters_to_network_peers():
+	# Server assigns character indices to network peers
+	if not multiplayer.is_server(): return
+	var peer_ids = NetworkManager.players.keys()
+	for i in range(min(3, peer_ids.size())):
+		network_player_mapping[peer_ids[i]] = i
+		rpc("receive_character_assignment", peer_ids[i], i)
+
+@rpc("any_peer", "call_local", "reliable")
+func receive_character_assignment(peer_id: int, character_index: int):
+	network_player_mapping[peer_id] = character_index
+	if peer_id == multiplayer.get_unique_id():
+		local_player_index = character_index
+	# Assign network owner to character
+	if character_index < players.size():
+		players[character_index].network_owner_id = peer_id
 
 func start_player_turn(player_index: int):
 	if player_index >= players.size():

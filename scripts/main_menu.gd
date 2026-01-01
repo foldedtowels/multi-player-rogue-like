@@ -2,14 +2,19 @@ extends Control
 
 @onready var title_label: Label = $VBoxContainer/TitleLabel
 @onready var start_button: Button = $VBoxContainer/StartButton
+@onready var multiplayer_button: Button = $VBoxContainer/MultiplayerButton
 @onready var quit_button: Button = $VBoxContainer/QuitButton
 
 func _ready():
 	start_button.pressed.connect(_on_start_pressed)
+	multiplayer_button.pressed.connect(_on_multiplayer_pressed)
 	quit_button.pressed.connect(_on_quit_pressed)
 
 func _on_start_pressed():
 	get_tree().change_scene_to_file("res://scenes/character_selection.tscn")
+
+func _on_multiplayer_pressed():
+	get_tree().change_scene_to_file("res://scenes/lobby.tscn")
 
 func _on_quit_pressed():
 	get_tree().quit()
