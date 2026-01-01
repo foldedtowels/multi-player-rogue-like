@@ -86,6 +86,8 @@ func add_player(id: int, player_name: String):
 		"character_index": -1
 	}
 	print("[NetworkManager] Player added: " + player_name + " (ID: " + str(id) + ")")
+	# Emit signal so lobby UI updates
+	player_connected.emit(id)
 
 func remove_player(id: int):
 	if players.has(id):
