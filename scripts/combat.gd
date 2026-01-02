@@ -499,7 +499,8 @@ func display_queued_cards_for_action():
 
 			if is_my_cards:
 				# Connect to queued card click handler
-				card_visual.card_clicked.connect(_on_queued_card_clicked.bind(card))
+				# Note: Signal already emits the card, no need to bind
+				card_visual.card_clicked.connect(_on_queued_card_clicked)
 				print("[Combat] Connected signal for: %s" % card.card_name)
 
 			# Tint other players' cards differently
