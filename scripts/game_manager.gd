@@ -419,6 +419,12 @@ func _server_receive_queued_card(player_index: int, card_data: Dictionary):
 
 @rpc("any_peer", "call_local", "reliable")
 func client_receive_queued_card(player_index: int, card_data: Dictionary):
+	# Server already added the card in _server_receive_queued_card
+	# Don't add it again when receiving own broadcast
+	if multiplayer.is_server():
+		print("[GameManager] Server skipping client_receive (already added)")
+		return
+
 	var card = Card.deserialize(card_data)
 
 	# Add to client's queued cards

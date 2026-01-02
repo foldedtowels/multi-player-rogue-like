@@ -44,6 +44,12 @@ func _ready():
 	ready_button.pressed.connect(_on_ready_pressed)
 	pass_button.pressed.connect(_on_pass_pressed)
 
+	# CRITICAL FIX: Allow mouse events to pass through panels to reach cards
+	var hand_panel = $BottomArea/HandPanel
+	hand_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hand_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	print("[Combat] Set mouse_filter to IGNORE for HandPanel and HandContainer")
+
 	update_all_displays()
 
 	# Start the first round with simultaneous selection phase
@@ -483,6 +489,9 @@ func display_queued_cards_for_action():
 			total_cards += 1
 
 			card_visual.set_card(card)
+
+			# Ensure card visual can receive mouse events
+			card_visual.mouse_filter = Control.MOUSE_FILTER_STOP
 
 			# Only your own queued cards are clickable
 			card_visual.set_playable(is_my_cards)
