@@ -53,8 +53,8 @@ var last_played_cards: Dictionary = {}
 
 # Simultaneous card selection system
 var players_ready: Dictionary = {}  # player_index -> bool
-var queued_cards: Dictionary = {}   # player_index -> Array[Card]
-var players_acted_this_round: Dictionary = {}  # player_index -> bool
+var queued_actions: Dictionary = {}   # player_index -> Array[{card: Card, target: Character}]
+var action_commander_index: int = 0  # Which player controls action phase this round
 
 func _ready():
 	hero_db = get_node("/root/HeroDatabase")
@@ -372,8 +372,11 @@ func start_round():
 	print("[GameManager] Starting new round %d" % round_number)
 	turn_phase = TurnPhase.PLAYER_SELECTION
 	players_ready.clear()
-	queued_cards.clear()
-	players_acted_this_round.clear()
+	queued_actions.clear()
+
+	# Rotate action commander each round (Player 0 → 1 → 2 → 0...)
+	action_commander_index = (round_number - 1) % players.size()
+	print("[GameManager] Action commander this round: Player %d" % action_commander_index)
 
 	# All alive players start their turn (draw cards, gain energy)
 	for i in range(players.size()):
@@ -382,7 +385,7 @@ func start_round():
 			player.start_turn()
 			broadcast_character_state(player)
 			send_hand_to_owner(player)
-			queued_cards[i] = []
+			queued_actions[i] = []
 
 	# Notify all clients to enter selection phase
 	rpc("client_selection_phase_started")
@@ -442,58 +445,39 @@ func start_action_phase():
 	if not multiplayer.is_server(): return
 
 	turn_phase = TurnPhase.PLAYER_ACTION
-	players_acted_this_round.clear()
 
-	# Notify all clients
-	rpc("client_action_phase_started")
+	# Notify all clients (including who is the action commander)
+	rpc("client_action_phase_started", action_commander_index)
 
 @rpc("any_peer", "call_local", "reliable")
-func client_action_phase_started():
+func client_action_phase_started(commander_index: int):
 	turn_phase = TurnPhase.PLAYER_ACTION
+	action_commander_index = commander_index
 	game_state_changed.emit()
-	print("[GameManager] Action phase started - players can now play cards!")
+	print("[GameManager] Action phase started - Player %d is the action commander!" % commander_index)
 
-# Player passes their action (done playing cards this round)
-func player_pass():
+# Commander finishes action phase (all cards played or manually ends)
+func end_action_phase():
 	var my_index = local_player_index
 	if my_index == -1: return
 
+	# Only the action commander can end the phase
+	if my_index != action_commander_index:
+		print("[GameManager] Only the action commander can end the action phase!")
+		return
+
 	if multiplayer.is_server():
-		_server_player_pass(my_index)
+		_server_end_action_phase()
 	else:
-		rpc_id(1, "server_player_pass", my_index)
+		rpc_id(1, "server_end_action_phase")
 
 @rpc("any_peer", "call_remote", "reliable")
-func server_player_pass(player_index: int):
-	_server_player_pass(player_index)
+func server_end_action_phase():
+	_server_end_action_phase()
 
-func _server_player_pass(player_index: int):
-	players_acted_this_round[player_index] = true
-	print("[GameManager] Player %d passed (%d/%d done)" % [player_index, players_acted_this_round.size(), players.size()])
-
-	# Broadcast pass status
-	rpc("client_player_pass_status", players_acted_this_round.keys())
-
-	# Check if all players are done
-	check_action_phase_complete()
-
-@rpc("any_peer", "call_local", "reliable")
-func client_player_pass_status(passed_indices: Array):
-	for idx in passed_indices:
-		players_acted_this_round[idx] = true
-	game_state_changed.emit()
-
-func check_action_phase_complete():
-	if not multiplayer.is_server(): return
-
-	var alive_count = 0
-	for player in players:
-		if player.is_alive():
-			alive_count += 1
-
-	if players_acted_this_round.size() >= alive_count:
-		print("[GameManager] All players done acting! Starting enemy turn")
-		start_enemy_turn_phase()
+func _server_end_action_phase():
+	print("[GameManager] Action commander ended action phase. Starting enemy turn")
+	start_enemy_turn_phase()
 
 # Start enemy turn phase
 func start_enemy_turn_phase():

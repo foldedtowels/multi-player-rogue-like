@@ -4,6 +4,7 @@ var game_manager: Node
 var current_player: Character
 var selected_card: Card
 var awaiting_target: bool = false
+var queued_actions: Array = []  # Array of {card: Card, target: Character}
 
 # UI References - New multiplayer layout
 @onready var left_player_panel: Panel = $MainArea/LeftPlayerPanel
@@ -13,10 +14,10 @@ var awaiting_target: bool = false
 @onready var hand_container: HBoxContainer = $BottomArea/HandPanel/HandContainer
 @onready var deck_count_label: Label = $BottomArea/YourCharacterPanel/HBoxContainer/DeckCountLabel
 @onready var discard_count_label: Label = $BottomArea/YourCharacterPanel/HBoxContainer/DiscardCountLabel
-@onready var phase_label: Label = $ControlPanel/VBoxContainer/PhaseLabel
-@onready var ready_button: Button = $ControlPanel/VBoxContainer/ReadyButton
-@onready var pass_button: Button = $ControlPanel/VBoxContainer/PassButton
-@onready var ready_status_label: Label = $ControlPanel/VBoxContainer/ReadyStatusLabel
+@onready var phase_label: Label = $BottomArea/YourCharacterPanel/HBoxContainer/PhaseLabel
+@onready var ready_button: Button = $BottomArea/YourCharacterPanel/HBoxContainer/ReadyButton
+@onready var pass_button: Button = $BottomArea/YourCharacterPanel/HBoxContainer/PassButton
+@onready var ready_status_label: Label = $BottomArea/YourCharacterPanel/HBoxContainer/ReadyStatusLabel
 @onready var turn_label: Label = $TopBar/TurnLabel
 @onready var energy_label: Label = $TopBar/EnergyLabel
 @onready var round_label: Label = $TopBar/RoundLabel
@@ -213,12 +214,12 @@ func update_hand_display():
 
 			card_visual.set_card(card)
 
-			# Cards are only playable during ACTION phase
-			var is_action_phase = game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION
+			# Cards are clickable during SELECTION phase (to queue)
+			# Cards are NOT clickable during ACTION phase (queued cards are played instead)
+			var is_selection_phase = game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION
 			var can_afford = card.can_afford(my_character.current_energy)
-			var not_passed = not game_manager.players_acted_this_round.has(my_index)
 
-			card_visual.set_playable(is_action_phase and can_afford and not_passed)
+			card_visual.set_playable(is_selection_phase and can_afford)
 			card_visual.card_clicked.connect(_on_card_clicked)
 
 func update_enemy_displays():
@@ -348,21 +349,21 @@ func update_button_states():
 			ready_status_label.text = "Ready: %d/%d" % [ready_count, total_alive]
 
 		game_manager.TurnPhase.PLAYER_ACTION:
-			phase_label.text = "Action Phase"
-			ready_button.visible = false
-			pass_button.visible = true
+			var is_commander = (my_index == game_manager.action_commander_index)
 
-			# Disable pass if already passed
-			var i_passed = game_manager.players_acted_this_round.has(my_index)
-			pass_button.disabled = i_passed
-
-			# Update ready status to show who has passed
-			var passed_count = game_manager.players_acted_this_round.size()
-			var total_alive = 0
-			for player in game_manager.players:
-				if player.is_alive():
-					total_alive += 1
-			ready_status_label.text = "Passed: %d/%d" % [passed_count, total_alive]
+			if is_commander:
+				phase_label.text = "YOUR TURN - Pick card order"
+				ready_button.visible = false
+				pass_button.visible = true
+				pass_button.disabled = false
+				pass_button.text = "Done"
+				ready_status_label.text = "You control this round"
+			else:
+				phase_label.text = "Waiting for Commander"
+				ready_button.visible = false
+				pass_button.visible = false
+				var commander_name = game_manager.players[game_manager.action_commander_index].character_name
+				ready_status_label.text = "%s is choosing order" % commander_name
 
 		game_manager.TurnPhase.ENEMY_TURN:
 			phase_label.text = "Enemy Turn"
@@ -396,43 +397,58 @@ func _on_combat_ended(victory: bool):
 	pass_button.disabled = true
 
 func _on_card_clicked(card: Card):
-	# Only allow card clicks during ACTION phase
 	var my_index = game_manager.local_player_index
 	if my_index == -1:
 		return
 
-	# Must be in ACTION phase to play cards
-	if game_manager.turn_phase != game_manager.TurnPhase.PLAYER_ACTION:
-		return
-
-	# Can't play cards if you've already passed
-	if game_manager.players_acted_this_round.has(my_index):
-		return
-
 	var my_character = game_manager.players[my_index]
 
-	if not card.can_afford(my_character.current_energy):
+	# SELECTION PHASE: Queue cards
+	if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION:
+		if not card.can_afford(my_character.current_energy):
+			return
+
+		selected_card = card
+
+		# Check if card needs targeting
+		match card.target_type:
+			Card.TargetType.SELF:
+				# Queue immediately with self as target
+				queue_action(card, my_character)
+				selected_card = null
+			Card.TargetType.ALL_ALLIES, Card.TargetType.ALL_ENEMIES:
+				# Queue immediately, use first enemy as placeholder target
+				var first_enemy = game_manager.enemies[0] if game_manager.enemies.size() > 0 else null
+				if first_enemy:
+					queue_action(card, first_enemy)
+				selected_card = null
+			_:
+				# Need to select a target
+				awaiting_target = true
+				turn_label.text = "Select a target to queue..."
+
+	# ACTION PHASE: Only commander can click queued cards to play them
+	elif game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION:
+		# This will be handled by clicking queued card visuals, not hand cards
+		pass
+
+func queue_action(card: Card, target: Character):
+	var my_index = game_manager.local_player_index
+	if my_index == -1:
 		return
 
-	selected_card = card
+	# Add to local queue
+	queued_actions.append({"card": card, "target": target})
 
-	# Check if card needs targeting
-	match card.target_type:
-		Card.TargetType.SELF:
-			# Play immediately on self
-			game_manager.play_card(my_character, card, my_character)
-			selected_card = null
-		Card.TargetType.ALL_ALLIES, Card.TargetType.ALL_ENEMIES:
-			# Play immediately, no targeting needed
-			# Use first alive enemy as target (AoE will handle all)
-			var first_enemy = game_manager.enemies[0] if game_manager.enemies.size() > 0 else null
-			if first_enemy:
-				game_manager.play_card(my_character, card, first_enemy)
-			selected_card = null
-		_:
-			# Need to select a target
-			awaiting_target = true
-			turn_label.text = "Select a target..."
+	print("[Combat] Queued card: %s → %s" % [card.card_name, target.character_name])
+
+	# Remove card from hand (moved to queue)
+	var my_character = game_manager.players[my_index]
+	my_character.hand.erase(card)
+
+	# Update displays
+	update_hand_display()
+	# TODO: Update queue display
 
 func _on_character_clicked(event: InputEvent, character: Character):
 	if not awaiting_target or not selected_card:
@@ -451,11 +467,18 @@ func _on_character_clicked(event: InputEvent, character: Character):
 		if valid_target:
 			var my_index = game_manager.local_player_index
 			if my_index >= 0 and my_index < game_manager.players.size():
-				var my_character = game_manager.players[my_index]
-				game_manager.play_card(my_character, selected_card, character)
-				selected_card = null
-				awaiting_target = false
-				turn_label.text = "Turn: %s" % my_character.character_name
+				# SELECTION PHASE: Queue the action
+				if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION:
+					queue_action(selected_card, character)
+					selected_card = null
+					awaiting_target = false
+					turn_label.text = "Selection Phase"
+				# ACTION PHASE: Play immediately (if commander clicks)
+				elif game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION:
+					var my_character = game_manager.players[my_index]
+					game_manager.play_card(my_character, selected_card, character)
+					selected_card = null
+					awaiting_target = false
 
 func _on_ready_pressed():
 	# Mark player as ready during selection phase
@@ -465,8 +488,8 @@ func _on_ready_pressed():
 	update_button_states()
 
 func _on_pass_pressed():
-	# Mark player as done acting during action phase
-	game_manager.player_pass()
+	# Commander ends action phase (all queued cards played or manually ending)
+	game_manager.end_action_phase()
 	awaiting_target = false
 	selected_card = null
 	update_button_states()
