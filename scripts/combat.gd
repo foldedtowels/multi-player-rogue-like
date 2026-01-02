@@ -13,7 +13,10 @@ var awaiting_target: bool = false
 @onready var hand_container: HBoxContainer = $BottomArea/HandPanel/HandContainer
 @onready var deck_count_label: Label = $BottomArea/YourCharacterPanel/HBoxContainer/DeckCountLabel
 @onready var discard_count_label: Label = $BottomArea/YourCharacterPanel/HBoxContainer/DiscardCountLabel
-@onready var end_turn_button: Button = $ControlPanel/EndTurnButton
+@onready var phase_label: Label = $ControlPanel/VBoxContainer/PhaseLabel
+@onready var ready_button: Button = $ControlPanel/VBoxContainer/ReadyButton
+@onready var pass_button: Button = $ControlPanel/VBoxContainer/PassButton
+@onready var ready_status_label: Label = $ControlPanel/VBoxContainer/ReadyStatusLabel
 @onready var turn_label: Label = $TopBar/TurnLabel
 @onready var energy_label: Label = $TopBar/EnergyLabel
 @onready var round_label: Label = $TopBar/RoundLabel
@@ -27,20 +30,22 @@ func _ready():
 	# Add animated background
 	create_animated_background()
 
-	# Connect signals
+	# Connect game manager signals
 	game_manager.player_turn_started.connect(_on_player_turn_started)
 	game_manager.boss_turn_started.connect(_on_boss_turn_started)
 	game_manager.card_played.connect(_on_card_played)
 	game_manager.game_state_changed.connect(_on_game_state_changed)
 	game_manager.combat_ended.connect(_on_combat_ended)
 
-	end_turn_button.pressed.connect(_on_end_turn_pressed)
+	# Connect button signals
+	ready_button.pressed.connect(_on_ready_pressed)
+	pass_button.pressed.connect(_on_pass_pressed)
 
 	update_all_displays()
 
-	# Start the first player's turn after signals are connected
+	# Start the first round with simultaneous selection phase
 	if game_manager.current_state == game_manager.GameState.COMBAT:
-		game_manager.start_player_turn(0)
+		game_manager.start_round()
 
 func create_animated_background():
 	var bg = ColorRect.new()
@@ -56,6 +61,7 @@ func update_all_displays():
 	update_hand_display()
 	update_deck_counts()
 	update_turn_display()
+	update_button_states()
 
 func update_player_displays():
 	var my_index = game_manager.local_player_index
@@ -195,17 +201,24 @@ func update_hand_display():
 
 	var my_character = game_manager.players[my_index]
 
-	# Only show hand if it's your turn
-	var is_my_turn = game_manager.local_player_index == game_manager.current_player_index
+	# Show hand during SELECTION and ACTION phases (not during ENEMY_TURN)
+	var show_hand = (game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION or
+					 game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION)
 
-	if is_my_turn:
+	if show_hand:
 		# Display cards in hand (only YOUR cards)
 		for card in my_character.hand:
 			var card_visual = card_scene.instantiate()
 			hand_container.add_child(card_visual)
 
 			card_visual.set_card(card)
-			card_visual.set_playable(card.can_afford(my_character.current_energy))
+
+			# Cards are only playable during ACTION phase
+			var is_action_phase = game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION
+			var can_afford = card.can_afford(my_character.current_energy)
+			var not_passed = not game_manager.players_acted_this_round.has(my_index)
+
+			card_visual.set_playable(is_action_phase and can_afford and not_passed)
 			card_visual.card_clicked.connect(_on_card_clicked)
 
 func update_enemy_displays():
@@ -294,24 +307,77 @@ func update_enemy_display(display: Panel, enemy: Character):
 	display.add_theme_stylebox_override("panel", style)
 
 func update_turn_display():
-	if game_manager.current_player_index >= 0 and game_manager.current_player_index < game_manager.players.size():
-		var current = game_manager.players[game_manager.current_player_index]
-		turn_label.text = "Turn: %s" % current.character_name
-		energy_label.text = "Energy: %d/%d" % [current.current_energy, current.max_energy]
+	var my_index = game_manager.local_player_index
+	if my_index >= 0 and my_index < game_manager.players.size():
+		var my_character = game_manager.players[my_index]
+		energy_label.text = "Energy: %d/%d" % [my_character.current_energy, my_character.max_energy]
 
 	round_label.text = "Round: %d" % game_manager.round_number
 
+	# Update turn label based on phase
+	match game_manager.turn_phase:
+		game_manager.TurnPhase.PLAYER_SELECTION:
+			turn_label.text = "Selection Phase"
+		game_manager.TurnPhase.PLAYER_ACTION:
+			turn_label.text = "Action Phase"
+		game_manager.TurnPhase.ENEMY_TURN:
+			turn_label.text = "Enemy Turn"
+
+func update_button_states():
+	var my_index = game_manager.local_player_index
+	if my_index == -1:
+		return
+
+	# Update based on current turn phase
+	match game_manager.turn_phase:
+		game_manager.TurnPhase.PLAYER_SELECTION:
+			phase_label.text = "Selection Phase"
+			ready_button.visible = true
+			pass_button.visible = false
+
+			# Disable ready if already ready
+			var i_am_ready = game_manager.players_ready.has(my_index)
+			ready_button.disabled = i_am_ready
+
+			# Update ready status
+			var ready_count = game_manager.players_ready.size()
+			var total_alive = 0
+			for player in game_manager.players:
+				if player.is_alive():
+					total_alive += 1
+			ready_status_label.text = "Ready: %d/%d" % [ready_count, total_alive]
+
+		game_manager.TurnPhase.PLAYER_ACTION:
+			phase_label.text = "Action Phase"
+			ready_button.visible = false
+			pass_button.visible = true
+
+			# Disable pass if already passed
+			var i_passed = game_manager.players_acted_this_round.has(my_index)
+			pass_button.disabled = i_passed
+
+			# Update ready status to show who has passed
+			var passed_count = game_manager.players_acted_this_round.size()
+			var total_alive = 0
+			for player in game_manager.players:
+				if player.is_alive():
+					total_alive += 1
+			ready_status_label.text = "Passed: %d/%d" % [passed_count, total_alive]
+
+		game_manager.TurnPhase.ENEMY_TURN:
+			phase_label.text = "Enemy Turn"
+			ready_button.visible = false
+			pass_button.visible = false
+			ready_status_label.text = "Enemies Acting..."
+
 func _on_player_turn_started(player_index: int):
-	current_player = game_manager.players[player_index]
+	# Legacy signal - still emitted by old boss AI code
+	# Just update displays for now
 	update_all_displays()
 
-	# Only enable end turn button if it's YOUR turn
-	var is_my_turn = game_manager.local_player_index == player_index
-	end_turn_button.disabled = not is_my_turn
-
 func _on_boss_turn_started():
-	turn_label.text = "Turn: Boss"
-	end_turn_button.disabled = true
+	# Legacy signal - still emitted by old boss AI code
+	# Just update displays for now
 	update_all_displays()
 
 func _on_card_played(character: Character, card: Card, target: Character):
@@ -326,12 +392,21 @@ func _on_combat_ended(victory: bool):
 	else:
 		turn_label.text = "DEFEAT!"
 
-	end_turn_button.disabled = true
+	ready_button.disabled = true
+	pass_button.disabled = true
 
 func _on_card_clicked(card: Card):
-	# Only allow card clicks if it's your turn
+	# Only allow card clicks during ACTION phase
 	var my_index = game_manager.local_player_index
-	if my_index == -1 or my_index != game_manager.current_player_index:
+	if my_index == -1:
+		return
+
+	# Must be in ACTION phase to play cards
+	if game_manager.turn_phase != game_manager.TurnPhase.PLAYER_ACTION:
+		return
+
+	# Can't play cards if you've already passed
+	if game_manager.players_acted_this_round.has(my_index):
 		return
 
 	var my_character = game_manager.players[my_index]
@@ -382,10 +457,16 @@ func _on_character_clicked(event: InputEvent, character: Character):
 				awaiting_target = false
 				turn_label.text = "Turn: %s" % my_character.character_name
 
-func _on_end_turn_pressed():
-	# Only allow ending turn if it's your turn
-	var my_index = game_manager.local_player_index
-	if my_index == game_manager.current_player_index:
-		game_manager.end_player_turn()
-		awaiting_target = false
-		selected_card = null
+func _on_ready_pressed():
+	# Mark player as ready during selection phase
+	game_manager.player_ready()
+	awaiting_target = false
+	selected_card = null
+	update_button_states()
+
+func _on_pass_pressed():
+	# Mark player as done acting during action phase
+	game_manager.player_pass()
+	awaiting_target = false
+	selected_card = null
+	update_button_states()

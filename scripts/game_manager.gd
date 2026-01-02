@@ -363,6 +363,209 @@ func play_enemy_turn(enemy: Character):
 	# Sync state to all clients
 	broadcast_character_state(enemy)
 
+## NEW SIMULTANEOUS TURN SYSTEM ##
+
+# Start a new round with selection phase
+func start_round():
+	if not multiplayer.is_server(): return
+
+	print("[GameManager] Starting new round %d" % round_number)
+	turn_phase = TurnPhase.PLAYER_SELECTION
+	players_ready.clear()
+	queued_cards.clear()
+	players_acted_this_round.clear()
+
+	# All alive players start their turn (draw cards, gain energy)
+	for i in range(players.size()):
+		var player = players[i]
+		if player.is_alive():
+			player.start_turn()
+			broadcast_character_state(player)
+			send_hand_to_owner(player)
+			queued_cards[i] = []
+
+	# Notify all clients to enter selection phase
+	rpc("client_selection_phase_started")
+
+@rpc("any_peer", "call_local", "reliable")
+func client_selection_phase_started():
+	turn_phase = TurnPhase.PLAYER_SELECTION
+	game_state_changed.emit()
+	print("[GameManager] Selection phase started")
+
+# Player marks ready (done selecting cards)
+func player_ready():
+	var my_index = local_player_index
+	if my_index == -1: return
+
+	# Send to server
+	if multiplayer.is_server():
+		_server_player_ready(my_index)
+	else:
+		rpc_id(1, "server_player_ready", my_index)
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_player_ready(player_index: int):
+	_server_player_ready(player_index)
+
+func _server_player_ready(player_index: int):
+	players_ready[player_index] = true
+	print("[GameManager] Player %d ready (%d/%d)" % [player_index, players_ready.size(), players.size()])
+
+	# Broadcast ready status
+	rpc("client_player_ready_status", players_ready.keys())
+
+	# Check if all alive players are ready
+	check_all_players_ready()
+
+@rpc("any_peer", "call_local", "reliable")
+func client_player_ready_status(ready_indices: Array):
+	players_ready.clear()
+	for idx in ready_indices:
+		players_ready[idx] = true
+	game_state_changed.emit()
+
+func check_all_players_ready():
+	if not multiplayer.is_server(): return
+
+	var alive_count = 0
+	for player in players:
+		if player.is_alive():
+			alive_count += 1
+
+	if players_ready.size() >= alive_count:
+		print("[GameManager] All players ready! Starting action phase")
+		start_action_phase()
+
+# Transition to action phase
+func start_action_phase():
+	if not multiplayer.is_server(): return
+
+	turn_phase = TurnPhase.PLAYER_ACTION
+	players_acted_this_round.clear()
+
+	# Notify all clients
+	rpc("client_action_phase_started")
+
+@rpc("any_peer", "call_local", "reliable")
+func client_action_phase_started():
+	turn_phase = TurnPhase.PLAYER_ACTION
+	game_state_changed.emit()
+	print("[GameManager] Action phase started - players can now play cards!")
+
+# Player passes their action (done playing cards this round)
+func player_pass():
+	var my_index = local_player_index
+	if my_index == -1: return
+
+	if multiplayer.is_server():
+		_server_player_pass(my_index)
+	else:
+		rpc_id(1, "server_player_pass", my_index)
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_player_pass(player_index: int):
+	_server_player_pass(player_index)
+
+func _server_player_pass(player_index: int):
+	players_acted_this_round[player_index] = true
+	print("[GameManager] Player %d passed (%d/%d done)" % [player_index, players_acted_this_round.size(), players.size()])
+
+	# Broadcast pass status
+	rpc("client_player_pass_status", players_acted_this_round.keys())
+
+	# Check if all players are done
+	check_action_phase_complete()
+
+@rpc("any_peer", "call_local", "reliable")
+func client_player_pass_status(passed_indices: Array):
+	for idx in passed_indices:
+		players_acted_this_round[idx] = true
+	game_state_changed.emit()
+
+func check_action_phase_complete():
+	if not multiplayer.is_server(): return
+
+	var alive_count = 0
+	for player in players:
+		if player.is_alive():
+			alive_count += 1
+
+	if players_acted_this_round.size() >= alive_count:
+		print("[GameManager] All players done acting! Starting enemy turn")
+		start_enemy_turn_phase()
+
+# Start enemy turn phase
+func start_enemy_turn_phase():
+	if not multiplayer.is_server(): return
+
+	turn_phase = TurnPhase.ENEMY_TURN
+
+	# End all player turns
+	for player in players:
+		if player.is_alive():
+			player.end_turn()
+			broadcast_character_state(player)
+
+	# Notify clients
+	rpc("client_enemy_turn_phase_started")
+
+	# Play enemy turns
+	await get_tree().create_timer(0.5).timeout
+	start_enemies_turn()
+
+	# After enemies done, check victory/defeat
+	await get_tree().create_timer(0.5).timeout
+
+	if check_combat_end():
+		return
+
+	# Start next round
+	round_number += 1
+	start_round()
+
+@rpc("any_peer", "call_local", "reliable")
+func client_enemy_turn_phase_started():
+	turn_phase = TurnPhase.ENEMY_TURN
+	game_state_changed.emit()
+
+func check_combat_end() -> bool:
+	# Check if all enemies dead (victory)
+	var enemies_alive = false
+	for enemy in enemies:
+		if enemy.is_alive():
+			enemies_alive = true
+			break
+
+	if not enemies_alive:
+		rpc("client_combat_victory")
+		return true
+
+	# Check if all players dead (defeat)
+	var players_alive = false
+	for player in players:
+		if player.is_alive():
+			players_alive = true
+			break
+
+	if not players_alive:
+		rpc("client_combat_defeat")
+		return true
+
+	return false
+
+@rpc("any_peer", "call_local", "reliable")
+func client_combat_victory():
+	combat_ended.emit(true)
+	current_state = GameState.REWARD
+
+@rpc("any_peer", "call_local", "reliable")
+func client_combat_defeat():
+	combat_ended.emit(false)
+	current_state = GameState.GAME_OVER
+
+## END OF NEW SIMULTANEOUS TURN SYSTEM ##
+
 func select_boss_target(card: Card) -> Character:
 	# Legacy function for backward compatibility
 	return select_enemy_target(current_boss, card)

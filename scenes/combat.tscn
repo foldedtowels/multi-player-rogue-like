@@ -300,11 +300,27 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 20
 
-[node name="EndTurnButton" type="Button" parent="ControlPanel"]
+[node name="PhaseLabel" type="Label" parent="ControlPanel/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Selection Phase"
+horizontal_alignment = 1
+
+[node name="ReadyButton" type="Button" parent="ControlPanel/VBoxContainer"]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
-offset_top = 10.0
-offset_right = 180.0
-offset_bottom = 70.0
 theme_override_font_sizes/font_size = 18
-text = "End Turn"
+text = "Ready"
+
+[node name="PassButton" type="Button" parent="ControlPanel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Pass"
+visible = false
+
+[node name="ReadyStatusLabel" type="Label" parent="ControlPanel/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Ready: 0/3"
+horizontal_alignment = 1
