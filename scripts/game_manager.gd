@@ -500,7 +500,7 @@ func remove_queued_card(player_index: int, card: Card):
 		if queued_card.card_name == card.card_name:  # Match by card name
 			queued_cards[player_index].remove_at(i)
 			print("[GameManager] Removed queued card: %s from Player %d" % [card.card_name, player_index])
-			game_state_changed.emit()
+			# Don't emit game_state_changed here - play_card() already emits it
 			return
 
 # Player finishes their actions (clicked Done)

@@ -222,20 +222,21 @@ func update_hand_display():
 			# Cards are clickable if enough energy remaining
 			var can_afford = (card.energy_cost <= remaining_energy)
 			card_visual.set_playable(can_afford)
-			card_visual.card_clicked.connect(_on_card_clicked)
 
-	# During ACTION phase: Show queued cards (regenerate when queue changes)
+			# Avoid duplicate connections
+			if not card_visual.card_clicked.is_connected(_on_card_clicked):
+				card_visual.card_clicked.connect(_on_card_clicked)
+
+	# During ACTION phase: Show queued cards (but don't regenerate constantly!)
 	elif game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION:
 		# Don't regenerate during animations
 		if animating_phase_transition:
 			return
 
-		# Only regenerate if a card was removed (game_state_changed)
-		if hand_container.get_child_count() == 0:
-			return  # Initial display handled by animate_selection_to_action
-		else:
-			# Regenerate queue display (card was played and removed)
-			display_queued_cards_for_action()
+		# Don't regenerate on every game_state_changed!
+		# The initial display from animate_selection_to_action() should persist.
+		# Cards will be removed individually when played.
+		pass
 
 func update_enemy_displays():
 	# Clear existing enemy UI
@@ -431,6 +432,14 @@ func animate_selection_to_action():
 
 	animating_phase_transition = false
 
+func remove_card_visual_from_display(card: Card):
+	# Remove the visual for a specific card that was just played
+	for child in hand_container.get_children():
+		if child.has_method("set_card") and child.card_data and child.card_data.card_name == card.card_name:
+			print("[Combat] Removing card visual: %s" % card.card_name)
+			child.queue_free()
+			return
+
 func display_queued_cards_for_action():
 	print("[Combat] Displaying queued cards for ACTION phase")
 
@@ -459,8 +468,9 @@ func display_queued_cards_for_action():
 			# Only your own queued cards are clickable
 			card_visual.set_playable(is_my_cards)
 			if is_my_cards:
-				# Connect to queued card click handler
-				card_visual.card_clicked.connect(_on_queued_card_clicked.bind(card))
+				# Connect to queued card click handler (avoid duplicates)
+				if not card_visual.card_clicked.is_connected(_on_queued_card_clicked):
+					card_visual.card_clicked.connect(_on_queued_card_clicked.bind(card))
 
 			# Tint other players' cards differently
 			if not is_my_cards:
@@ -492,6 +502,7 @@ func _on_queued_card_clicked(card: Card):
 			# Play immediately on self
 			game_manager.play_card(my_character, card, my_character)
 			game_manager.remove_queued_card(my_index, card)
+			remove_card_visual_from_display(card)
 			selected_card = null
 		Card.TargetType.ALL_ALLIES, Card.TargetType.ALL_ENEMIES:
 			# Play immediately, no targeting needed
@@ -499,6 +510,7 @@ func _on_queued_card_clicked(card: Card):
 			if first_enemy:
 				game_manager.play_card(my_character, card, first_enemy)
 				game_manager.remove_queued_card(my_index, card)
+				remove_card_visual_from_display(card)
 			selected_card = null
 		_:
 			# Need to select a target
@@ -591,6 +603,7 @@ func _on_character_clicked(event: InputEvent, character: Character):
 
 					# Remove from queue
 					game_manager.remove_queued_card(my_index, selected_card)
+					remove_card_visual_from_display(selected_card)
 
 					selected_card = null
 					awaiting_target = false
