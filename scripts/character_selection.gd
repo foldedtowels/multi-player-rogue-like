@@ -135,5 +135,6 @@ func _on_start_pressed():
 
 	if selected_heroes.size() == 3:
 		var game_manager = get_node("/root/GameManager")
-		game_manager.select_heroes(selected_heroes)
+		# Call select_heroes via RPC so it runs on ALL clients
+		game_manager.select_heroes.rpc(selected_heroes)
 		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")

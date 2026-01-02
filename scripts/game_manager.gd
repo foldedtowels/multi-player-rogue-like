@@ -20,7 +20,14 @@ enum CombatPhase {
 	BOSS_PHASE_2
 }
 
+enum TurnPhase {
+	PLAYER_SELECTION,  # All players selecting cards
+	PLAYER_ACTION,     # Players playing selected cards in flexible order
+	ENEMY_TURN        # Enemies taking turns
+}
+
 var current_state: GameState = GameState.CHARACTER_SELECTION
+var turn_phase: TurnPhase = TurnPhase.PLAYER_SELECTION
 var players: Array[Character] = []
 var enemies: Array[Character] = []  # Up to 3 enemies (minions + boss)
 var current_boss: Character  # Points to boss in enemies array
@@ -41,6 +48,14 @@ var local_player_index: int = -1  # Which character this client controls
 var game_seed: int = 0
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 
+# Last played cards for UI display (player_index -> Card)
+var last_played_cards: Dictionary = {}
+
+# Simultaneous card selection system
+var players_ready: Dictionary = {}  # player_index -> bool
+var queued_cards: Dictionary = {}   # player_index -> Array[Card]
+var players_acted_this_round: Dictionary = {}  # player_index -> bool
+
 func _ready():
 	hero_db = get_node("/root/HeroDatabase")
 	boss_db = get_node("/root/BossDatabase")
@@ -52,7 +67,9 @@ func start_new_game():
 	current_state = GameState.CHARACTER_SELECTION
 	game_state_changed.emit()
 
+@rpc("any_peer", "call_local", "reliable")
 func select_heroes(hero_indices: Array):
+	print("[GameManager] select_heroes called with indices: ", hero_indices)
 	players.clear()
 	var all_heroes = hero_db.get_all_heroes()
 
@@ -61,6 +78,8 @@ func select_heroes(hero_indices: Array):
 			# Duplicate the hero to avoid shared state
 			var hero_copy = all_heroes[idx].duplicate_character()
 			players.append(hero_copy)
+
+	print("[GameManager] Players array size after select_heroes: ", players.size())
 
 	if players.size() == 3:
 		start_boss_encounter()
@@ -118,6 +137,14 @@ func sync_game_seed(seed: int):
 # Character state sync RPCs
 @rpc("any_peer", "call_local", "reliable")
 func sync_character_state(char_index: int, is_player: bool, state: Dictionary):
+	# Safety check: ensure arrays are populated
+	if is_player and (char_index < 0 or char_index >= players.size()):
+		push_warning("[GameManager] sync_character_state: Invalid player index %d (players.size=%d)" % [char_index, players.size()])
+		return
+	if not is_player and (char_index < 0 or char_index >= enemies.size()):
+		push_warning("[GameManager] sync_character_state: Invalid enemy index %d (enemies.size=%d)" % [char_index, enemies.size()])
+		return
+
 	var character: Character
 	if is_player:
 		character = players[char_index]
@@ -129,6 +156,13 @@ func sync_character_state(char_index: int, is_player: bool, state: Dictionary):
 func sync_character_hand(char_index: int, hand_data: Array):
 	if char_index >= 0 and char_index < players.size():
 		players[char_index].apply_hand_dict(hand_data)
+
+@rpc("any_peer", "call_local", "reliable")
+func sync_last_played_card(player_index: int, card_data: Dictionary):
+	# Deserialize card and store it
+	var card = Card.deserialize(card_data)
+	last_played_cards[player_index] = card
+	# UI will refresh and display this card in side panels
 
 func broadcast_character_state(character: Character):
 	if not multiplayer.is_server(): return
@@ -413,6 +447,13 @@ func _server_play_card(caster: Character, card: Card, target: Character):
 
 	# Apply card effects
 	apply_card_effects(caster, card, target)
+
+	# Track last played card (only for players, not enemies)
+	var player_index = players.find(caster)
+	if player_index >= 0:
+		last_played_cards[player_index] = card
+		# Broadcast to all clients
+		rpc("sync_last_played_card", player_index, card.serialize())
 
 	# Sync all affected characters
 	broadcast_character_state(caster)
