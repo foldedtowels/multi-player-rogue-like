@@ -396,6 +396,55 @@ func client_selection_phase_started():
 	game_state_changed.emit()
 	print("[GameManager] Selection phase started")
 
+# Sync a queued action from a player
+func sync_queued_action(player_index: int, card_data: Dictionary, target_index: int):
+	if multiplayer.is_server():
+		_server_receive_queued_action(player_index, card_data, target_index)
+	else:
+		rpc_id(1, "server_receive_queued_action", player_index, card_data, target_index)
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_receive_queued_action(player_index: int, card_data: Dictionary, target_index: int):
+	_server_receive_queued_action(player_index, card_data, target_index)
+
+func _server_receive_queued_action(player_index: int, card_data: Dictionary, target_index: int):
+	var card = Card.deserialize(card_data)
+
+	# Decode target
+	var target: Character
+	if target_index < 1000:
+		target = players[target_index]
+	else:
+		target = enemies[target_index - 1000]
+
+	# Add to server's queued actions
+	if not queued_actions.has(player_index):
+		queued_actions[player_index] = []
+	queued_actions[player_index].append({"card": card, "target": target})
+
+	print("[GameManager] Player %d queued: %s → %s" % [player_index, card.card_name, target.character_name])
+
+	# Broadcast to all clients
+	rpc("client_receive_queued_action", player_index, card_data, target_index)
+
+@rpc("any_peer", "call_local", "reliable")
+func client_receive_queued_action(player_index: int, card_data: Dictionary, target_index: int):
+	var card = Card.deserialize(card_data)
+
+	# Decode target
+	var target: Character
+	if target_index < 1000:
+		target = players[target_index]
+	else:
+		target = enemies[target_index - 1000]
+
+	# Add to client's queued actions
+	if not queued_actions.has(player_index):
+		queued_actions[player_index] = []
+	queued_actions[player_index].append({"card": card, "target": target})
+
+	game_state_changed.emit()
+
 # Player marks ready (done selecting cards)
 func player_ready():
 	var my_index = local_player_index
@@ -455,6 +504,20 @@ func client_action_phase_started(commander_index: int):
 	action_commander_index = commander_index
 	game_state_changed.emit()
 	print("[GameManager] Action phase started - Player %d is the action commander!" % commander_index)
+
+# Remove a played card from the queue
+func remove_queued_action(player_index: int, card: Card):
+	if not queued_actions.has(player_index):
+		return
+
+	# Find and remove the matching card
+	for i in range(queued_actions[player_index].size()):
+		var action = queued_actions[player_index][i]
+		if action.card.card_name == card.card_name:  # Match by card name
+			queued_actions[player_index].remove_at(i)
+			print("[GameManager] Removed queued card: %s from Player %d" % [card.card_name, player_index])
+			game_state_changed.emit()
+			return
 
 # Commander finishes action phase (all cards played or manually ends)
 func end_action_phase():

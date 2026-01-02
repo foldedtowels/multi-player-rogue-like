@@ -5,6 +5,7 @@ var current_player: Character
 var selected_card: Card
 var awaiting_target: bool = false
 var queued_actions: Array = []  # Array of {card: Card, target: Character}
+var last_turn_phase = null  # Track phase changes for animations
 
 # UI References - New multiplayer layout
 @onready var left_player_panel: Panel = $MainArea/LeftPlayerPanel
@@ -192,21 +193,18 @@ func update_deck_counts():
 	discard_count_label.text = "Discard: %d" % my_character.discard_pile.size()
 
 func update_hand_display():
-	# Clear existing cards
-	for child in hand_container.get_children():
-		child.queue_free()
-
 	var my_index = game_manager.local_player_index
 	if my_index == -1 or my_index >= game_manager.players.size():
 		return
 
-	var my_character = game_manager.players[my_index]
+	# During SELECTION phase: Show hand cards
+	if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION:
+		# Clear existing cards
+		for child in hand_container.get_children():
+			child.queue_free()
 
-	# Show hand during SELECTION and ACTION phases (not during ENEMY_TURN)
-	var show_hand = (game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION or
-					 game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION)
+		var my_character = game_manager.players[my_index]
 
-	if show_hand:
 		# Display cards in hand (only YOUR cards)
 		for card in my_character.hand:
 			var card_visual = card_scene.instantiate()
@@ -215,12 +213,19 @@ func update_hand_display():
 			card_visual.set_card(card)
 
 			# Cards are clickable during SELECTION phase (to queue)
-			# Cards are NOT clickable during ACTION phase (queued cards are played instead)
-			var is_selection_phase = game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION
 			var can_afford = card.can_afford(my_character.current_energy)
-
-			card_visual.set_playable(is_selection_phase and can_afford)
+			card_visual.set_playable(can_afford)
 			card_visual.card_clicked.connect(_on_card_clicked)
+
+	# During ACTION phase: Show queued cards (regenerate when queue changes)
+	elif game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION:
+		# Don't clear/regenerate during animations
+		# Only regenerate if a card was removed (game_state_changed)
+		if hand_container.get_child_count() == 0:
+			return  # Initial display handled by animate_selection_to_action
+		else:
+			# Regenerate queue display (card was played and removed)
+			display_queued_cards_for_action()
 
 func update_enemy_displays():
 	# Clear existing enemy UI
@@ -385,7 +390,91 @@ func _on_card_played(character: Character, card: Card, target: Character):
 	update_all_displays()
 
 func _on_game_state_changed():
+	# Detect phase transitions for animations
+	var current_phase = game_manager.turn_phase
+
+	if last_turn_phase == game_manager.TurnPhase.PLAYER_SELECTION and current_phase == game_manager.TurnPhase.PLAYER_ACTION:
+		# Transition to ACTION phase - animate cards
+		animate_selection_to_action()
+
+	last_turn_phase = current_phase
 	update_all_displays()
+
+func animate_selection_to_action():
+	print("[Combat] Animating SELECTION → ACTION transition")
+
+	# Step 1: Animate hand cards sliding down off screen
+	var hand_cards = hand_container.get_children()
+	for i in range(hand_cards.size()):
+		var card_visual = hand_cards[i]
+		var tween = create_tween()
+		tween.tween_property(card_visual, "position:y", card_visual.position.y + 400, 0.3).set_delay(i * 0.05)
+		tween.tween_callback(card_visual.queue_free)
+
+	# Step 2: Wait for hand to clear, then show queue
+	await get_tree().create_timer(0.5).timeout
+
+	# Step 3: Display all queued cards (from all players) and animate them up
+	display_queued_cards_for_action()
+
+func display_queued_cards_for_action():
+	print("[Combat] Displaying queued cards for ACTION phase")
+
+	# Clear hand container
+	for child in hand_container.get_children():
+		child.queue_free()
+
+	# Collect all queued actions from all players
+	var all_queued = []
+	for player_index in game_manager.queued_actions.keys():
+		var player_actions = game_manager.queued_actions[player_index]
+		for action in player_actions:
+			all_queued.append({
+				"player_index": player_index,
+				"card": action.card,
+				"target": action.target
+			})
+
+	print("[Combat] Total queued actions: %d" % all_queued.size())
+
+	# Determine if I'm the commander
+	var my_index = game_manager.local_player_index
+	var is_commander = (my_index == game_manager.action_commander_index)
+
+	# Create card visuals for each queued action
+	for i in range(all_queued.size()):
+		var queued = all_queued[i]
+		var card_visual = card_scene.instantiate()
+		hand_container.add_child(card_visual)
+
+		card_visual.set_card(queued.card)
+
+		# Only commander can click queued cards
+		card_visual.set_playable(is_commander)
+		if is_commander:
+			# Connect to special queued card click handler
+			card_visual.card_clicked.connect(_on_queued_card_clicked.bind(queued))
+
+		# Start card off-screen below
+		card_visual.position.y = 300
+
+		# Animate card sliding up to slightly above normal position
+		var tween = create_tween()
+		tween.tween_property(card_visual, "position:y", -30, 0.4).set_delay(i * 0.05).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+
+func _on_queued_card_clicked(card: Card, queued_data: Dictionary):
+	# Commander clicked a queued card to play it
+	var player_index = queued_data.player_index
+	var target = queued_data.target
+	var caster = game_manager.players[player_index]
+
+	print("[Combat] Commander playing queued card: %s from Player %d" % [card.card_name, player_index])
+
+	# Play the card
+	game_manager.play_card(caster, card, target)
+
+	# Remove from queue
+	game_manager.remove_queued_action(player_index, card)
 
 func _on_combat_ended(victory: bool):
 	if victory:
@@ -446,9 +535,17 @@ func queue_action(card: Card, target: Character):
 	var my_character = game_manager.players[my_index]
 	my_character.hand.erase(card)
 
+	# Sync to server
+	var target_index = -1
+	if game_manager.players.has(target):
+		target_index = game_manager.players.find(target)
+	elif game_manager.enemies.has(target):
+		target_index = game_manager.enemies.find(target) + 1000  # Offset for enemies
+
+	game_manager.sync_queued_action(my_index, card.serialize(), target_index)
+
 	# Update displays
 	update_hand_display()
-	# TODO: Update queue display
 
 func _on_character_clicked(event: InputEvent, character: Character):
 	if not awaiting_target or not selected_card:
