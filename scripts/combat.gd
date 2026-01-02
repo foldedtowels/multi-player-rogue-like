@@ -211,6 +211,11 @@ func update_hand_display():
 	if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION:
 		print("[Combat] SELECTION phase - updating hand display")
 
+		# CRITICAL: Clear queued cards from previous round if entering new SELECTION phase
+		if last_turn_phase != game_manager.TurnPhase.PLAYER_SELECTION:
+			print("[Combat] New SELECTION phase detected - clearing queued_cards")
+			queued_cards.clear()
+
 		# Clear existing cards
 		for child in hand_container.get_children():
 			child.queue_free()
