@@ -45,6 +45,7 @@ enum TargetType {
 @export var lifesteal: bool = false
 @export var multi_hit: int = 1  # Number of times to apply effect
 @export var aoe_damage: bool = false
+@export var plays_immediately: bool = false  # Plays when selected in SELECTION phase (e.g., Draw cards)
 
 # Card generation
 @export var generate_cards: Array[String] = []  # Names of cards to add to hand
@@ -110,6 +111,7 @@ func serialize() -> Dictionary:
 		"lifesteal": lifesteal,
 		"multi_hit": multi_hit,
 		"aoe_damage": aoe_damage,
+		"plays_immediately": plays_immediately,
 		"generate_cards": generate_cards,
 		"scry_amount": scry_amount
 	}
@@ -136,6 +138,7 @@ static func deserialize(data: Dictionary) -> Card:
 	card.lifesteal = data.lifesteal
 	card.multi_hit = data.multi_hit
 	card.aoe_damage = data.aoe_damage
+	card.plays_immediately = data.get("plays_immediately", false)  # Default to false for old cards
 	card.generate_cards = data.generate_cards
 	card.scry_amount = data.scry_amount
 	return card

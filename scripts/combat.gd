@@ -6,6 +6,7 @@ var selected_card: Card
 var awaiting_target: bool = false
 var queued_cards: Array = []  # Array of Cards (no targets yet)
 var last_turn_phase = null  # Track phase changes for animations
+var animating_phase_transition: bool = false  # Prevent updates during animation
 
 # UI References - New multiplayer layout
 @onready var left_player_panel: Panel = $MainArea/LeftPlayerPanel
@@ -205,6 +206,12 @@ func update_hand_display():
 
 		var my_character = game_manager.players[my_index]
 
+		# Calculate remaining energy after queued cards
+		var queued_energy = 0
+		for queued_card in queued_cards:
+			queued_energy += queued_card.energy_cost
+		var remaining_energy = my_character.max_energy - queued_energy
+
 		# Display cards in hand (only YOUR cards)
 		for card in my_character.hand:
 			var card_visual = card_scene.instantiate()
@@ -212,14 +219,17 @@ func update_hand_display():
 
 			card_visual.set_card(card)
 
-			# Cards are clickable during SELECTION phase (to queue)
-			var can_afford = card.can_afford(my_character.current_energy)
+			# Cards are clickable if enough energy remaining
+			var can_afford = (card.energy_cost <= remaining_energy)
 			card_visual.set_playable(can_afford)
 			card_visual.card_clicked.connect(_on_card_clicked)
 
 	# During ACTION phase: Show queued cards (regenerate when queue changes)
 	elif game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION:
-		# Don't clear/regenerate during animations
+		# Don't regenerate during animations
+		if animating_phase_transition:
+			return
+
 		# Only regenerate if a card was removed (game_state_changed)
 		if hand_container.get_child_count() == 0:
 			return  # Initial display handled by animate_selection_to_action
@@ -403,6 +413,7 @@ func _on_game_state_changed():
 
 func animate_selection_to_action():
 	print("[Combat] Animating SELECTION → ACTION transition")
+	animating_phase_transition = true
 
 	# Step 1: Animate hand cards sliding down off screen
 	var hand_cards = hand_container.get_children()
@@ -418,12 +429,14 @@ func animate_selection_to_action():
 	# Step 3: Display all queued cards (from all players) and animate them up
 	display_queued_cards_for_action()
 
+	animating_phase_transition = false
+
 func display_queued_cards_for_action():
 	print("[Combat] Displaying queued cards for ACTION phase")
 
-	# Clear hand container
+	# Clear hand container (use free() for immediate removal)
 	for child in hand_container.get_children():
-		child.queue_free()
+		child.free()
 
 	var my_index = game_manager.local_player_index
 
@@ -510,6 +523,14 @@ func _on_card_clicked(card: Card):
 
 	# SELECTION PHASE: Just queue cards (no targets yet)
 	if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION:
+		# Check if card should play immediately (e.g., Draw cards)
+		if card.plays_immediately:
+			# Play immediately during selection phase
+			print("[Combat] Playing instant card: %s" % card.card_name)
+			game_manager.play_card(my_character, card, my_character)
+			# Don't queue, don't remove from hand (play_card handles it)
+			return
+
 		# Check total energy cost of queued cards + this card
 		var total_cost = card.energy_cost
 		for queued in queued_cards:
