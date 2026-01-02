@@ -202,21 +202,28 @@ func update_deck_counts():
 func update_hand_display():
 	var my_index = game_manager.local_player_index
 	if my_index == -1 or my_index >= game_manager.players.size():
+		print("[Combat] update_hand_display - invalid index: %d" % my_index)
 		return
+
+	print("[Combat] update_hand_display - phase: %s" % game_manager.turn_phase)
 
 	# During SELECTION phase: Show hand cards
 	if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION:
+		print("[Combat] SELECTION phase - updating hand display")
+
 		# Clear existing cards
 		for child in hand_container.get_children():
 			child.queue_free()
 
 		var my_character = game_manager.players[my_index]
+		print("[Combat] Player has %d cards in hand, energy: %d/%d" % [my_character.hand.size(), my_character.current_energy, my_character.max_energy])
 
 		# Calculate remaining energy after queued cards
 		var queued_energy = 0
 		for queued_card in queued_cards:
 			queued_energy += queued_card.energy_cost
 		var remaining_energy = my_character.max_energy - queued_energy
+		print("[Combat] Remaining energy: %d (queued uses %d)" % [remaining_energy, queued_energy])
 
 		# Display cards in hand (only YOUR cards)
 		for card in my_character.hand:
@@ -228,10 +235,12 @@ func update_hand_display():
 			# Cards are clickable if enough energy remaining
 			var can_afford = (card.energy_cost <= remaining_energy)
 			card_visual.set_playable(can_afford)
+			print("[Combat] Created hand card: %s (cost: %d, playable: %s)" % [card.card_name, card.energy_cost, can_afford])
 
 			# Avoid duplicate connections
 			if not card_visual.card_clicked.is_connected(_on_card_clicked):
 				card_visual.card_clicked.connect(_on_card_clicked)
+				print("[Combat] Connected signal for hand card: %s" % card.card_name)
 
 	# During ACTION phase: Show queued cards (but don't regenerate constantly!)
 	elif game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION:
@@ -561,14 +570,20 @@ func _on_combat_ended(victory: bool):
 	pass_button.disabled = true
 
 func _on_card_clicked(card: Card):
+	print("[Combat] _on_card_clicked called - card: %s, phase: %s" % [card.card_name, game_manager.turn_phase])
+
 	var my_index = game_manager.local_player_index
 	if my_index == -1:
+		print("[Combat] ERROR: local_player_index is -1!")
 		return
 
 	var my_character = game_manager.players[my_index]
+	print("[Combat] Player %d clicked card, energy: %d/%d" % [my_index, my_character.current_energy, my_character.max_energy])
 
 	# SELECTION PHASE: Just queue cards (no targets yet)
 	if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION:
+		print("[Combat] SELECTION phase detected")
+
 		# Check if card should play immediately (e.g., Draw cards)
 		if card.plays_immediately:
 			# Play immediately during selection phase
@@ -582,16 +597,22 @@ func _on_card_clicked(card: Card):
 		for queued in queued_cards:
 			total_cost += queued.energy_cost
 
+		print("[Combat] Energy check: card_cost=%d, queued_cost=%d, total=%d, max=%d" % [card.energy_cost, total_cost - card.energy_cost, total_cost, my_character.max_energy])
+
 		if total_cost > my_character.max_energy:
 			print("[Combat] Can't queue - would exceed energy limit (%d/%d)" % [total_cost, my_character.max_energy])
 			return
 
 		# Queue the card (no target)
+		print("[Combat] Queueing card: %s" % card.card_name)
 		queue_card(card)
 
 	# ACTION PHASE: Handled by clicking queued card visuals
 	elif game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION:
+		print("[Combat] ACTION phase - clicks handled by queued cards")
 		pass
+	else:
+		print("[Combat] Unknown phase: %s" % game_manager.turn_phase)
 
 func queue_card(card: Card):
 	var my_index = game_manager.local_player_index
