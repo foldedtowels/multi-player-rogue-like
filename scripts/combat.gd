@@ -404,20 +404,29 @@ func _on_card_played(character: Character, card: Card, target: Character):
 func _on_game_state_changed():
 	# Detect phase transitions for animations
 	var current_phase = game_manager.turn_phase
+	print("[Combat] game_state_changed - last_phase: %s, current_phase: %s" % [last_turn_phase, current_phase])
 
 	if last_turn_phase == game_manager.TurnPhase.PLAYER_SELECTION and current_phase == game_manager.TurnPhase.PLAYER_ACTION:
 		# Transition to ACTION phase - animate cards
+		print("[Combat] DETECTED PHASE TRANSITION - Triggering animation")
 		animate_selection_to_action()
 
 	last_turn_phase = current_phase
 	update_all_displays()
 
 func animate_selection_to_action():
-	print("[Combat] Animating SELECTION → ACTION transition")
+	print("[Combat] === ANIMATE SELECTION → ACTION TRANSITION ===")
+	print("[Combat] animating_phase_transition was: %s" % animating_phase_transition)
+
+	if animating_phase_transition:
+		print("[Combat] ALREADY ANIMATING - SKIPPING!")
+		return
+
 	animating_phase_transition = true
 
 	# Step 1: Animate hand cards sliding down off screen
 	var hand_cards = hand_container.get_children()
+	print("[Combat] Step 1: Animating %d hand cards down" % hand_cards.size())
 	for i in range(hand_cards.size()):
 		var card_visual = hand_cards[i]
 		var tween = create_tween()
@@ -425,12 +434,15 @@ func animate_selection_to_action():
 		tween.tween_callback(card_visual.queue_free)
 
 	# Step 2: Wait for hand to clear, then show queue
+	print("[Combat] Step 2: Waiting 0.5s for hand to clear...")
 	await get_tree().create_timer(0.5).timeout
 
 	# Step 3: Display all queued cards (from all players) and animate them up
+	print("[Combat] Step 3: Displaying queued cards...")
 	display_queued_cards_for_action()
 
 	animating_phase_transition = false
+	print("[Combat] === ANIMATION COMPLETE ===")
 
 func remove_card_visual_from_display(card: Card):
 	# Remove the visual for a specific card that was just played
@@ -441,48 +453,60 @@ func remove_card_visual_from_display(card: Card):
 			return
 
 func display_queued_cards_for_action():
-	print("[Combat] Displaying queued cards for ACTION phase")
+	print("[Combat] === DISPLAYING QUEUED CARDS FOR ACTION PHASE ===")
+	print("[Combat] Existing children count: %d" % hand_container.get_child_count())
 
 	# Clear hand container (use free() for immediate removal)
 	for child in hand_container.get_children():
+		print("[Combat] Freeing existing child: %s" % child.name)
 		child.free()
 
 	var my_index = game_manager.local_player_index
+	print("[Combat] My player index: %d" % my_index)
 
 	# Collect all queued cards from all players, organized by player
 	var delay = 0.0
+	var total_cards = 0
 	for player_index in range(game_manager.players.size()):
 		if not game_manager.queued_cards.has(player_index):
+			print("[Combat] Player %d has no queued cards" % player_index)
 			continue
 
 		var player_queued = game_manager.queued_cards[player_index]
 		var is_my_cards = (player_index == my_index)
+		print("[Combat] Player %d has %d queued cards (mine: %s)" % [player_index, player_queued.size(), is_my_cards])
 
 		# Create card visuals for this player's queued cards
 		for card in player_queued:
 			var card_visual = card_scene.instantiate()
 			hand_container.add_child(card_visual)
+			total_cards += 1
 
 			card_visual.set_card(card)
 
 			# Only your own queued cards are clickable
 			card_visual.set_playable(is_my_cards)
+			print("[Combat] Created card visual: %s (playable: %s)" % [card.card_name, is_my_cards])
+
 			if is_my_cards:
-				# Connect to queued card click handler (avoid duplicates)
-				if not card_visual.card_clicked.is_connected(_on_queued_card_clicked):
-					card_visual.card_clicked.connect(_on_queued_card_clicked.bind(card))
+				# Connect to queued card click handler
+				card_visual.card_clicked.connect(_on_queued_card_clicked.bind(card))
+				print("[Combat] Connected signal for: %s" % card.card_name)
 
 			# Tint other players' cards differently
 			if not is_my_cards:
 				card_visual.modulate = Color(0.7, 0.7, 0.7, 0.8)
 
-			# Start card off-screen below
-			card_visual.position.y = 300
+			# Use modulate for animation instead of position (to not fight HBoxContainer)
+			card_visual.modulate.a = 0.0
 
-			# Animate card sliding up
+			# Animate card fading in
 			var tween = create_tween()
-			tween.tween_property(card_visual, "position:y", -30, 0.4).set_delay(delay).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+			tween.tween_property(card_visual, "modulate:a", 1.0 if is_my_cards else 0.8, 0.4).set_delay(delay).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 			delay += 0.05
+
+	print("[Combat] Total cards created: %d" % total_cards)
+	print("[Combat] === END DISPLAY QUEUED CARDS ===")
 
 func _on_queued_card_clicked(card: Card):
 	# Player clicked their queued card to play it
