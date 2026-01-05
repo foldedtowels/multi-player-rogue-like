@@ -1,34 +1,45 @@
 extends Control
 
+## Reward scene - displays after defeating a boss
+## Uses modular RewardManager for privacy-aware reward selection
+
 var game_manager: Node
 var card_db: Node
 var wizard: Node2D
-var card_scene = preload("res://scenes/card_visual.tscn")
+var reward_manager: RewardManager
 
 # Reward state
-var reward_phase: int = 0  # 0 = rare card phase, 1 = common card/heal phase
+var reward_phase: int = 0  ## 0 = rare card phase, 1 = common card/heal phase
 var chosen_player_index: int = 0
-var rare_choices: Array[Card] = []
-var common_choices_per_player: Array[Array] = [[], [], []]
-var players_ready: int = 0
 
 # UI Elements
 @onready var wizard_container: Control = $WizardContainer
-@onready var rare_card_container: HBoxContainer = $RareRewardPanel/CardContainer
-@onready var rare_panel: Panel = $RareRewardPanel
-@onready var rare_title: Label = $RareRewardPanel/TitleLabel
-
-@onready var common_panel: Panel = $CommonRewardPanel
-@onready var common_title: Label = $CommonRewardPanel/TitleLabel
-@onready var player1_choice: VBoxContainer = $CommonRewardPanel/PlayerChoices/Player1Choice
-@onready var player2_choice: VBoxContainer = $CommonRewardPanel/PlayerChoices/Player2Choice
-@onready var player3_choice: VBoxContainer = $CommonRewardPanel/PlayerChoices/Player3Choice
-
 @onready var continue_button: Button = $ContinueButton
+var rare_panel: RewardDisplayPanel
+var common_panel: RewardDisplayPanel
 
 func _ready():
 	game_manager = get_node("/root/GameManager")
 	card_db = get_node("/root/CardDatabase")
+
+	# Create reward panels programmatically
+	rare_panel = RewardDisplayPanel.new()
+	rare_panel.set_anchors_preset(Control.PRESET_CENTER)
+	rare_panel.offset_left = -400
+	rare_panel.offset_top = -150
+	rare_panel.offset_right = 400
+	rare_panel.offset_bottom = 150
+	rare_panel.custom_minimum_size = Vector2(800, 300)
+	add_child(rare_panel)
+
+	common_panel = RewardDisplayPanel.new()
+	common_panel.set_anchors_preset(Control.PRESET_CENTER)
+	common_panel.offset_left = -400
+	common_panel.offset_top = -150
+	common_panel.offset_right = 400
+	common_panel.offset_bottom = 150
+	common_panel.custom_minimum_size = Vector2(800, 300)
+	add_child(common_panel)
 
 	# Create wizard visual
 	wizard = Node2D.new()
@@ -36,160 +47,232 @@ func _ready():
 	wizard.position = Vector2(400, 400)
 	wizard_container.add_child(wizard)
 
-	# Setup UI
+	# Create reward manager
+	reward_manager = RewardManager.new()
+	add_child(reward_manager)
+
+	# Connect signals
 	continue_button.pressed.connect(_on_continue_pressed)
+	reward_manager.spectator_reward_complete.connect(_on_rare_reward_complete)
+	reward_manager.all_players_ready.connect(_on_all_common_rewards_complete)
+	reward_manager.spectator_choice_made.connect(_on_spectator_choice_made)
+	reward_manager.private_choice_made.connect(_on_private_choice_made)
+
+	# Setup UI
 	continue_button.visible = false
 	rare_panel.visible = false
 	common_panel.visible = false
 
 	# Start reward sequence
-	await get_tree().create_timer(0.5).timeout
+	await get_tree().create_timer(GameConstants.WIZARD_INTRO_DELAY).timeout
 	start_rare_reward()
 
 func start_rare_reward():
 	reward_phase = 0
-	chosen_player_index = randi() % 3
+
+	# CRITICAL: Server picks the chosen player and broadcasts to all clients
+	if multiplayer.is_server():
+		chosen_player_index = randi() % 3
+		print("[WIZARD] Server chose player ", chosen_player_index, " for rare reward")
+		rpc("sync_chosen_player", chosen_player_index)
+	else:
+		# Clients wait for server to tell them who was chosen
+		print("[WIZARD] Client waiting for server to choose player...")
+		return  # Will be called again via RPC
+
+@rpc("any_peer", "call_local", "reliable")
+func sync_chosen_player(player_idx: int):
+	chosen_player_index = player_idx
+	print("[WIZARD] Received chosen player: ", chosen_player_index)
+	_show_rare_reward()
+
+func _show_rare_reward():
 	var chosen_player = game_manager.players[chosen_player_index]
 
 	wizard.say("Greetings, brave heroes! You have bested the beast!\n\n%s, step forward. I have powerful magic for you..." % chosen_player.character_name)
 
-	await get_tree().create_timer(3.0).timeout
+	await get_tree().create_timer(GameConstants.WIZARD_RARE_CARD_DELAY).timeout
 
-	# Generate 3 random rare cards
+	# Generate rare card choices
+	var rare_choices = _generate_rare_choices()
+
+	var my_index = game_manager.local_player_index
+	var is_chosen = (my_index == chosen_player_index)
+	print("[WIZARD] Showing rare reward - my_index: ", my_index, " chosen: ", chosen_player_index, " am I chosen: ", is_chosen)
+
+	# Show spectator mode reward (all players watch, only chosen one can select)
+	reward_manager.show_spectator_reward(chosen_player_index, rare_choices, rare_panel)
+
+func _generate_rare_choices() -> Array[RewardChoice]:
 	var rare_pool = card_db.get_rare_cards()
 	rare_pool.shuffle()
-	rare_choices = [rare_pool[0], rare_pool[1], rare_pool[2]]
 
-	# Display rare cards
-	rare_panel.visible = true
-	rare_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE  # Allow cards to receive clicks
-	rare_title.text = "%s - Choose ONE Rare Card" % chosen_player.character_name
+	var choices: Array[RewardChoice] = []
+	for i in range(GameConstants.REWARD_RARE_CARD_CHOICES):
+		var choice = RewardChoice.new()
+		choice.choice_type = RewardChoice.ChoiceType.CARD
+		choice.card_data = rare_pool[i]
+		choice.display_name = rare_pool[i].card_name
+		choice.description = rare_pool[i].description
+		choices.append(choice)
 
-	for i in range(3):
-		var card_visual = card_scene.instantiate()
-		rare_card_container.add_child(card_visual)
-		card_visual.set_card(rare_choices[i])
-		card_visual.set_playable(true)
-		card_visual.mouse_filter = Control.MOUSE_FILTER_STOP  # Ensure card receives mouse events
-		print("[Reward] Connecting rare card ", i, " signal for: ", rare_choices[i].card_name)
-		card_visual.card_clicked.connect(_on_rare_card_selected.bind(i))
+	return choices
 
-func _on_rare_card_selected(card: Card, card_index: int):
-	print("[Reward] *** RARE CARD SELECTED CALLBACK TRIGGERED! Index: ", card_index, " ***")
-	var chosen_card = rare_choices[card_index]
-	var chosen_player = game_manager.players[chosen_player_index]
+func _on_rare_reward_complete():
+	print("[WIZARD] _on_rare_reward_complete called - hiding rare panel and moving to common rewards")
+	wizard.say("Excellent choice! The power is now yours!")
 
-	# Add card to player's deck
-	chosen_player.add_card_to_deck(chosen_card)
-	chosen_player.starting_deck.append(chosen_card.duplicate())
-
-	wizard.say("Excellent choice! The power of %s is now yours!" % chosen_card.card_name)
-
-	# Clear rare card UI
-	for child in rare_card_container.get_children():
-		child.queue_free()
+	# Hide rare panel
 	rare_panel.visible = false
 
 	await get_tree().create_timer(2.0).timeout
 	start_common_reward()
 
 func start_common_reward():
+	print("[WIZARD] start_common_reward called - showing common/heal choices")
 	reward_phase = 1
 	wizard.say("Now, all of you may choose:\nRestore half your health, OR take a useful card!\n\nChoose wisely!")
 
-	await get_tree().create_timer(3.0).timeout
+	await get_tree().create_timer(GameConstants.WIZARD_COMMON_CHOICE_DELAY).timeout
 
-	common_panel.visible = true
-	common_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE  # Allow cards to receive clicks
-	common_title.text = "All Players - Choose Heal or Card"
+	# Generate choices for each player (private mode)
+	var choices_per_player = _generate_common_choices()
 
-	# Generate choices for each player
-	var player_choices = [player1_choice, player2_choice, player3_choice]
+	# Show private mode rewards (each player sees only their own)
+	reward_manager.show_private_rewards(choices_per_player, common_panel)
 
-	for i in range(3):
-		var player = game_manager.players[i]
-		var choice_container = player_choices[i]
+func _generate_common_choices() -> Dictionary:
+	var choices = {}
 
-		# Player name label
-		var name_label = choice_container.get_node("NameLabel") as Label
-		name_label.text = player.character_name
+	for player_idx in range(3):
+		var player = game_manager.players[player_idx]
+		var player_choices: Array[RewardChoice] = []
 
-		# Heal button
-		var heal_button = choice_container.get_node("HealButton") as Button
-		var heal_amount = int(player.max_health * 0.5)
-		heal_button.text = "Heal %d HP" % heal_amount
-		heal_button.pressed.connect(_on_heal_selected.bind(i))
+		# Option 1: Heal
+		var heal_choice = RewardChoice.new()
+		heal_choice.choice_type = RewardChoice.ChoiceType.HEAL
+		heal_choice.heal_amount = int(player.max_health * GameConstants.REWARD_HEAL_PERCENTAGE)
+		heal_choice.display_name = "Heal"
+		heal_choice.description = "Restore %d HP" % heal_choice.heal_amount
+		player_choices.append(heal_choice)
 
-		# Generate 3 random common cards
+		# Options 2-4: Random common cards
 		var common_pool = card_db.get_common_cards()
 		common_pool.shuffle()
-		common_choices_per_player[i] = [common_pool[0], common_pool[1], common_pool[2]]
 
-		# Card buttons container
-		var cards_container = choice_container.get_node("CardsContainer") as HBoxContainer
-		cards_container.mouse_filter = Control.MOUSE_FILTER_IGNORE  # Allow cards to receive clicks
+		for i in range(GameConstants.REWARD_COMMON_CARD_CHOICES):
+			var card_choice = RewardChoice.new()
+			card_choice.choice_type = RewardChoice.ChoiceType.CARD
+			card_choice.card_data = common_pool[i]
+			card_choice.display_name = common_pool[i].card_name
+			card_choice.description = common_pool[i].description
+			player_choices.append(card_choice)
 
-		for j in range(3):
-			var card_visual = card_scene.instantiate()
-			cards_container.add_child(card_visual)
-			card_visual.set_card(common_choices_per_player[i][j])
-			card_visual.set_playable(true)
-			card_visual.mouse_filter = Control.MOUSE_FILTER_STOP  # Ensure card receives mouse events
-			card_visual.custom_minimum_size = Vector2(120, 160)  # Smaller cards
-			card_visual.size_flags_vertical = Control.SIZE_SHRINK_CENTER  # Don't stretch vertically
-			card_visual.card_clicked.connect(_on_common_card_selected.bind(i, j))
+		choices[player_idx] = player_choices
 
-func _on_heal_selected(player_index: int):
-	var player = game_manager.players[player_index]
-	var heal_amount = int(player.max_health * 0.5)
-	player.heal(heal_amount)
+	return choices
 
-	wizard.say("%s chooses restoration! Wise decision." % player.character_name)
+func _on_all_common_rewards_complete():
+	print("[WIZARD] All common rewards complete - showing continue button")
+	wizard.say("Your choices are made! Steel yourselves...\nThe next challenge awaits!")
 
-	# Disable this player's choices
-	disable_player_choices(player_index)
-	players_ready += 1
-	check_all_ready()
+	# Common panel should already be hidden for each player
+	# Just show the continue button
+	await get_tree().create_timer(2.0).timeout
+	continue_button.visible = true
 
-func _on_common_card_selected(card: Card, player_index: int, card_index: int):
-	var chosen_card = common_choices_per_player[player_index][card_index]
-	var player = game_manager.players[player_index]
+## Handle spectator choice made - send to server or apply directly
+func _on_spectator_choice_made(player_index: int, choice: RewardChoice):
+	print("[WIZARD] Spectator choice made by player ", player_index, " - handling RPC from reward.gd")
 
-	# Add card to player's deck
-	player.add_card_to_deck(chosen_card)
-	player.starting_deck.append(chosen_card.duplicate())
+	# Send choice to server for processing
+	if multiplayer.is_server():
+		print("[WIZARD] Server applying choice directly")
+		_apply_and_broadcast_choice(player_index, choice)
+	else:
+		print("[WIZARD] Client sending choice to server via reward.gd RPC")
+		rpc_id(1, "server_receive_spectator_choice", player_index, choice.serialize())
 
-	wizard.say("%s takes %s! A fine addition to your arsenal." % [player.character_name, chosen_card.card_name])
+## Server receives spectator choice from client
+@rpc("any_peer", "call_remote", "reliable")
+func server_receive_spectator_choice(player_index: int, choice_data: Dictionary):
+	print("[WIZARD] Server received spectator choice RPC from player ", player_index)
+	var choice = RewardChoice.deserialize(choice_data)
+	_apply_and_broadcast_choice(player_index, choice)
 
-	# Disable this player's choices
-	disable_player_choices(player_index)
-	players_ready += 1
-	check_all_ready()
+## Apply choice and broadcast completion to all clients
+func _apply_and_broadcast_choice(player_index: int, choice: RewardChoice):
+	print("[WIZARD] Applying choice and broadcasting to all clients")
 
-func disable_player_choices(player_index: int):
-	var player_choices = [player1_choice, player2_choice, player3_choice]
-	var choice_container = player_choices[player_index]
+	# Apply the choice
+	reward_manager.apply_spectator_choice(player_index, choice)
 
-	# Disable heal button
-	var heal_button = choice_container.get_node("HealButton") as Button
-	heal_button.disabled = true
+	# Broadcast completion to all clients (including self)
+	print("[WIZARD] Broadcasting spectator choice complete via RPC")
+	rpc("client_notify_spectator_complete")
 
-	# Disable card selection
-	var cards_container = choice_container.get_node("CardsContainer") as HBoxContainer
-	for child in cards_container.get_children():
-		child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+@rpc("any_peer", "call_local", "reliable")
+func client_notify_spectator_complete():
+	print("[WIZARD] RPC received in reward.gd - calling reward_manager.notify_spectator_complete()")
+	reward_manager.notify_spectator_complete()
 
-func check_all_ready():
-	if players_ready >= 3:
-		wizard.say("Your choices are made! Steel yourselves...\nThe next challenge awaits!")
+## Handle private choice made - send to server or apply directly
+func _on_private_choice_made(player_index: int, choice: RewardChoice):
+	print("[WIZARD] Private choice made by player ", player_index, " - handling RPC from reward.gd")
 
-		await get_tree().create_timer(2.0).timeout
-		continue_button.visible = true
+	# Hide the common panel for THIS player immediately
+	common_panel.visible = false
+	print("[WIZARD] Hiding common panel for player ", player_index)
+
+	# Send choice to server for processing
+	if multiplayer.is_server():
+		print("[WIZARD] Server applying private choice directly")
+		_apply_and_check_private_choice(player_index, choice)
+	else:
+		print("[WIZARD] Client sending private choice to server via reward.gd RPC")
+		rpc_id(1, "server_receive_private_choice", player_index, choice.serialize())
+
+## Server receives private choice from client
+@rpc("any_peer", "call_remote", "reliable")
+func server_receive_private_choice(player_index: int, choice_data: Dictionary):
+	print("[WIZARD] Server received private choice RPC from player ", player_index)
+	var choice = RewardChoice.deserialize(choice_data)
+	_apply_and_check_private_choice(player_index, choice)
+
+## Apply private choice and check if all players are ready
+func _apply_and_check_private_choice(player_index: int, choice: RewardChoice):
+	print("[WIZARD] Applying private choice for player ", player_index)
+
+	# Apply the choice
+	reward_manager.apply_private_choice(player_index, choice)
+
+	# Broadcast updated ready status to all clients
+	var ready_indices = Array(reward_manager._players_ready.keys())
+	print("[WIZARD] Broadcasting ready status: ", ready_indices)
+	rpc("client_update_ready_status", ready_indices)
+
+	# Check if all players are ready (server only)
+	if reward_manager.check_all_players_ready():
+		print("[WIZARD] All players ready - broadcasting completion")
+		rpc("client_all_players_ready")
+
+## RPC to update ready status on all clients
+@rpc("any_peer", "call_local", "reliable")
+func client_update_ready_status(ready_indices: Array):
+	print("[WIZARD] Received ready status update: ", ready_indices)
+	reward_manager.update_ready_status(ready_indices)
+
+## RPC to notify all clients that everyone is ready
+@rpc("any_peer", "call_local", "reliable")
+func client_all_players_ready():
+	print("[WIZARD] Received all players ready notification")
+	reward_manager.notify_all_players_ready()
 
 func _on_continue_pressed():
-	# Start next boss encounter and load combat scene
+	# Start next boss encounter
 	game_manager.start_boss_encounter()
 	game_manager.start_player_turn(0)
+
 	# Synchronized scene change for multiplayer
 	var network_manager = get_node_or_null("/root/NetworkManager")
 	if network_manager and multiplayer.is_server():

@@ -174,6 +174,75 @@ Changed line 114 from `child.free()` to `child.queue_free()`. The `free()` metho
 
 ---
 
+### Problem: RPC Calls Fail from Dynamically Created Nodes
+**Date**: January 2026
+**Symptoms**:
+- Wizard/reward selection scenes stuck after player makes a choice
+- RPCs sent but never received on server/clients
+- Debug logs show "Client sending choice to server via RPC" but server never logs "Server received RPC"
+- Selection works for server/host but not for clients
+
+**Root Cause**:
+When you create a node dynamically with `Node.new()` and add it as a child, Godot cannot reliably route RPC calls to/from that node across the network. RPCs work by matching node paths in the scene tree, but dynamically created nodes don't have stable, synchronized paths across all clients.
+
+**Example of broken pattern**:
+```gdscript
+# In reward.gd
+var reward_manager = RewardManager.new()  # Dynamic node
+add_child(reward_manager)
+
+# In reward_manager.gd (dynamic node)
+func send_choice():
+    rpc_id(1, "server_receive_choice", data)  # ❌ FAILS! Server never receives this
+```
+
+**Solution**:
+Move ALL RPC calls to scene nodes (nodes that exist in the .tscn file or are autoloads). Use signals to communicate between dynamic nodes and scene nodes.
+
+**Correct pattern**:
+```gdscript
+# In reward_manager.gd (dynamic node)
+signal choice_made(player_index: int, choice: RewardChoice)
+
+func send_choice():
+    choice_made.emit(player_index, choice)  # ✅ Emit signal instead of RPC
+
+# In reward.gd (scene node)
+func _ready():
+    reward_manager.choice_made.connect(_on_choice_made)
+
+func _on_choice_made(player_index: int, choice: RewardChoice):
+    # ✅ RPC from scene node works!
+    if multiplayer.is_server():
+        apply_choice(player_index, choice)
+    else:
+        rpc_id(1, "server_receive_choice", player_index, choice.serialize())
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_receive_choice(player_index: int, choice_data: Dictionary):
+    # Server receives this successfully
+    apply_choice(player_index, RewardChoice.deserialize(choice_data))
+```
+
+**Files Modified**:
+- `scripts/rewards/reward_manager.gd` - Removed RPC calls, added signals for `spectator_choice_made` and `private_choice_made`
+- `scripts/reward.gd` - Added RPC handlers: `server_receive_spectator_choice`, `server_receive_private_choice`, `client_notify_spectator_complete`, `client_update_ready_status`, `client_all_players_ready`
+- `scripts/buff_selection.gd` - Added same RPC handler pattern for buff selection scene
+
+**Lessons Learned**:
+- **CRITICAL RULE**: Never call `rpc()` or `rpc_id()` from dynamically created nodes (nodes created with `.new()`)
+- Only call RPCs from:
+  - Nodes that are part of a scene (defined in .tscn files)
+  - Autoload singletons (defined in Project Settings)
+  - Nodes with stable, synchronized paths across all clients
+- Use the **signal relay pattern**: Dynamic node emits signal → Scene node receives signal → Scene node calls RPC
+- If you see "RPC sent but never received", check if the calling node is dynamically created
+- This applies to ALL RPC calls: `rpc()`, `rpc_id()`, any function with `@rpc` annotation
+
+**Status**: FIXED - Refactored all reward/buff selection RPC calls to use signal relay pattern
+
+---
+
 ### Template for New Problems
 ```markdown
 ### Problem: [Brief Description]
@@ -355,13 +424,16 @@ Before committing or ending a session:
 ### Completed This Session
 - ✅ **Round Banner Spam** - Fixed duplicate prints (was printing 4x, now prints once)
 - ✅ **Card Display Crash** - Fixed `card_hand_display.gd:114` by changing `free()` to `queue_free()`
+- ✅ **Wizard/Buff Selection Scenes** - Fixed RPC calls from dynamic nodes, refactored to use signal relay pattern
+  - Rare card selection (spectator mode) - one player chooses, others watch
+  - Common/heal selection (private mode) - each player chooses independently
+  - Buff selection after minions - each player chooses +Energy/+HP/Rare Card
+  - All scenes properly synchronized across multiplayer clients
 
 ### Other Known Issues
-- ❌ **Wizard/Buff Scene** - Needs debugging info
 - ❌ **Test Suite** - No automated tests yet
 
 ### Upcoming Features
-- Buff selection system (files created: `scenes/buff_selection.tscn`, `scripts/buff_selection.gd`)
 - More card effects and synergies
 - Character progression system
 
@@ -385,6 +457,7 @@ If you need to edit these files, you'll be prompted to confirm. Make sure the ch
 - `queued_cards` and similar client-side state should reset during state changes, not during RPCs
 - Add `[SYNC]` debug prints when investigating multiplayer issues
 - **Use turn separator banners** to make console output readable when debugging multiplayer timing
+- **CRITICAL**: Never call RPCs from dynamically created nodes - use signal relay pattern (see "RPC Calls Fail from Dynamically Created Nodes" in Hard Problems Log)
 
 ### Code Style Preferences
 - Use explicit type hints where possible: `var cards: Array[Card] = []`
