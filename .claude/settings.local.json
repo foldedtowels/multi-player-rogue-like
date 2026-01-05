@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git diff:*)",
+      "Bash(cat:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix critical multiplayer bugs and add state management system\n\nMajor fixes:\n- Fix locked object crash: Change free\\(\\) to queue_free\\(\\) in card_hand_display\n- Fix double cards bug: Remove old turn system calls from end_boss_turn\\(\\)\n- Fix round number jumping: Remove duplicate round_number increment\n- Fix extra cards in boss fights: Clear queued_cards during transitions\n- Fix disappearing cards: Return all cards to deck before shuffling\n\nState management improvements:\n- Add reset_players_between_encounters\\(\\) for minions→boss transitions\n- Add reset_players_for_new_run\\(\\) for new game starts\n- Properly manage deck state to preserve earned cards between encounters\n- Clear all temporary combat state \\(hands, discard, queued_cards, shield, debuffs\\)\n- Document state management patterns in .claude/CLAUDE.md\n\nThis ensures clean transitions between fights while preserving player progression.\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'file_path=$(echo \"$CLAUDE_TOOL_INPUT\" | jq -r \".file_path // empty\"); if [[ \"$file_path\" == *.gd ]]; then echo \"[Hook] GDScript file modified: $file_path\"; if [ -d \"tests\" ]; then echo \"[Hook] Running tests...\"; godot --headless --script tests/run_tests.gd 2>&1 || echo \"[Hook] Tests not yet configured - skipping\"; else echo \"[Hook] No test directory found - skipping tests\"; fi; fi'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'file_path=$(echo \"$CLAUDE_TOOL_INPUT\" | jq -r \".file_path // empty\"); critical_files=(\"game_manager.gd\" \"combat.gd\" \"character.gd\" \"card.gd\" \"project.godot\"); for critical in \"${critical_files[@]}\"; do if [[ \"$file_path\" == *\"$critical\" ]]; then echo \"[Hook] ⚠️  BLOCKING: Attempting to edit critical file: $critical\"; echo \"[Hook] This file has caused bugs before. Please confirm this change is necessary.\"; exit 2; fi; done'"
+          }
+        ]
+      }
+    ]
+  }
+}

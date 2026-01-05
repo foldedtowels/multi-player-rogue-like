@@ -35,6 +35,7 @@ var combat_phase: CombatPhase = CombatPhase.BOSS_PHASE_1
 var boss_index: int = 0
 var current_player_index: int = 0
 var round_number: int = 1
+var next_queue_id: int = 1  # Counter for unique queue instance IDs
 
 var hero_db: Node
 var boss_db: Node
@@ -69,7 +70,6 @@ func start_new_game():
 
 @rpc("any_peer", "call_local", "reliable")
 func select_heroes(hero_indices: Array):
-	print("[GameManager] select_heroes called with indices: ", hero_indices)
 	players.clear()
 	var all_heroes = hero_db.get_all_heroes()
 
@@ -79,7 +79,6 @@ func select_heroes(hero_indices: Array):
 			var hero_copy = all_heroes[idx].duplicate_character()
 			players.append(hero_copy)
 
-	print("[GameManager] Players array size after select_heroes: ", players.size())
 
 	if players.size() == 3:
 		start_boss_encounter()
@@ -152,7 +151,7 @@ func sync_character_state(char_index: int, is_player: bool, state: Dictionary):
 		character = enemies[char_index]
 	character.apply_state_dict(state)
 
-@rpc("any_peer", "call_local", "reliable")
+@rpc("any_peer", "call_remote", "reliable")
 func sync_character_hand(char_index: int, hand_data: Array):
 	if char_index >= 0 and char_index < players.size():
 		players[char_index].apply_hand_dict(hand_data)
@@ -179,11 +178,22 @@ func broadcast_character_state(character: Character):
 
 func send_hand_to_owner(character: Character):
 	if not multiplayer.is_server(): return
-	if character.network_owner_id == -1: return
 
 	var char_index = players.find(character)
-	if char_index >= 0:
-		rpc_id(character.network_owner_id, "sync_character_hand", char_index, character.get_hand_dict())
+	if char_index == -1: return
+
+	print("[GameManager] send_hand_to_owner for player ", char_index, " - hand size BEFORE get_hand_dict: ", character.hand.size())
+	var hand_data = character.get_hand_dict()
+	print("[GameManager] hand_data size: ", hand_data.size())
+
+	# Broadcast to clients via RPC
+	rpc("sync_character_hand", char_index, hand_data)
+
+	# CRITICAL: Also update server's own copy since we use "call_remote"
+	# This ensures all players (including host) have correct hand state
+	print("[GameManager] About to call apply_hand_dict for player ", char_index)
+	character.apply_hand_dict(hand_data)
+	print("[GameManager] After apply_hand_dict - hand size: ", character.hand.size())
 
 func assign_characters_to_network_peers():
 	# Server assigns character indices to network peers
@@ -227,7 +237,6 @@ func _server_start_player_turn(player_index: int):
 
 	if not player.is_alive():
 		# Skip dead players
-		print("[Game] Skipping turn for dead player: ", player.character_name)
 		_server_end_player_turn()
 		return
 
@@ -272,9 +281,9 @@ func start_boss_turn():
 
 func _server_start_boss_turn():
 	# Start turns for all alive enemies
-	start_enemies_turn()
+	await start_enemies_turn()
 
-func start_enemies_turn():
+func start_enemies_turn() -> bool:
 	# Each enemy takes a turn sequentially
 	for enemy in enemies:
 		if not enemy.is_alive():
@@ -292,29 +301,110 @@ func start_enemies_turn():
 		await get_tree().create_timer(0.5).timeout
 
 	# All enemies finished, check victory
-	check_combat_victory()
+	return await check_combat_victory()
 
-func check_combat_victory():
+func check_combat_victory() -> bool:
 	var alive_enemies = enemies.filter(func(e): return e.is_alive())
 	if alive_enemies.is_empty():
 		# Check combat phase
 		if combat_phase == CombatPhase.MINION_COMBAT:
 			# Minions defeated! Transition to buff selection
-			transition_to_buff_phase()
+			await transition_to_buff_phase()
+			return true  # Combat transitioning to boss phase
 		else:
 			# Boss defeated!
 			boss_defeated()
-		return
+			return true  # Combat ended
 
 	# Continue to next round
 	end_boss_turn()
+	return false  # Combat continues
 
 func transition_to_buff_phase():
-	# TODO: Implement buff selection scene
-	# For now, go straight to boss phase 1
-	print("[GameManager] Minions defeated! TODO: Show buff selection")
-	await get_tree().create_timer(2.0).timeout
-	start_boss_phase_1()
+
+	# Transition to buff selection scene
+	if multiplayer.is_server():
+		NetworkManager.change_scene_synchronized.rpc("res://scenes/buff_selection.tscn")
+	else:
+		get_tree().change_scene_to_file("res://scenes/buff_selection.tscn")
+
+## Reset players between combat encounters (KEEPS earned cards in deck!)
+## Use this when transitioning minions→boss or boss→boss
+func reset_players_between_encounters():
+	print("[GameManager] Resetting players between encounters (keeping earned cards)")
+
+	# Clear all combat state dictionaries
+	queued_cards.clear()
+	players_ready.clear()
+	players_done_acting.clear()
+	last_played_cards.clear()
+
+	# Reset each player's temporary state (but keep their deck!)
+	for i in range(players.size()):
+		var player = players[i]
+
+		# CRITICAL: Return all cards to deck before shuffling (don't lose them!)
+		# Add cards from hand back to deck
+		for card in player.hand:
+			player.deck.append(card)
+		player.hand.clear()
+
+		# Add cards from discard back to deck
+		for card in player.discard_pile:
+			player.deck.append(card)
+		player.discard_pile.clear()
+
+		# Exhaust pile cards are intentionally removed (don't add back to deck)
+		player.exhaust_pile.clear()
+
+		# Shuffle deck (now includes ALL non-exhausted cards)
+		player.deck.shuffle()
+
+		# Clear temporary combat buffs
+		player.shield = 0
+
+		# Reset energy to max
+		player.current_energy = player.max_energy
+
+		# Clear debuffs between fights (keep permanent buffs like strength/armor)
+		player.reset_debuffs()
+
+		print("[GameManager] Player ", i, " (", player.character_name, ") reset - deck: ", player.deck.size(), " cards")
+
+## Reset players to starting deck for a NEW RUN (LOSES earned cards!)
+## Only use this when starting a brand new run, not between encounters
+func reset_players_for_new_run():
+	print("[GameManager] Resetting players for NEW RUN (back to starting deck)")
+
+	# Clear all combat state dictionaries
+	queued_cards.clear()
+	players_ready.clear()
+	players_done_acting.clear()
+	last_played_cards.clear()
+
+	# Reset each player to starting state
+	for i in range(players.size()):
+		var player = players[i]
+
+		# Clear all card piles (no need to return to deck since we're resetting to starting deck anyway)
+		player.hand.clear()
+		player.discard_pile.clear()
+		player.exhaust_pile.clear()
+
+		# RESET deck to starting deck (loses earned cards!)
+		player.deck = player.starting_deck.duplicate()
+		player.deck.shuffle()
+
+		# Clear temporary combat buffs
+		player.shield = 0
+
+		# Reset energy to max
+		player.current_energy = player.max_energy
+
+		# Clear debuffs
+		player.reset_debuffs()
+
+		print("[GameManager] Player ", i, " (", player.character_name, ") reset to starting deck - ", player.deck.size(), " cards")
 
 func start_boss_phase_1():
 	# Clear minions, add boss
@@ -327,11 +417,43 @@ func start_boss_phase_1():
 	round_number = 1
 	current_player_index = 0
 
+	# CRITICAL: Reset player state between encounters (keeps earned cards!)
+	reset_players_between_encounters()
+
+	# Broadcast updated state to all clients before scene change
+	if multiplayer.is_server():
+		for i in range(players.size()):
+			broadcast_character_state(players[i])
+			send_hand_to_owner(players[i])  # CRITICAL: Sync cleared hands!
+
+		# Sync boss enemy to all clients
+		sync_boss_enemy()
+
 	# Restart combat (this will reload the combat scene)
 	if multiplayer.is_server():
 		NetworkManager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
 	else:
 		get_tree().change_scene_to_file("res://scenes/combat.tscn")
+
+func sync_boss_enemy():
+	# Server syncs the boss enemy to all clients
+	if not multiplayer.is_server(): return
+
+	var boss_state = current_boss.get_state_dict()
+	rpc("client_receive_boss_enemy", boss_state)
+
+@rpc("any_peer", "call_local", "reliable")
+func client_receive_boss_enemy(boss_state: Dictionary):
+	# Clear enemies and add the boss
+	enemies.clear()
+	enemies.append(current_boss)
+
+	# Apply the state to the boss
+	current_boss.apply_state_dict(boss_state)
+	combat_phase = CombatPhase.BOSS_PHASE_1
+
+	# Emit state change so UI updates
+	game_state_changed.emit()
 
 @rpc("any_peer", "call_local", "reliable")
 func client_enemy_turn_started(enemy_index: int):
@@ -369,7 +491,8 @@ func play_enemy_turn(enemy: Character):
 func start_round():
 	if not multiplayer.is_server(): return
 
-	print("[GameManager] Starting new round %d" % round_number)
+	print("\n##################### ROUND ", round_number, " - FRIENDLY TURN #####################")
+
 	turn_phase = TurnPhase.PLAYER_SELECTION
 	players_ready.clear()
 	queued_cards.clear()
@@ -391,7 +514,6 @@ func start_round():
 func client_selection_phase_started():
 	turn_phase = TurnPhase.PLAYER_SELECTION
 	game_state_changed.emit()
-	print("[GameManager] Selection phase started")
 
 # Sync a queued card from a player (no target yet)
 func sync_queued_card(player_index: int, card_data: Dictionary):
@@ -407,22 +529,23 @@ func server_receive_queued_card(player_index: int, card_data: Dictionary):
 func _server_receive_queued_card(player_index: int, card_data: Dictionary):
 	var card = Card.deserialize(card_data)
 
+	# Assign unique queue instance ID to distinguish identical cards
+	card.queue_instance_id = next_queue_id
+	next_queue_id += 1
+
 	# Add to server's queued cards
 	if not queued_cards.has(player_index):
 		queued_cards[player_index] = []
 	queued_cards[player_index].append(card)
 
-	print("[GameManager] Player %d queued card: %s" % [player_index, card.card_name])
-
-	# Broadcast to all clients
-	rpc("client_receive_queued_card", player_index, card_data)
+	# Broadcast to all clients (with the assigned queue_instance_id)
+	rpc("client_receive_queued_card", player_index, card.serialize())
 
 @rpc("any_peer", "call_local", "reliable")
 func client_receive_queued_card(player_index: int, card_data: Dictionary):
 	# Server already added the card in _server_receive_queued_card
 	# Don't add it again when receiving own broadcast
 	if multiplayer.is_server():
-		print("[GameManager] Server skipping client_receive (already added)")
 		return
 
 	var card = Card.deserialize(card_data)
@@ -451,10 +574,9 @@ func server_player_ready(player_index: int):
 
 func _server_player_ready(player_index: int):
 	players_ready[player_index] = true
-	print("[GameManager] Player %d ready (%d/%d)" % [player_index, players_ready.size(), players.size()])
 
 	# Broadcast ready status
-	rpc("client_player_ready_status", players_ready.keys())
+	rpc("client_player_ready_status", Array(players_ready.keys()))
 
 	# Check if all alive players are ready
 	check_all_players_ready()
@@ -474,8 +596,9 @@ func check_all_players_ready():
 		if player.is_alive():
 			alive_count += 1
 
+	print("[SYNC] Players ready: ", players_ready.size(), "/", alive_count)
 	if players_ready.size() >= alive_count:
-		print("[GameManager] All players ready! Starting action phase")
+		print("[SYNC] All players ready - starting action phase")
 		start_action_phase()
 
 # Transition to action phase
@@ -493,20 +616,40 @@ func client_action_phase_started():
 	turn_phase = TurnPhase.PLAYER_ACTION
 	players_done_acting.clear()
 	game_state_changed.emit()
-	print("[GameManager] Action phase started - players play their own cards!")
 
 # Remove a played card from the queue
 func remove_queued_card(player_index: int, card: Card):
 	if not queued_cards.has(player_index):
 		return
 
-	# Find and remove the matching card
+	# Find and remove the matching card by unique queue instance ID
 	for i in range(queued_cards[player_index].size()):
 		var queued_card = queued_cards[player_index][i]
-		if queued_card.card_name == card.card_name:  # Match by card name
+		# Match by queue_instance_id if available, otherwise fall back to card_name
+		var matches = false
+		if card.queue_instance_id > 0 and queued_card.queue_instance_id > 0:
+			matches = (queued_card.queue_instance_id == card.queue_instance_id)
+		else:
+			matches = (queued_card.card_name == card.card_name)
+
+		if matches:
 			queued_cards[player_index].remove_at(i)
-			print("[GameManager] Removed queued card: %s from Player %d" % [card.card_name, player_index])
-			# Don't emit game_state_changed here - play_card() already emits it
+
+			# Broadcast removal to all clients (using queue_instance_id for precision)
+			if multiplayer.is_server():
+				rpc("client_remove_queued_card", player_index, card.queue_instance_id)
+			return
+
+@rpc("any_peer", "call_local", "reliable")
+func client_remove_queued_card(player_index: int, queue_id: int):
+	if not queued_cards.has(player_index):
+		return
+
+	# Find and remove the card by unique queue instance ID
+	for i in range(queued_cards[player_index].size()):
+		if queued_cards[player_index][i].queue_instance_id == queue_id:
+			queued_cards[player_index].remove_at(i)
+			game_state_changed.emit()
 			return
 
 # Player finishes their actions (clicked Done)
@@ -525,10 +668,9 @@ func server_player_done(player_index: int):
 
 func _server_player_done(player_index: int):
 	players_done_acting[player_index] = true
-	print("[GameManager] Player %d done acting (%d/%d)" % [player_index, players_done_acting.size(), players.size()])
 
 	# Broadcast done status
-	rpc("client_player_done_status", players_done_acting.keys())
+	rpc("client_player_done_status", Array(players_done_acting.keys()))
 
 	# Check if all players done
 	check_action_phase_complete()
@@ -548,28 +690,68 @@ func check_action_phase_complete():
 		if player.is_alive():
 			alive_count += 1
 
+	print("[SYNC] Players done acting: ", players_done_acting.size(), "/", alive_count)
 	if players_done_acting.size() >= alive_count:
-		print("[GameManager] All players done! Starting enemy turn")
-		start_enemy_turn_phase()
+
+		# Check if all enemies are already dead (killed during action phase)
+		var enemies_alive = false
+		for enemy in enemies:
+			if enemy.is_alive():
+				enemies_alive = true
+				break
+
+		if not enemies_alive:
+			# Enemies defeated during action phase, end turns and check victory
+			turn_phase = TurnPhase.ENEMY_TURN
+			for i in range(players.size()):
+				var player = players[i]
+				if player.is_alive():
+					player.end_turn()
+					broadcast_character_state(player)
+					send_hand_to_owner(player)  # Sync cleared hand
+			rpc("client_enemy_turn_phase_started")
+			await get_tree().create_timer(0.5).timeout
+			await check_combat_victory()
+		else:
+			start_enemy_turn_phase()
 
 # Start enemy turn phase
 func start_enemy_turn_phase():
+	print("[GameManager] start_enemy_turn_phase called")
 	if not multiplayer.is_server(): return
+
+	# Build enemy names string for banner
+	var enemy_names = []
+	for enemy in enemies:
+		if enemy.is_alive():
+			enemy_names.append(enemy.character_name)
+	var enemy_names_str = ", ".join(enemy_names)
+
+	print("\n##################### ROUND ", round_number, " - ENEMY (", enemy_names_str, ") TURN #####################")
 
 	turn_phase = TurnPhase.ENEMY_TURN
 
 	# End all player turns
-	for player in players:
+	print("[GameManager] About to end all player turns. Player count: ", players.size())
+	for i in range(players.size()):
+		var player = players[i]
+		print("[GameManager] Checking player ", i, " - is_alive: ", player.is_alive())
 		if player.is_alive():
+			print("[GameManager] Calling end_turn for player ", i)
 			player.end_turn()
 			broadcast_character_state(player)
+			send_hand_to_owner(player)  # Sync cleared hand
 
 	# Notify clients
 	rpc("client_enemy_turn_phase_started")
 
 	# Play enemy turns
 	await get_tree().create_timer(0.5).timeout
-	start_enemies_turn()
+	var combat_ended = await start_enemies_turn()
+
+	# If combat transitioned (minions->boss) or ended, don't continue
+	if combat_ended:
+		return
 
 	# After enemies done, check victory/defeat
 	await get_tree().create_timer(0.5).timeout
@@ -642,8 +824,11 @@ func select_enemy_target(enemy: Character, card: Card) -> Character:
 	return null
 
 func end_boss_turn():
+	# Apply boss end-of-turn effects (status decay, etc.)
 	current_boss.end_turn()
-	round_number += 1
+
+	# NOTE: round_number increment removed - handled by start_enemy_turn_phase()
+	# NOTE: start_player_turn() removed - using new simultaneous turn system via start_round()
 
 	# Check if all players are dead
 	var alive_count = 0
@@ -654,10 +839,6 @@ func end_boss_turn():
 	if alive_count == 0:
 		game_over()
 		return
-
-	# Start next round
-	current_player_index = 0
-	start_player_turn(0)
 
 func play_card(caster: Character, card: Card, target: Character):
 	# Server validates and processes
@@ -714,6 +895,9 @@ func _server_play_card(caster: Character, card: Card, target: Character):
 		last_played_cards[player_index] = card
 		# Broadcast to all clients
 		rpc("sync_last_played_card", player_index, card.serialize())
+
+		# Remove card from queued cards (server authoritative removal)
+		remove_queued_card(player_index, card)
 
 	# Sync all affected characters
 	broadcast_character_state(caster)
