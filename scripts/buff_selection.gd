@@ -169,14 +169,20 @@ func _on_all_players_ready():
 func _continue_to_boss():
 	print("[BUFF] Transitioning to boss combat")
 
-	if multiplayer.is_server():
-		# Initialize boss encounter using unified modular system (RPC so all clients initialize)
-		var boss_idx = game_manager.boss_index
-		game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.BOSS_PHASE_1, boss_idx)
+	# ONLY server should handle transition - clients wait for RPC
+	if not multiplayer.is_server():
+		return
 
-		# Synchronized scene change for multiplayer
-		var network_manager = get_node_or_null("/root/NetworkManager")
+	# Initialize boss encounter (RPC runs on all clients)
+	var boss_idx = game_manager.boss_index
+	game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.BOSS_PHASE_1, boss_idx)
+
+	# Wait for initialization RPC to complete on all clients
+	await get_tree().create_timer(0.5).timeout
+
+	# Change scene (RPC runs on all clients)
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if network_manager:
 		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
 	else:
-		# Client side - just change scene
-		get_tree().change_scene_to_file("res://scenes/combat.tscn")
+		push_error("[BUFF] NetworkManager not found!")

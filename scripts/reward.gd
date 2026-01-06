@@ -177,9 +177,15 @@ func _on_all_common_rewards_complete():
 	wizard.say("Your choices are made! Steel yourselves...\nThe next challenge awaits!")
 
 	# Common panel should already be hidden for each player
-	# Just show the continue button
+	# Just show the continue button (only for host)
 	await get_tree().create_timer(2.0).timeout
-	continue_button.visible = true
+	if multiplayer.is_server():
+		continue_button.visible = true
+	else:
+		# Non-hosts see a waiting message
+		continue_button.text = "Waiting for host to continue..."
+		continue_button.disabled = true
+		continue_button.visible = true
 
 ## Handle spectator choice made - send to server or apply directly
 func _on_spectator_choice_made(player_index: int, choice: RewardChoice):
@@ -269,22 +275,28 @@ func client_all_players_ready():
 	reward_manager.notify_all_players_ready()
 
 func _on_continue_pressed():
-	# Determine next boss index
+	# ONLY server should handle this button - clients wait for RPC
+	if not multiplayer.is_server():
+		print("[REWARD] ERROR: Non-host clicked continue button!")
+		return
+
 	var boss_idx = game_manager.boss_index
 
-	if multiplayer.is_server():
-		# Initialize next combat encounter using unified modular system (RPC so all clients initialize)
-		# After defeating a boss, we move to the next boss's minion fight
-		if boss_idx < 5:  # Still have bosses to fight (0-4)
-			game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.MINION, boss_idx)
-		else:
-			# All 5 bosses defeated - victory!
-			print("[REWARD] All bosses defeated! Victory!")
-			# TODO: Transition to victory screen instead of combat
+	# Initialize next combat encounter (RPC runs on all clients)
+	if boss_idx < 5:  # Still have bosses to fight (0-4)
+		game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.MINION, boss_idx)
+	else:
+		# All 5 bosses defeated - victory!
+		print("[REWARD] All bosses defeated! Victory!")
+		# TODO: Transition to victory screen instead of combat
+		return
 
-		# Synchronized scene change for multiplayer
-		var network_manager = get_node_or_null("/root/NetworkManager")
+	# Wait for initialization RPC to complete on all clients
+	await get_tree().create_timer(0.5).timeout
+
+	# Change scene (RPC runs on all clients)
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if network_manager:
 		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
 	else:
-		# Client side - just change scene
-		get_tree().change_scene_to_file("res://scenes/combat.tscn")
+		push_error("[REWARD] NetworkManager not found!")
