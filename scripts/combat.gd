@@ -2,11 +2,9 @@ extends Control
 
 var game_manager: Node
 var current_player: Character
-var selected_card: Card
-var awaiting_target: bool = false
-var queued_cards: Array = []  # Array of Cards (no targets yet)
+var card_hand_display: CardHandDisplay
+var player_status_panel: PlayerStatusPanel
 var last_turn_phase = null  # Track phase changes for animations
-var animating_phase_transition: bool = false  # Prevent updates during animation
 
 # UI References - New multiplayer layout
 @onready var left_player_panel: Panel = $MainArea/LeftPlayerPanel
@@ -30,6 +28,18 @@ var boss_visual: Node2D = null
 func _ready():
 	game_manager = get_node("/root/GameManager")
 
+	# Create card hand display component
+	card_hand_display = CardHandDisplay.new()
+	add_child(card_hand_display)
+	card_hand_display.setup(game_manager, hand_container, turn_label)
+	card_hand_display.card_queued.connect(_on_card_queued)
+
+	# Create player status panel component
+	player_status_panel = PlayerStatusPanel.new()
+	add_child(player_status_panel)
+	player_status_panel.setup(game_manager, left_player_panel, right_player_panel, your_character_panel)
+	player_status_panel.panel_clicked.connect(_on_character_clicked)
+
 	# Add animated background
 	create_animated_background()
 
@@ -48,13 +58,19 @@ func _ready():
 	var hand_panel = $BottomArea/HandPanel
 	hand_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hand_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	print("[Combat] Set mouse_filter to IGNORE for HandPanel and HandContainer")
 
-	update_all_displays()
+	# DEBUG: Check turn_phase BEFORE start_round
+	print("[COMBAT DEBUG] _ready() - turn_phase BEFORE start_round: ", game_manager.turn_phase)
 
 	# Start the first round with simultaneous selection phase
 	if game_manager.current_state == game_manager.GameState.COMBAT:
 		game_manager.start_round()
+
+	# DEBUG: Check turn_phase AFTER start_round
+	print("[COMBAT DEBUG] _ready() - turn_phase AFTER start_round: ", game_manager.turn_phase)
+
+	# Update displays AFTER round is properly initialized
+	update_all_displays()
 
 func create_animated_background():
 	var bg = ColorRect.new()
@@ -65,130 +81,12 @@ func create_animated_background():
 	move_child(bg, 0)  # Move to back
 
 func update_all_displays():
-	update_player_displays()
+	player_status_panel.update_all()
 	update_enemy_displays()
-	update_hand_display()
+	card_hand_display.update_display()
 	update_deck_counts()
 	update_turn_display()
 	update_button_states()
-
-func update_player_displays():
-	var my_index = game_manager.local_player_index
-	if my_index == -1:
-		push_error("[Combat] Local player index not set!")
-		return
-
-	# Safety check: ensure player index is valid
-	if my_index >= game_manager.players.size():
-		push_error("[Combat] Invalid local player index: %d" % my_index)
-		return
-
-	var my_character = game_manager.players[my_index]
-
-	# Determine left and right players
-	var other_indices = []
-	for i in range(game_manager.players.size()):
-		if i != my_index:
-			other_indices.append(i)
-
-	# Left player (first "other")
-	if other_indices.size() > 0:
-		var left_char = game_manager.players[other_indices[0]]
-		update_other_player_panel(left_player_panel, left_char, other_indices[0])
-	else:
-		# No left player (< 2 players total)
-		left_player_panel.visible = false
-
-	# Right player (second "other")
-	if other_indices.size() > 1:
-		var right_char = game_manager.players[other_indices[1]]
-		update_other_player_panel(right_player_panel, right_char, other_indices[1])
-	else:
-		# No right player (< 3 players total)
-		right_player_panel.visible = false
-
-	# Your character (bottom)
-	update_your_character_panel(my_character)
-
-func update_other_player_panel(panel: Panel, character: Character, player_index: int):
-	panel.visible = true
-
-	# Connect click handler for targeting (disconnect first to avoid duplicates)
-	if not panel.gui_input.is_connected(_on_character_clicked):
-		panel.gui_input.connect(_on_character_clicked.bind(character))
-
-	# Update name, HP, Energy
-	var name_label = panel.get_node("VBoxContainer/NameLabel")
-	var hp_label = panel.get_node("VBoxContainer/HPLabel")
-	var energy_label = panel.get_node("VBoxContainer/EnergyLabel")
-
-	name_label.text = character.character_name
-	hp_label.text = "HP: %d/%d" % [character.current_health, character.max_health]
-
-	if character.shield > 0:
-		hp_label.text += "\nShield: %d" % character.shield
-
-	energy_label.text = "E: %d/%d" % [character.current_energy, character.max_energy]
-
-	# Update panel background color based on status
-	var bg_color = Color(0.2, 0.2, 0.2)
-	if not character.is_alive():
-		bg_color = Color(0.3, 0.1, 0.1)  # Red for dead
-	elif player_index == game_manager.current_player_index:
-		bg_color = Color(0.2, 0.4, 0.6)  # Blue for active
-
-	var style = StyleBoxFlat.new()
-	style.bg_color = bg_color
-	style.border_color = Color.WHITE
-	style.border_width_left = 2
-	style.border_width_right = 2
-	style.border_width_top = 2
-	style.border_width_bottom = 2
-	panel.add_theme_stylebox_override("panel", style)
-
-	# Update "playing card" display
-	var playing_card_container = panel.get_node("VBoxContainer/PlayingCardContainer")
-	# Clear existing
-	for child in playing_card_container.get_children():
-		child.queue_free()
-
-	# Show last played card if available
-	if game_manager.last_played_cards.has(player_index):
-		var last_card = game_manager.last_played_cards[player_index]
-		var small_card_visual = card_scene.instantiate()
-		playing_card_container.add_child(small_card_visual)
-
-		small_card_visual.set_card(last_card)
-		small_card_visual.set_playable(false)  # Not playable, just for display
-		small_card_visual.scale = Vector2(0.67, 0.67)  # Scale to 100x140 from 150x220
-
-func update_your_character_panel(character: Character):
-	# Connect click handler for self-targeting
-	if not your_character_panel.gui_input.is_connected(_on_character_clicked):
-		your_character_panel.gui_input.connect(_on_character_clicked.bind(character))
-
-	var name_label = your_character_panel.get_node("HBoxContainer/NameLabel")
-	var hp_label = your_character_panel.get_node("HBoxContainer/HPLabel")
-	var energy_label = your_character_panel.get_node("HBoxContainer/EnergyLabel")
-	var shield_label = your_character_panel.get_node("HBoxContainer/ShieldLabel")
-
-	name_label.text = character.character_name
-	hp_label.text = "HP: %d/%d" % [character.current_health, character.max_health]
-	energy_label.text = "Energy: %d/%d" % [character.current_energy, character.max_energy]
-	shield_label.text = "Shield: %d" % character.shield
-
-	# Highlight panel if it's your turn
-	var is_my_turn = game_manager.local_player_index == game_manager.current_player_index
-	var bg_color = Color(0.3, 0.5, 0.7) if is_my_turn else Color(0.2, 0.2, 0.2)
-
-	var style = StyleBoxFlat.new()
-	style.bg_color = bg_color
-	style.border_color = Color.YELLOW if is_my_turn else Color.WHITE
-	style.border_width_left = 3
-	style.border_width_right = 3
-	style.border_width_top = 3
-	style.border_width_bottom = 3
-	your_character_panel.add_theme_stylebox_override("panel", style)
 
 func update_deck_counts():
 	var my_index = game_manager.local_player_index
@@ -198,60 +96,6 @@ func update_deck_counts():
 	var my_character = game_manager.players[my_index]
 	deck_count_label.text = "Deck: %d" % my_character.deck.size()
 	discard_count_label.text = "Discard: %d" % my_character.discard_pile.size()
-
-func update_hand_display():
-	var my_index = game_manager.local_player_index
-	if my_index == -1 or my_index >= game_manager.players.size():
-		print("[Combat] update_hand_display - invalid index: %d" % my_index)
-		return
-
-	print("[Combat] update_hand_display - phase: %s" % game_manager.turn_phase)
-
-	# During SELECTION phase: Show hand cards
-	if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION:
-		print("[Combat] SELECTION phase - updating hand display")
-
-		# Clear existing cards
-		for child in hand_container.get_children():
-			child.queue_free()
-
-		var my_character = game_manager.players[my_index]
-		print("[Combat] Player has %d cards in hand, energy: %d/%d" % [my_character.hand.size(), my_character.current_energy, my_character.max_energy])
-
-		# Calculate remaining energy after queued cards
-		var queued_energy = 0
-		for queued_card in queued_cards:
-			queued_energy += queued_card.energy_cost
-		var remaining_energy = my_character.max_energy - queued_energy
-		print("[Combat] Remaining energy: %d (queued uses %d)" % [remaining_energy, queued_energy])
-
-		# Display cards in hand (only YOUR cards)
-		for card in my_character.hand:
-			var card_visual = card_scene.instantiate()
-			hand_container.add_child(card_visual)
-
-			card_visual.set_card(card)
-
-			# Cards are clickable if enough energy remaining
-			var can_afford = (card.energy_cost <= remaining_energy)
-			card_visual.set_playable(can_afford)
-			print("[Combat] Created hand card: %s (cost: %d, playable: %s)" % [card.card_name, card.energy_cost, can_afford])
-
-			# Avoid duplicate connections
-			if not card_visual.card_clicked.is_connected(_on_card_clicked):
-				card_visual.card_clicked.connect(_on_card_clicked)
-				print("[Combat] Connected signal for hand card: %s" % card.card_name)
-
-	# During ACTION phase: Show queued cards (but don't regenerate constantly!)
-	elif game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION:
-		# Don't regenerate during animations
-		if animating_phase_transition:
-			return
-
-		# Don't regenerate on every game_state_changed!
-		# The initial display from animate_selection_to_action() should persist.
-		# Cards will be removed individually when played.
-		pass
 
 func update_enemy_displays():
 	# Clear existing enemy UI
@@ -419,151 +263,40 @@ func _on_card_played(character: Character, card: Card, target: Character):
 func _on_game_state_changed():
 	# Detect phase transitions for animations
 	var current_phase = game_manager.turn_phase
-	print("[Combat] game_state_changed - last_phase: %s, current_phase: %s" % [last_turn_phase, current_phase])
+
+	# DEBUG: Log state change
+	var phase_name_old = ""
+	var phase_name_new = ""
+	match last_turn_phase:
+		game_manager.TurnPhase.PLAYER_SELECTION:
+			phase_name_old = "SELECTION"
+		game_manager.TurnPhase.PLAYER_ACTION:
+			phase_name_old = "ACTION"
+		game_manager.TurnPhase.ENEMY_TURN:
+			phase_name_old = "ENEMY"
+		null:
+			phase_name_old = "NULL"
+	match current_phase:
+		game_manager.TurnPhase.PLAYER_SELECTION:
+			phase_name_new = "SELECTION"
+		game_manager.TurnPhase.PLAYER_ACTION:
+			phase_name_new = "ACTION"
+		game_manager.TurnPhase.ENEMY_TURN:
+			phase_name_new = "ENEMY"
+	print("[COMBAT DEBUG] _on_game_state_changed - phase transition: ", phase_name_old, " -> ", phase_name_new)
 
 	# CRITICAL: Clear queued cards when entering SELECTION phase from another phase
 	if last_turn_phase != game_manager.TurnPhase.PLAYER_SELECTION and current_phase == game_manager.TurnPhase.PLAYER_SELECTION:
-		print("[Combat] Entering SELECTION phase - clearing queued_cards")
-		queued_cards.clear()
+		print("[STATE] Phase transition: ", last_turn_phase, " -> SELECTION - Clearing queued cards")
+		card_hand_display.clear_queued_cards()
 
 	if last_turn_phase == game_manager.TurnPhase.PLAYER_SELECTION and current_phase == game_manager.TurnPhase.PLAYER_ACTION:
 		# Transition to ACTION phase - animate cards
-		print("[Combat] DETECTED PHASE TRANSITION - Triggering animation")
-		animate_selection_to_action()
+		print("[STATE] Phase transition: SELECTION -> ACTION - Animating cards")
+		card_hand_display.animate_selection_to_action()
 
 	last_turn_phase = current_phase
 	update_all_displays()
-
-func animate_selection_to_action():
-	print("[Combat] === ANIMATE SELECTION → ACTION TRANSITION ===")
-	print("[Combat] animating_phase_transition was: %s" % animating_phase_transition)
-
-	if animating_phase_transition:
-		print("[Combat] ALREADY ANIMATING - SKIPPING!")
-		return
-
-	animating_phase_transition = true
-
-	# Step 1: Animate hand cards sliding down off screen
-	var hand_cards = hand_container.get_children()
-	print("[Combat] Step 1: Animating %d hand cards down" % hand_cards.size())
-	for i in range(hand_cards.size()):
-		var card_visual = hand_cards[i]
-		var tween = create_tween()
-		tween.tween_property(card_visual, "position:y", card_visual.position.y + 400, 0.3).set_delay(i * 0.05)
-		tween.tween_callback(card_visual.queue_free)
-
-	# Step 2: Wait for hand to clear, then show queue
-	print("[Combat] Step 2: Waiting 0.5s for hand to clear...")
-	await get_tree().create_timer(0.5).timeout
-
-	# Step 3: Display all queued cards (from all players) and animate them up
-	print("[Combat] Step 3: Displaying queued cards...")
-	display_queued_cards_for_action()
-
-	animating_phase_transition = false
-	print("[Combat] === ANIMATION COMPLETE ===")
-
-func remove_card_visual_from_display(card: Card):
-	# Remove the visual for a specific card that was just played
-	for child in hand_container.get_children():
-		if child.has_method("set_card") and child.card_data and child.card_data.card_name == card.card_name:
-			print("[Combat] Removing card visual: %s" % card.card_name)
-			child.queue_free()
-			return
-
-func display_queued_cards_for_action():
-	print("[Combat] === DISPLAYING QUEUED CARDS FOR ACTION PHASE ===")
-	print("[Combat] Existing children count: %d" % hand_container.get_child_count())
-
-	# Clear hand container (use free() for immediate removal)
-	for child in hand_container.get_children():
-		print("[Combat] Freeing existing child: %s" % child.name)
-		child.free()
-
-	var my_index = game_manager.local_player_index
-	print("[Combat] My player index: %d" % my_index)
-
-	# Collect all queued cards from all players, organized by player
-	var delay = 0.0
-	var total_cards = 0
-	for player_index in range(game_manager.players.size()):
-		if not game_manager.queued_cards.has(player_index):
-			print("[Combat] Player %d has no queued cards" % player_index)
-			continue
-
-		var player_queued = game_manager.queued_cards[player_index]
-		var is_my_cards = (player_index == my_index)
-		print("[Combat] Player %d has %d queued cards (mine: %s)" % [player_index, player_queued.size(), is_my_cards])
-
-		# Create card visuals for this player's queued cards
-		for card in player_queued:
-			var card_visual = card_scene.instantiate()
-			hand_container.add_child(card_visual)
-			total_cards += 1
-
-			card_visual.set_card(card)
-
-			# Ensure card visual can receive mouse events
-			card_visual.mouse_filter = Control.MOUSE_FILTER_STOP
-
-			# Only your own queued cards are clickable
-			card_visual.set_playable(is_my_cards)
-			print("[Combat] Created card visual: %s (playable: %s)" % [card.card_name, is_my_cards])
-
-			if is_my_cards:
-				# Connect to queued card click handler
-				# Note: Signal already emits the card, no need to bind
-				card_visual.card_clicked.connect(_on_queued_card_clicked)
-				print("[Combat] Connected signal for: %s" % card.card_name)
-
-			# Tint other players' cards differently
-			if not is_my_cards:
-				card_visual.modulate = Color(0.7, 0.7, 0.7, 0.8)
-
-			# Use modulate for animation instead of position (to not fight HBoxContainer)
-			card_visual.modulate.a = 0.0
-
-			# Animate card fading in
-			var tween = create_tween()
-			tween.tween_property(card_visual, "modulate:a", 1.0 if is_my_cards else 0.8, 0.4).set_delay(delay).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-			delay += 0.05
-
-	print("[Combat] Total cards created: %d" % total_cards)
-	print("[Combat] === END DISPLAY QUEUED CARDS ===")
-
-func _on_queued_card_clicked(card: Card):
-	# Player clicked their queued card to play it
-	var my_index = game_manager.local_player_index
-	if my_index == -1:
-		return
-
-	var my_character = game_manager.players[my_index]
-
-	print("[Combat] Playing queued card: %s" % card.card_name)
-
-	selected_card = card
-
-	# Check if card needs targeting
-	match card.target_type:
-		Card.TargetType.SELF:
-			# Play immediately on self
-			game_manager.play_card(my_character, card, my_character)
-			game_manager.remove_queued_card(my_index, card)
-			remove_card_visual_from_display(card)
-			selected_card = null
-		Card.TargetType.ALL_ALLIES, Card.TargetType.ALL_ENEMIES:
-			# Play immediately, no targeting needed
-			var first_enemy = game_manager.enemies[0] if game_manager.enemies.size() > 0 else null
-			if first_enemy:
-				game_manager.play_card(my_character, card, first_enemy)
-				game_manager.remove_queued_card(my_index, card)
-				remove_card_visual_from_display(card)
-			selected_card = null
-		_:
-			# Need to select a target
-			awaiting_target = true
-			turn_label.text = "Select target for %s..." % card.card_name
 
 func _on_combat_ended(victory: bool):
 	if victory:
@@ -574,110 +307,25 @@ func _on_combat_ended(victory: bool):
 	ready_button.disabled = true
 	pass_button.disabled = true
 
-func _on_card_clicked(card: Card):
-	print("[Combat] _on_card_clicked called - card: %s, phase: %s" % [card.card_name, game_manager.turn_phase])
-
-	var my_index = game_manager.local_player_index
-	if my_index == -1:
-		print("[Combat] ERROR: local_player_index is -1!")
-		return
-
-	var my_character = game_manager.players[my_index]
-	print("[Combat] Player %d clicked card, energy: %d/%d" % [my_index, my_character.current_energy, my_character.max_energy])
-
-	# SELECTION PHASE: Just queue cards (no targets yet)
-	if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION:
-		print("[Combat] SELECTION phase detected")
-
-		# Check if card should play immediately (e.g., Draw cards)
-		if card.plays_immediately:
-			# Play immediately during selection phase
-			print("[Combat] Playing instant card: %s" % card.card_name)
-			game_manager.play_card(my_character, card, my_character)
-			# Don't queue, don't remove from hand (play_card handles it)
-			return
-
-		# Check total energy cost of queued cards + this card
-		var total_cost = card.energy_cost
-		for queued in queued_cards:
-			total_cost += queued.energy_cost
-
-		print("[Combat] Energy check: card_cost=%d, queued_cost=%d, total=%d, max=%d" % [card.energy_cost, total_cost - card.energy_cost, total_cost, my_character.max_energy])
-
-		if total_cost > my_character.max_energy:
-			print("[Combat] Can't queue - would exceed energy limit (%d/%d)" % [total_cost, my_character.max_energy])
-			return
-
-		# Queue the card (no target)
-		print("[Combat] Queueing card: %s" % card.card_name)
-		queue_card(card)
-
-	# ACTION PHASE: Handled by clicking queued card visuals
-	elif game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION:
-		print("[Combat] ACTION phase - clicks handled by queued cards")
-		pass
-	else:
-		print("[Combat] Unknown phase: %s" % game_manager.turn_phase)
-
-func queue_card(card: Card):
-	var my_index = game_manager.local_player_index
-	if my_index == -1:
-		return
-
-	# Add to local queue
-	queued_cards.append(card)
-
-	print("[Combat] Queued card: %s (no target yet)" % card.card_name)
-
-	# Remove card from hand (moved to queue)
-	var my_character = game_manager.players[my_index]
-	my_character.hand.erase(card)
-
-	# Sync to server
-	game_manager.sync_queued_card(my_index, card.serialize())
-
-	# Update displays
-	update_hand_display()
+func _on_card_queued(card: Card):
+	# Update displays when a card is queued
+	update_all_displays()
 
 func _on_character_clicked(event: InputEvent, character: Character):
-	if not awaiting_target or not selected_card:
-		return
-
 	if event is InputEventMouseButton and event.pressed:
-		# Validate target
-		var valid_target = false
-
-		match selected_card.target_type:
-			Card.TargetType.SINGLE_ALLY:
-				valid_target = game_manager.players.has(character)
-			Card.TargetType.SINGLE_ENEMY, Card.TargetType.RANDOM_ENEMY:
-				valid_target = game_manager.enemies.has(character)
-
-		if valid_target:
-			var my_index = game_manager.local_player_index
-			if my_index >= 0 and my_index < game_manager.players.size():
-				# ACTION PHASE: Play the queued card with selected target
-				if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION:
-					var my_character = game_manager.players[my_index]
-					game_manager.play_card(my_character, selected_card, character)
-
-					# Remove from queue
-					game_manager.remove_queued_card(my_index, selected_card)
-					remove_card_visual_from_display(selected_card)
-
-					selected_card = null
-					awaiting_target = false
+		# Try to handle target selection via card hand display
+		if card_hand_display.on_character_clicked(character):
+			update_all_displays()
 
 func _on_ready_pressed():
 	# Mark player as ready during selection phase
+	print("[COMBAT] Player marked ready - queued cards: ", game_manager.queued_cards.get(game_manager.local_player_index, []).size())
 	game_manager.player_ready()
-	awaiting_target = false
-	selected_card = null
+	card_hand_display.cancel_target_selection()
 	update_button_states()
 
 func _on_pass_pressed():
 	# Player finishes their actions
 	game_manager.player_done()
-	awaiting_target = false
-	selected_card = null
+	card_hand_display.cancel_target_selection()
 	update_button_states()

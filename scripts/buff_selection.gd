@@ -169,6 +169,14 @@ func _on_all_players_ready():
 func _continue_to_boss():
 	print("[BUFF] Transitioning to boss combat")
 
-	# Call start_boss_phase_1() which sets up boss and changes scene to combat.tscn
-	# It handles the scene change internally, so we don't need to do it here
-	game_manager.start_boss_phase_1()
+	if multiplayer.is_server():
+		# Initialize boss encounter using unified modular system (RPC so all clients initialize)
+		var boss_idx = game_manager.boss_index
+		game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.BOSS_PHASE_1, boss_idx)
+
+		# Synchronized scene change for multiplayer
+		var network_manager = get_node_or_null("/root/NetworkManager")
+		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
+	else:
+		# Client side - just change scene
+		get_tree().change_scene_to_file("res://scenes/combat.tscn")

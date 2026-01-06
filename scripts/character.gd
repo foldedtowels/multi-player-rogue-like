@@ -69,8 +69,12 @@ func draw_card() -> Card:
 	return card
 
 func draw_cards(amount: int):
+	print("[Character] ", character_name, " draw_cards(", amount, ") - starting with hand: ", hand.size(), " | deck: ", deck.size())
 	for i in amount:
-		draw_card()
+		var drawn = draw_card()
+		if drawn == null:
+			print("[Character] ", character_name, " draw_card() returned null at iteration ", i, " | hand: ", hand.size(), " | deck: ", deck.size(), " | discard: ", discard_pile.size())
+	print("[Character] ", character_name, " draw_cards done - hand after: ", hand.size())
 
 func discard_card(card: Card):
 	hand.erase(card)
@@ -127,11 +131,11 @@ func gain_shield(amount: int):
 	shield = min(shield, GameConstants.SHIELD_CAP)
 
 func start_turn():
-	print("[Character] ", character_name, " starting turn. Deck: ", deck.size(), " cards")
+	print("[Character] ", character_name, " start_turn - hand size BEFORE drawing: ", hand.size(), " | deck size: ", deck.size())
 	current_energy = max_energy
 	apply_status_effects()
 	draw_cards(5)
-	print("[Character] After drawing 5 cards. Hand: ", hand.size(), " cards")
+	print("[Character] ", character_name, " start_turn - hand size AFTER drawing: ", hand.size(), " | deck size: ", deck.size())
 
 func add_energy(amount: int):
 	current_energy += amount
@@ -196,6 +200,7 @@ func duplicate_character() -> Character:
 # Network synchronization - data only, RPCs handled by GameManager
 func get_state_dict() -> Dictionary:
 	return {
+		"character_name": character_name,
 		"current_health": current_health,
 		"max_health": max_health,
 		"current_energy": current_energy,
@@ -210,6 +215,7 @@ func get_state_dict() -> Dictionary:
 	}
 
 func apply_state_dict(state: Dictionary):
+	character_name = state.character_name
 	current_health = state.current_health
 	max_health = state.max_health
 	current_energy = state.current_energy
@@ -229,6 +235,8 @@ func get_hand_dict() -> Array[Dictionary]:
 	return hand_data
 
 func apply_hand_dict(hand_data: Array):
+	print("[Character] ", character_name, " apply_hand_dict - hand size BEFORE clear: ", hand.size(), " | incoming data size: ", hand_data.size())
 	hand.clear()
 	for card_dict in hand_data:
 		hand.append(Card.deserialize(card_dict))
+	print("[Character] ", character_name, " apply_hand_dict - hand size AFTER: ", hand.size())

@@ -51,6 +51,10 @@ enum TargetType {
 @export var generate_cards: Array[String] = []  # Names of cards to add to hand
 @export var scry_amount: int = 0  # Look at top X cards of deck
 
+# Runtime-only unique ID for queued card instances (invisible to player, not saved to disk)
+# Used to distinguish between identical cards in the queue (e.g., two Fire Strike cards)
+var queue_instance_id: int = 0
+
 func get_full_description() -> String:
 	var desc = description + "\n\n"
 
@@ -113,7 +117,8 @@ func serialize() -> Dictionary:
 		"aoe_damage": aoe_damage,
 		"plays_immediately": plays_immediately,
 		"generate_cards": generate_cards,
-		"scry_amount": scry_amount
+		"scry_amount": scry_amount,
+		"queue_instance_id": queue_instance_id
 	}
 
 static func deserialize(data: Dictionary) -> Card:
@@ -141,4 +146,5 @@ static func deserialize(data: Dictionary) -> Card:
 	card.plays_immediately = data.get("plays_immediately", false)  # Default to false for old cards
 	card.generate_cards = data.generate_cards
 	card.scry_amount = data.scry_amount
+	card.queue_instance_id = data.get("queue_instance_id", 0)  # Default to 0 for old cards
 	return card

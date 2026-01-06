@@ -269,13 +269,22 @@ func client_all_players_ready():
 	reward_manager.notify_all_players_ready()
 
 func _on_continue_pressed():
-	# Start next boss encounter
-	game_manager.start_boss_encounter()
-	game_manager.start_player_turn(0)
+	# Determine next boss index
+	var boss_idx = game_manager.boss_index
 
-	# Synchronized scene change for multiplayer
-	var network_manager = get_node_or_null("/root/NetworkManager")
-	if network_manager and multiplayer.is_server():
+	if multiplayer.is_server():
+		# Initialize next combat encounter using unified modular system (RPC so all clients initialize)
+		# After defeating a boss, we move to the next boss's minion fight
+		if boss_idx < 5:  # Still have bosses to fight (0-4)
+			game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.MINION, boss_idx)
+		else:
+			# All 5 bosses defeated - victory!
+			print("[REWARD] All bosses defeated! Victory!")
+			# TODO: Transition to victory screen instead of combat
+
+		# Synchronized scene change for multiplayer
+		var network_manager = get_node_or_null("/root/NetworkManager")
 		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
 	else:
+		# Client side - just change scene
 		get_tree().change_scene_to_file("res://scenes/combat.tscn")

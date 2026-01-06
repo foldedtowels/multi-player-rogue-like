@@ -26,6 +26,12 @@ enum TurnPhase {
 	ENEMY_TURN        # Enemies taking turns
 }
 
+enum EncounterType {
+	MINION,        # Minion fight before boss
+	BOSS_PHASE_1,  # First phase of boss fight
+	BOSS_PHASE_2   # Second phase of boss fight (if boss has multiple phases)
+}
+
 var current_state: GameState = GameState.CHARACTER_SELECTION
 var turn_phase: TurnPhase = TurnPhase.PLAYER_SELECTION
 var players: Array[Character] = []
@@ -79,11 +85,13 @@ func select_heroes(hero_indices: Array):
 			var hero_copy = all_heroes[idx].duplicate_character()
 			players.append(hero_copy)
 
+	# NOTE: Encounter initialization now happens in calling scene (character_selection.gd)
+	# using initialize_combat_encounter() for consistent modular setup
 
-	if players.size() == 3:
-		start_boss_encounter()
-
+## DEPRECATED: Use initialize_combat_encounter() instead
+## This function is kept for compatibility but should not be used in new code
 func start_boss_encounter():
+	push_warning("[DEPRECATED] start_boss_encounter() is deprecated. Use initialize_combat_encounter() instead.")
 	current_boss = boss_db.get_boss(boss_index)
 	if current_boss == null:
 		# All bosses defeated!
@@ -132,6 +140,112 @@ func start_boss_encounter():
 func sync_game_seed(seed: int):
 	game_seed = seed
 	rng.seed = seed
+
+## UNIFIED ENCOUNTER INITIALIZATION ##
+## This function provides modular, consistent initialization for ALL combat encounters
+## Use this instead of start_boss_encounter() + reset_players_between_encounters()
+@rpc("any_peer", "call_local", "reliable")
+func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
+	"""
+	Unified initialization for ALL combat encounters.
+	Use this for first minion fight, second minion fight, boss fights, etc.
+	Ensures consistent state reset and synchronization.
+
+	Args:
+		encounter_type: MINION, BOSS_PHASE_1, or BOSS_PHASE_2
+		boss_idx: Which boss (0-4) to load enemies for
+	"""
+
+	print("[GameManager] initialize_combat_encounter - type: ", encounter_type, " boss_idx: ", boss_idx)
+
+	# Step 1: Clear ALL combat state
+	enemies.clear()
+	queued_cards.clear()
+	players_ready.clear()
+	players_done_acting.clear()
+	last_played_cards.clear()
+
+	# Step 2: Set game state
+	current_state = GameState.COMBAT
+	round_number = 1
+	current_player_index = 0
+	boss_index = boss_idx
+
+	# Step 3: Load boss reference (needed even for minion fights)
+	# CRITICAL: Always load current_boss so it's available for transitions
+	if encounter_type != EncounterType.BOSS_PHASE_2:
+		current_boss = boss_db.get_boss(boss_idx).duplicate_character()
+
+	# Step 4: Load enemies based on encounter type
+	match encounter_type:
+		EncounterType.MINION:
+			var minions = minion_db.get_minions_for_boss(boss_idx)
+			for minion in minions:
+				enemies.append(minion)
+			combat_phase = CombatPhase.MINION_COMBAT
+			print("[GameManager] Loaded ", minions.size(), " minions for boss ", boss_idx, " (boss loaded for later: ", current_boss.character_name, ")")
+
+		EncounterType.BOSS_PHASE_1:
+			current_boss.character_role = Character.CharacterRole.BOSS
+			enemies.append(current_boss)
+			combat_phase = CombatPhase.BOSS_PHASE_1
+			print("[GameManager] Loaded boss: ", current_boss.character_name)
+
+		EncounterType.BOSS_PHASE_2:
+			# Boss already exists, just add back to enemies
+			enemies.append(current_boss)
+			combat_phase = CombatPhase.BOSS_PHASE_2
+			print("[GameManager] Boss phase 2: ", current_boss.character_name)
+
+	# Step 5: Reset player state (keep earned cards!)
+	for i in range(players.size()):
+		var player = players[i]
+
+		# Return all cards to deck (hand, discard)
+		for card in player.hand:
+			player.deck.append(card)
+		player.hand.clear()
+
+		for card in player.discard_pile:
+			player.deck.append(card)
+		player.discard_pile.clear()
+
+		# Exhaust pile cards are removed (don't add back)
+		player.exhaust_pile.clear()
+
+		# Shuffle deck (includes earned cards!)
+		player.deck.shuffle()
+
+		# Reset temporary combat state
+		player.shield = 0
+		player.current_energy = player.max_energy
+		player.reset_debuffs()
+
+		print("[GameManager] Player ", i, " (", player.character_name, ") reset - deck: ", player.deck.size(), " cards")
+
+	# Step 6: Sync state to all clients (server only)
+	if multiplayer.is_server():
+		# Assign network ownership
+		assign_characters_to_network_peers()
+
+		# Broadcast player state (don't send hands yet - start_round() will draw and send)
+		for i in range(players.size()):
+			broadcast_character_state(players[i])
+
+		# Sync enemies
+		match encounter_type:
+			EncounterType.MINION:
+				sync_minion_enemies()
+			EncounterType.BOSS_PHASE_1, EncounterType.BOSS_PHASE_2:
+				sync_boss_enemy()
+
+		# Sync RNG seed for deterministic gameplay
+		game_seed = randi()
+		rpc("sync_game_seed", game_seed)
+
+	rng.seed = game_seed
+
+	print("[GameManager] initialize_combat_encounter complete - enemies: ", enemies.size(), " queued_cards cleared")
 
 # Character state sync RPCs
 @rpc("any_peer", "call_local", "reliable")
@@ -182,18 +296,15 @@ func send_hand_to_owner(character: Character):
 	var char_index = players.find(character)
 	if char_index == -1: return
 
-	print("[GameManager] send_hand_to_owner for player ", char_index, " - hand size BEFORE get_hand_dict: ", character.hand.size())
 	var hand_data = character.get_hand_dict()
-	print("[GameManager] hand_data size: ", hand_data.size())
+	print("[GameManager] send_hand_to_owner - ", character.character_name, " (player ", char_index, ") | hand size: ", hand_data.size())
 
 	# Broadcast to clients via RPC
 	rpc("sync_character_hand", char_index, hand_data)
 
 	# CRITICAL: Also update server's own copy since we use "call_remote"
 	# This ensures all players (including host) have correct hand state
-	print("[GameManager] About to call apply_hand_dict for player ", char_index)
 	character.apply_hand_dict(hand_data)
-	print("[GameManager] After apply_hand_dict - hand size: ", character.hand.size())
 
 func assign_characters_to_network_peers():
 	# Server assigns character indices to network peers
@@ -328,16 +439,26 @@ func transition_to_buff_phase():
 	else:
 		get_tree().change_scene_to_file("res://scenes/buff_selection.tscn")
 
+## DEPRECATED: Use initialize_combat_encounter() instead
 ## Reset players between combat encounters (KEEPS earned cards in deck!)
-## Use this when transitioning minions→boss or boss→boss
+## This function is kept for compatibility but should not be used in new code
 func reset_players_between_encounters():
+	push_warning("[DEPRECATED] reset_players_between_encounters() is deprecated. Use initialize_combat_encounter() instead.")
 	print("[GameManager] Resetting players between encounters (keeping earned cards)")
+
+	# DEBUG: Show queued_cards before clearing
+	print("[QUEUED_CARDS DEBUG] BEFORE reset_players_between_encounters:")
+	for player_idx in queued_cards.keys():
+		print("  Player ", player_idx, ": ", queued_cards[player_idx].size(), " cards")
 
 	# Clear all combat state dictionaries
 	queued_cards.clear()
 	players_ready.clear()
 	players_done_acting.clear()
 	last_played_cards.clear()
+
+	# DEBUG: Confirm cleared
+	print("[QUEUED_CARDS DEBUG] AFTER reset_players_between_encounters - queued_cards.size(): ", queued_cards.size())
 
 	# Reset each player's temporary state (but keep their deck!)
 	for i in range(players.size()):
@@ -406,7 +527,10 @@ func reset_players_for_new_run():
 
 		print("[GameManager] Player ", i, " (", player.character_name, ") reset to starting deck - ", player.deck.size(), " cards")
 
+## DEPRECATED: Use initialize_combat_encounter() instead
+## This function is kept for compatibility but should not be used in new code
 func start_boss_phase_1():
+	push_warning("[DEPRECATED] start_boss_phase_1() is deprecated. Use initialize_combat_encounter() instead.")
 	# Clear minions, add boss
 	enemies.clear()
 	current_boss.character_role = Character.CharacterRole.BOSS
@@ -455,6 +579,35 @@ func client_receive_boss_enemy(boss_state: Dictionary):
 	# Emit state change so UI updates
 	game_state_changed.emit()
 
+## Sync minion enemies to all clients (called after start_boss_encounter loads minions)
+func sync_minion_enemies():
+	# Server syncs the minion enemies to all clients
+	if not multiplayer.is_server(): return
+
+	# Serialize all minion states
+	var minion_states: Array[Dictionary] = []
+	for enemy in enemies:
+		minion_states.append(enemy.get_state_dict())
+
+	rpc("client_receive_minion_enemies", minion_states)
+
+@rpc("any_peer", "call_local", "reliable")
+func client_receive_minion_enemies(minion_states: Array[Dictionary]):
+	# Clear enemies and recreate minions from state data
+	enemies.clear()
+
+	# Recreate minions from serialized data
+	var minions = minion_db.get_minions_for_boss(boss_index)
+	for i in range(minion_states.size()):
+		if i < minions.size():
+			enemies.append(minions[i])
+			minions[i].apply_state_dict(minion_states[i])
+
+	combat_phase = CombatPhase.MINION_COMBAT
+
+	# Emit state change so UI updates
+	game_state_changed.emit()
+
 @rpc("any_peer", "call_local", "reliable")
 func client_enemy_turn_started(enemy_index: int):
 	boss_turn_started.emit()
@@ -493,10 +646,17 @@ func start_round():
 
 	print("\n##################### ROUND ", round_number, " - FRIENDLY TURN #####################")
 
+	# DEBUG: Show queued_cards before clearing
+	print("[QUEUED_CARDS DEBUG] start_round() BEFORE clear - queued_cards:")
+	for player_idx in queued_cards.keys():
+		print("  Player ", player_idx, ": ", queued_cards[player_idx].size(), " cards")
+
 	turn_phase = TurnPhase.PLAYER_SELECTION
 	players_ready.clear()
 	queued_cards.clear()
 	players_done_acting.clear()
+
+	print("[QUEUED_CARDS DEBUG] start_round() AFTER clear - queued_cards.size(): ", queued_cards.size())
 
 	# All alive players start their turn (draw cards, gain energy)
 	for i in range(players.size()):
@@ -506,6 +666,7 @@ func start_round():
 			broadcast_character_state(player)
 			send_hand_to_owner(player)
 			queued_cards[i] = []
+			print("[QUEUED_CARDS DEBUG] start_round() initialized queued_cards[", i, "] = []")
 
 	# Notify all clients to enter selection phase
 	rpc("client_selection_phase_started")
@@ -537,6 +698,9 @@ func _server_receive_queued_card(player_index: int, card_data: Dictionary):
 	if not queued_cards.has(player_index):
 		queued_cards[player_index] = []
 	queued_cards[player_index].append(card)
+
+	# DEBUG: Log card being added
+	print("[QUEUED_CARDS DEBUG] _server_receive_queued_card - Player ", player_index, " queued ", card.card_name, " (total now: ", queued_cards[player_index].size(), ")")
 
 	# Broadcast to all clients (with the assigned queue_instance_id)
 	rpc("client_receive_queued_card", player_index, card.serialize())
@@ -717,7 +881,6 @@ func check_action_phase_complete():
 
 # Start enemy turn phase
 func start_enemy_turn_phase():
-	print("[GameManager] start_enemy_turn_phase called")
 	if not multiplayer.is_server(): return
 
 	# Build enemy names string for banner
@@ -732,12 +895,9 @@ func start_enemy_turn_phase():
 	turn_phase = TurnPhase.ENEMY_TURN
 
 	# End all player turns
-	print("[GameManager] About to end all player turns. Player count: ", players.size())
 	for i in range(players.size()):
 		var player = players[i]
-		print("[GameManager] Checking player ", i, " - is_alive: ", player.is_alive())
 		if player.is_alive():
-			print("[GameManager] Calling end_turn for player ", i)
 			player.end_turn()
 			broadcast_character_state(player)
 			send_hand_to_owner(player)  # Sync cleared hand

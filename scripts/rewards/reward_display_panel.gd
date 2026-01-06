@@ -9,12 +9,17 @@ signal choice_selected(choice: RewardChoice)
 var _choices: Array[RewardChoice] = []
 var _card_scene = preload("res://scenes/card_visual.tscn")
 
-@onready var title_label: Label = $VBoxContainer/TitleLabel
-@onready var choices_container: HBoxContainer = $VBoxContainer/ChoicesContainer
+var title_label: Label
+var choices_container: HBoxContainer
 
 func _ready():
-	# Create UI structure if nodes don't exist (for programmatic instantiation)
-	if not has_node("VBoxContainer"):
+	# Handle both scene-based and programmatic instantiation
+	if has_node("VBoxContainer"):
+		# Panel is part of a scene - get references to existing nodes
+		title_label = $VBoxContainer/TitleLabel
+		choices_container = $VBoxContainer/ChoicesContainer
+	else:
+		# Panel created programmatically - create UI structure
 		_create_ui_structure()
 
 ## Setup the panel with title, choices, and interaction state

@@ -29,16 +29,31 @@ func update_display():
 	if my_index == -1 or my_index >= game_manager.players.size():
 		return
 
+	# DEBUG: Log current phase
+	var phase_name = ""
+	match game_manager.turn_phase:
+		game_manager.TurnPhase.PLAYER_SELECTION:
+			phase_name = "SELECTION"
+		game_manager.TurnPhase.PLAYER_ACTION:
+			phase_name = "ACTION"
+		game_manager.TurnPhase.ENEMY_TURN:
+			phase_name = "ENEMY"
+	print("[CARD_DISPLAY DEBUG] update_display() - turn_phase: ", phase_name)
+
 	# During SELECTION phase: Show hand cards
 	if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_SELECTION:
+		var my_character = game_manager.players[my_index]
+		print("[CARD_DISPLAY DEBUG] SELECTION - hand size: ", my_character.hand.size())
 		_display_hand_cards()
 
 	# During ACTION phase: Refresh queued cards to sync with server state
 	elif game_manager.turn_phase == game_manager.TurnPhase.PLAYER_ACTION:
 		# Don't regenerate during animations
 		if animating_phase_transition:
+			print("[CARD_DISPLAY DEBUG] ACTION - skipping, animating")
 			return
 		# Refresh display to match server's queued_cards (when other players play cards)
+		print("[CARD_DISPLAY DEBUG] ACTION - refreshing queued cards")
 		_refresh_queued_cards_display()
 
 ## Display hand cards during SELECTION phase
@@ -109,12 +124,19 @@ func _refresh_queued_cards_display():
 func _show_queued_cards(animate: bool):
 	var my_index = game_manager.local_player_index
 
+	# DEBUG: Log queued cards state
+	print("[CARD_DISPLAY DEBUG] _show_queued_cards - animate: ", animate)
+	print("[CARD_DISPLAY DEBUG] game_manager.queued_cards dict size: ", game_manager.queued_cards.size())
+	for player_idx in game_manager.queued_cards.keys():
+		print("[CARD_DISPLAY DEBUG] Player ", player_idx, " queued cards: ", game_manager.queued_cards[player_idx].size())
+
 	# Clear hand container (use queue_free() for safe deferred deletion)
 	for child in hand_container.get_children():
 		child.queue_free()
 
 	# Collect all queued cards from all ALIVE players, organized by player
 	var delay = 0.0
+	var total_cards_displayed = 0
 	for player_index in range(game_manager.players.size()):
 		if not game_manager.queued_cards.has(player_index):
 			continue
@@ -126,6 +148,8 @@ func _show_queued_cards(animate: bool):
 
 		var player_queued = game_manager.queued_cards[player_index]
 		var is_my_cards = (player_index == my_index)
+
+		print("[CARD_DISPLAY DEBUG] Displaying ", player_queued.size(), " cards for player ", player_index, " (mine: ", is_my_cards, ")")
 
 		# Create card visuals for this player's queued cards
 		for card in player_queued:

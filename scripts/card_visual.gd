@@ -110,12 +110,7 @@ func _on_mouse_exited():
 	update_card_color()
 
 func _on_gui_input(event: InputEvent):
-	print("[CardVisual] gui_input event received: ", event)
 	if event is InputEventMouseButton:
-		print("[CardVisual] Mouse button event - pressed:", event.pressed, " button:", event.button_index, " is_playable:", is_playable)
 		if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			if is_playable:
-				print("[CardVisual] EMITTING card_clicked signal for: ", card_data.card_name)
 				card_clicked.emit(card_data)
-			else:
-				print("[CardVisual] Card not playable, cannot click")

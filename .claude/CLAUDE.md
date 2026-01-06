@@ -243,6 +243,89 @@ func server_receive_choice(player_index: int, choice_data: Dictionary):
 
 ---
 
+### Problem: Grayed Out Cards + Stale queued_cards After First Wizard
+**Date**: January 2026
+**Symptoms**:
+- After first wizard reward scene, non-host players see too many grayed out cards during action phase
+- Debug logs showed `queued_cards` had 7, 6, 3 cards when it should be empty
+- Second minion fight had bugs that first minion fight didn't have
+
+**Root Cause**:
+First and second minion fights used **completely different initialization code paths**:
+
+**First minion fight:**
+```
+select_heroes() → start_boss_encounter() → [scene change] → combat._ready() → start_round()
+```
+- Simple, clean initialization
+- Worked perfectly
+
+**Second minion fight:**
+```
+_on_continue_pressed() → start_boss_encounter() → reset_players_between_encounters() → [broadcasts] → [scene change] → combat._ready() → start_round()
+```
+- Complex path with extra reset step
+- State cleared TWICE (redundant)
+- Race conditions between broadcasts and scene changes
+- Old RPC calls still in flight
+
+**Solution**:
+Created unified `initialize_combat_encounter()` function that ALL encounters use:
+
+```gdscript
+enum EncounterType { MINION, BOSS_PHASE_1, BOSS_PHASE_2 }
+
+func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
+    # Step 1: Clear ALL combat state
+    enemies.clear()
+    queued_cards.clear()
+    players_ready.clear()
+    players_done_acting.clear()
+    last_played_cards.clear()
+
+    # Step 2: Set game state
+    current_state = GameState.COMBAT
+    round_number = 1
+    current_player_index = 0
+    boss_index = boss_idx
+
+    # Step 3: ALWAYS load current_boss (even for minion fights!)
+    # CRITICAL: Boss must be loaded for later transitions
+    if encounter_type != EncounterType.BOSS_PHASE_2:
+        current_boss = boss_db.get_boss(boss_idx).duplicate_character()
+
+    # Step 4: Load enemies based on encounter type
+    match encounter_type:
+        EncounterType.MINION:
+            # Load minions, boss stored for later
+        EncounterType.BOSS_PHASE_1:
+            # Add boss to enemies
+        EncounterType.BOSS_PHASE_2:
+            # Re-add existing boss
+
+    # Step 5: Reset player state (keep earned cards!)
+    # Step 6: Sync to all clients
+```
+
+**Key Fix**: ALWAYS load `current_boss` even during minion fights! The old code did this, but the initial new code didn't. This caused "Invalid call. Nonexistent function 'end_turn' in base 'Nil'" error when `end_boss_turn()` tried to call `current_boss.end_turn()` with a null boss.
+
+**Files Modified**:
+- `scripts/game_manager.gd` - Added `EncounterType` enum and `initialize_combat_encounter()` function
+- `scripts/character_selection.gd` - First minion fight now uses `initialize_combat_encounter()`
+- `scripts/reward.gd` - Rewrote `_on_continue_pressed()` to use unified initialization
+- `scripts/buff_selection.gd` - Boss fight transition uses `initialize_combat_encounter()`
+- Old functions marked as deprecated: `start_boss_encounter()`, `reset_players_between_encounters()`, `start_boss_phase_1()`
+
+**Lessons Learned**:
+- **Modular architecture prevents bugs**: When all encounters use the SAME code path, bugs can't hide in "special case" paths
+- **Data-driven design**: Encounter type is a parameter, not separate functions
+- **Always load dependencies**: Even if boss isn't used in minion fight, load it so it's available for transitions
+- **Consistency is safety**: First encounter = Second encounter = All encounters (except for stats that should carry over)
+
+**Status**: IMPLEMENTED - All encounters now use unified modular initialization. Needs testing.
+
+---
+
 ### Template for New Problems
 ```markdown
 ### Problem: [Brief Description]
@@ -413,29 +496,41 @@ Before committing or ending a session:
 
 ## 🎯 CURRENT PRIORITIES
 
-### Critical Bugs (Game-Breaking)
-1. 🔴 **Pyra Double Cards** - Host receives 10 cards instead of 5, game unbalanced (INVESTIGATING)
-2. 🟡 **Round Number Broken** - Jumps randomly 1→3→1→3→5, confusing but not breaking (TODO)
+### Recently Completed
+- ✅ **Modular Encounter System** (January 2026) - Unified initialization for all combat encounters
+  - Created `initialize_combat_encounter()` - ONE function for ALL encounters (minions, boss, etc.)
+  - Fixed grayed out cards bug (stale queued_cards with 7, 6, 3 cards)
+  - Fixed null boss error ("end_turn in base Nil")
+  - All encounters now use same code path (first minion = second minion = boss fights)
+  - Old functions deprecated: `start_boss_encounter()`, `reset_players_between_encounters()`, `start_boss_phase_1()`
+  - **NEEDS TESTING**: Full game loop (char selection → minions → buff → boss → wizard → second minions)
 
-### Performance Issues
-3. 🟡 **apply_hand_dict Spam** - Called 20+ times per round, floods logs (TODO)
-4. 🟢 **HeroDatabase Spam** - Builds all decks repeatedly during char selection (TODO)
-
-### Completed This Session
-- ✅ **Round Banner Spam** - Fixed duplicate prints (was printing 4x, now prints once)
-- ✅ **Card Display Crash** - Fixed `card_hand_display.gd:114` by changing `free()` to `queue_free()`
 - ✅ **Wizard/Buff Selection Scenes** - Fixed RPC calls from dynamic nodes, refactored to use signal relay pattern
   - Rare card selection (spectator mode) - one player chooses, others watch
   - Common/heal selection (private mode) - each player chooses independently
   - Buff selection after minions - each player chooses +Energy/+HP/Rare Card
   - All scenes properly synchronized across multiplayer clients
 
-### Other Known Issues
-- ❌ **Test Suite** - No automated tests yet
+- ✅ **Card Display Crash** - Fixed `card_hand_display.gd:114` by changing `free()` to `queue_free()`
+- ✅ **Round Banner Spam** - Fixed duplicate prints (was printing 4x, now prints once)
+
+### Critical Testing Needed
+1. 🔴 **Test Modular Encounter System** - Needs full multiplayer playthrough to verify:
+   - No grayed out cards after first wizard
+   - queued_cards properly cleared between encounters
+   - Boss loaded correctly for all transitions
+   - Second minion fight works same as first
+
+### Known Issues (Lower Priority)
+2. 🟡 **Round Number Broken** - Jumps randomly 1→3→1→3→5, confusing but not breaking (TODO)
+3. 🟡 **apply_hand_dict Spam** - Called 20+ times per round, floods logs (TODO)
+4. 🟢 **HeroDatabase Spam** - Builds all decks repeatedly during char selection (TODO)
+5. ❌ **Test Suite** - No automated tests yet
 
 ### Upcoming Features
 - More card effects and synergies
 - Character progression system
+- Victory screen (currently just loads combat scene after 5 bosses)
 
 ---
 
@@ -467,19 +562,37 @@ If you need to edit these files, you'll be prompted to confirm. Make sure the ch
 - **CRITICAL**: Always use `queue_free()` instead of `free()` for node deletion (see Card Display Crash in Hard Problems Log)
 
 ### State Management Between Encounters
-**CRITICAL**: Use the correct reset function to avoid losing earned cards!
+**CRITICAL**: Use the new modular encounter system!
 
-Two different reset functions:
-1. **`reset_players_between_encounters()`** - Use when transitioning minions→boss or boss→next boss
-   - Clears: hands, discard, exhaust, queued_cards, shield, energy, debuffs
-   - **KEEPS**: `deck` (includes earned cards from rewards!), permanent buffs (strength, armor)
-   - **Shuffles**: existing deck
+**NEW SYSTEM (January 2026)**: All encounter initialization now uses `initialize_combat_encounter()`:
 
-2. **`reset_players_for_new_run()`** - Use ONLY when starting a brand new run
-   - Clears: everything
-   - **RESETS**: `deck = starting_deck.duplicate()` (loses all earned cards!)
+```gdscript
+# For minion fights
+game_manager.initialize_combat_encounter(GameManager.EncounterType.MINION, boss_index)
 
-**Common mistake**: Using `reset_players_for_new_run()` between encounters → players lose all earned cards!
+# For boss phase 1
+game_manager.initialize_combat_encounter(GameManager.EncounterType.BOSS_PHASE_1, boss_index)
+
+# For boss phase 2
+game_manager.initialize_combat_encounter(GameManager.EncounterType.BOSS_PHASE_2, boss_index)
+```
+
+**What it does**:
+- Clears ALL combat state (enemies, queued_cards, players_ready, etc.)
+- Loads boss reference (even for minion fights!)
+- Loads appropriate enemies (minions or boss)
+- Resets player state: Clears hands, discard, exhaust, shield, debuffs
+- **KEEPS**: `deck` (includes earned cards from rewards!), permanent buffs
+- Syncs state to all clients
+- Ensures consistent initialization for ALL encounters
+
+**OLD FUNCTIONS (DEPRECATED)**:
+- ~~`reset_players_between_encounters()`~~ - Deprecated, use `initialize_combat_encounter()` instead
+- ~~`start_boss_encounter()`~~ - Deprecated, use `initialize_combat_encounter()` instead
+- ~~`start_boss_phase_1()`~~ - Deprecated, use `initialize_combat_encounter()` instead
+- `reset_players_for_new_run()` - Still valid, ONLY for starting a brand new run
+
+**Why the change**: Old system had different code paths for first vs second encounters, causing bugs. New system ensures ALL encounters use the SAME initialization logic.
 
 ---
 
@@ -494,5 +607,23 @@ Two different reset functions:
 
 ---
 
-**Last Updated**: 2026-01-05
-**Next Review**: After 2-3 more sessions or when a new major bug is solved
+**Last Updated**: 2026-01-06
+**Next Review**: After testing modular encounter system or when a new major bug is solved
+
+## 🚨 CRITICAL NOTES FOR NEXT SESSION
+
+1. **MUST TEST**: Modular encounter system needs full multiplayer playthrough
+   - Run: Character selection → Minions → Buff → Boss → Wizard → **Second minions**
+   - Watch for: grayed out cards, null boss errors, queued_cards state
+
+2. **Bug Fixed This Session**:
+   - Fixed null boss error by loading `current_boss` even during minion fights
+   - All encounters now use `initialize_combat_encounter()` for consistency
+
+3. **Debug Logs Still Active**:
+   - Many DEBUG prints from queued_cards investigation still in code
+   - Clean up after confirming modular system works
+
+4. **Old Functions Deprecated** (don't delete yet):
+   - `start_boss_encounter()`, `reset_players_between_encounters()`, `start_boss_phase_1()`
+   - Remove in future cleanup after new system is proven

@@ -137,4 +137,8 @@ func _on_start_pressed():
 		var game_manager = get_node("/root/GameManager")
 		# Call select_heroes via RPC so it runs on ALL clients
 		game_manager.select_heroes.rpc(selected_heroes)
+
+		# Initialize first minion encounter using unified modular system (RPC so all clients initialize)
+		game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.MINION, 0)
+
 		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
