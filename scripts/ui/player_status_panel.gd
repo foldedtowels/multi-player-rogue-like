@@ -81,6 +81,24 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 	if character.shield > 0:
 		hp_label.text += "\nShield: %d" % character.shield
 
+	# Add status effects display
+	var status_text = ""
+	if character.strength > 0:
+		status_text += "Str +%d " % character.strength
+	if character.poison > 0:
+		status_text += "Poison %d " % character.poison
+	if character.burn > 0:
+		status_text += "Burn %d " % character.burn
+	if character.vulnerable > 0:
+		status_text += "Vuln %d " % character.vulnerable
+	if character.weakness > 0:
+		status_text += "Weak %d " % character.weakness
+	if character.armor > 0:
+		status_text += "Armor %d " % character.armor
+
+	if status_text != "":
+		hp_label.text += "\n" + status_text
+
 	energy_label.text = "E: %d/%d" % [character.current_energy, character.max_energy]
 
 	# Update panel background color based on status
@@ -130,6 +148,25 @@ func _update_your_panel(character: Character):
 	hp_label.text = "HP: %d/%d" % [character.current_health, character.max_health]
 	energy_label.text = "Energy: %d/%d" % [character.current_energy, character.max_energy]
 	shield_label.text = "Shield: %d" % character.shield
+
+	# Add status effects display
+	var status_parts = []
+	if character.strength > 0:
+		status_parts.append("Strength +%d" % character.strength)
+	if character.poison > 0:
+		status_parts.append("Poison %d" % character.poison)
+	if character.burn > 0:
+		status_parts.append("Burn %d" % character.burn)
+	if character.vulnerable > 0:
+		status_parts.append("Vulnerable %d" % character.vulnerable)
+	if character.weakness > 0:
+		status_parts.append("Weakness %d" % character.weakness)
+	if character.armor > 0:
+		status_parts.append("Armor %d" % character.armor)
+
+	# Append to shield label for now (or create separate label if needed)
+	if status_parts.size() > 0:
+		shield_label.text += " | " + " | ".join(status_parts)
 
 	# Highlight panel if it's your turn
 	var is_my_turn = game_manager.local_player_index == game_manager.current_player_index
