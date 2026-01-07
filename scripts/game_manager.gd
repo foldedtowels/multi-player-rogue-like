@@ -623,6 +623,10 @@ func play_boss_turn():
 	pass
 
 func play_enemy_turn(enemy: Character):
+	# Don't play turn if enemy is dead (HP <= 0)
+	if not enemy.is_alive():
+		return
+
 	# Simple AI: Play cards until out of energy
 	var enemy_hand = enemy.hand.duplicate()
 
