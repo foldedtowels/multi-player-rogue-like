@@ -49,6 +49,7 @@ func _ready():
 	game_manager.card_played.connect(_on_card_played)
 	game_manager.game_state_changed.connect(_on_game_state_changed)
 	game_manager.combat_ended.connect(_on_combat_ended)
+	game_manager.enemy_damaged_player.connect(_on_enemy_damaged_player)
 
 	# Connect button signals
 	ready_button.pressed.connect(_on_ready_pressed)
@@ -306,6 +307,44 @@ func _on_combat_ended(victory: bool):
 
 	ready_button.disabled = true
 	pass_button.disabled = true
+
+func _on_enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int):
+	# Spawn floating damage text above the damaged player's panel
+	var panel_position = _get_player_panel_position(target_player_index)
+	if panel_position != Vector2.ZERO:
+		var floating_text = FloatingDamageText.new()
+		add_child(floating_text)
+		floating_text.show_damage(card_name, damage, panel_position)
+
+func _get_player_panel_position(player_index: int) -> Vector2:
+	# Determine which panel corresponds to this player index
+	var my_index = game_manager.local_player_index
+
+	# Get panel based on player relationship
+	var panel: Panel = null
+
+	if player_index == my_index:
+		# This is your character
+		panel = your_character_panel
+	else:
+		# Determine if this is left or right player
+		var other_indices = []
+		for i in range(game_manager.players.size()):
+			if i != my_index:
+				other_indices.append(i)
+
+		if other_indices.size() > 0 and player_index == other_indices[0]:
+			# Left player
+			panel = left_player_panel
+		elif other_indices.size() > 1 and player_index == other_indices[1]:
+			# Right player
+			panel = right_player_panel
+
+	# Return position above the panel center
+	if panel:
+		return panel.global_position + Vector2(panel.size.x / 2, -20)
+	else:
+		return Vector2.ZERO
 
 func _on_card_queued(card: Card):
 	# Update displays when a card is queued

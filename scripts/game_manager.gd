@@ -5,6 +5,7 @@ signal boss_turn_started()
 signal card_played(character: Character, card: Card, target: Character)
 signal combat_ended(victory: bool)
 signal game_state_changed()
+signal enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int)
 
 enum GameState {
 	CHARACTER_SELECTION,
@@ -1149,6 +1150,12 @@ func apply_card_effects(caster: Character, card: Card, target: Character):
 					total_damage += caster.strength
 
 				var damage_dealt = t.take_damage(total_damage, card.piercing)
+
+				# Emit signal if enemy damaged a player (for floating text)
+				if enemies.has(caster) and players.has(t):
+					var target_player_index = players.find(t)
+					if target_player_index >= 0:
+						enemy_damaged_player.emit(caster.character_name, card.card_name, damage_dealt, target_player_index)
 
 				# Lifesteal
 				if card.lifesteal:
