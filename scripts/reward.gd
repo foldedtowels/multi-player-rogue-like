@@ -17,6 +17,7 @@ var chosen_player_index: int = 0
 @onready var continue_button: Button = $ContinueButton
 var rare_panel: RewardDisplayPanel
 var common_panel: RewardDisplayPanel
+var skip_button: Button
 
 func _ready():
 	game_manager = get_node("/root/GameManager")
@@ -40,6 +41,16 @@ func _ready():
 	common_panel.offset_bottom = 150
 	common_panel.custom_minimum_size = Vector2(800, 300)
 	add_child(common_panel)
+
+	# Create skip button
+	skip_button = Button.new()
+	skip_button.text = "Skip (Auto-select first choice)"
+	skip_button.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	skip_button.position = Vector2(-150, -80)
+	skip_button.custom_minimum_size = Vector2(300, 50)
+	skip_button.visible = false
+	skip_button.pressed.connect(_on_skip_pressed)
+	add_child(skip_button)
 
 	# Create wizard visual
 	wizard = Node2D.new()
@@ -103,6 +114,10 @@ func _show_rare_reward():
 	# Show spectator mode reward (all players watch, only chosen one can select)
 	reward_manager.show_spectator_reward(chosen_player_index, rare_choices, rare_panel)
 
+	# Show skip button for chosen player
+	if is_chosen:
+		skip_button.visible = true
+
 func _generate_rare_choices() -> Array[RewardChoice]:
 	var rare_pool = card_db.get_rare_cards()
 	rare_pool.shuffle()
@@ -122,8 +137,9 @@ func _on_rare_reward_complete():
 	print("[WIZARD] _on_rare_reward_complete called - hiding rare panel and moving to common rewards")
 	wizard.say("Excellent choice! The power is now yours!")
 
-	# Hide rare panel
+	# Hide rare panel and skip button
 	rare_panel.visible = false
+	skip_button.visible = false
 
 	await get_tree().create_timer(2.0).timeout
 	start_common_reward()
@@ -140,6 +156,9 @@ func start_common_reward():
 
 	# Show private mode rewards (each player sees only their own)
 	reward_manager.show_private_rewards(choices_per_player, common_panel)
+
+	# Show skip button for all players
+	skip_button.visible = true
 
 func _generate_common_choices() -> Dictionary:
 	var choices = {}
@@ -226,8 +245,9 @@ func client_notify_spectator_complete():
 func _on_private_choice_made(player_index: int, choice: RewardChoice):
 	print("[WIZARD] Private choice made by player ", player_index, " - handling RPC from reward.gd")
 
-	# Hide the common panel for THIS player immediately
+	# Hide the common panel and skip button for THIS player immediately
 	common_panel.visible = false
+	skip_button.visible = false
 	print("[WIZARD] Hiding common panel for player ", player_index)
 
 	# Send choice to server for processing
@@ -300,3 +320,24 @@ func _on_continue_pressed():
 		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
 	else:
 		push_error("[REWARD] NetworkManager not found!")
+
+func _on_skip_pressed():
+	print("[REWARD] Player skipped rewards - auto-selecting first choice")
+
+	# Hide skip button
+	skip_button.visible = false
+
+	# For rare card phase (spectator mode)
+	if reward_phase == 0:
+		var my_index = game_manager.local_player_index
+		if my_index == chosen_player_index:
+			# Auto-select first choice
+			var first_choice = _generate_rare_choices()[0]
+			_on_spectator_choice_made(my_index, first_choice)
+
+	# For common card phase (private mode)
+	elif reward_phase == 1:
+		var my_index = game_manager.local_player_index
+		var choices = _generate_common_choices()[my_index]
+		# Auto-select first choice (heal)
+		_on_private_choice_made(my_index, choices[0])

@@ -12,6 +12,7 @@ var reward_manager: RewardManager
 @onready var title_label: Label = $TitleLabel
 @onready var reward_panel: RewardDisplayPanel = $RewardPanel
 @onready var status_label: Label = $StatusLabel
+var skip_button: Button
 
 func _ready():
 	game_manager = get_node("/root/GameManager")
@@ -29,6 +30,16 @@ func _ready():
 	reward_manager.all_players_ready.connect(_on_all_players_ready)
 	reward_manager.private_choice_made.connect(_on_private_choice_made)
 
+	# Create skip button
+	skip_button = Button.new()
+	skip_button.text = "Skip (Auto-select +1 Energy)"
+	skip_button.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	skip_button.position = Vector2(-150, -80)
+	skip_button.custom_minimum_size = Vector2(300, 50)
+	skip_button.visible = false
+	skip_button.pressed.connect(_on_skip_pressed)
+	add_child(skip_button)
+
 	# Setup UI
 	title_label.text = "Minions Defeated! Choose Your Reward"
 	status_label.text = "Waiting for all players to choose..."
@@ -44,6 +55,9 @@ func _show_buff_choices():
 
 	# Show private mode rewards (each player sees only their own)
 	reward_manager.show_private_rewards(choices_per_player, reward_panel)
+
+	# Show skip button
+	skip_button.visible = true
 
 	# Update status based on ready state
 	_update_status()
@@ -104,8 +118,9 @@ func _update_status():
 func _on_private_choice_made(player_index: int, choice: RewardChoice):
 	print("[BUFF] Private choice made by player ", player_index, " - handling RPC from buff_selection.gd")
 
-	# Hide the reward panel for THIS player immediately
+	# Hide the reward panel and skip button for THIS player immediately
 	reward_panel.visible = false
+	skip_button.visible = false
 	print("[BUFF] Hiding reward panel for player ", player_index)
 
 	# Send choice to server for processing
@@ -186,3 +201,14 @@ func _continue_to_boss():
 		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
 	else:
 		push_error("[BUFF] NetworkManager not found!")
+
+func _on_skip_pressed():
+	print("[BUFF] Player skipped buff selection - auto-selecting +1 Energy")
+
+	# Hide skip button
+	skip_button.visible = false
+
+	var my_index = game_manager.local_player_index
+	var choices = _generate_buff_choices()[my_index]
+	# Auto-select first choice (+1 Energy)
+	_on_private_choice_made(my_index, choices[0])
