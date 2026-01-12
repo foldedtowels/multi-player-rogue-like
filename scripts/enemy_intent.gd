@@ -111,7 +111,7 @@ static func deserialize(data: Dictionary) -> EnemyIntent:
 
 	# Handle targets array - needs type conversion
 	var raw_targets = data.get("targets", [])
-	intent.targets = []
+	intent.targets.clear()  # Use clear() since targets is already typed Array[int]
 	for t in raw_targets:
 		intent.targets.append(int(t))
 
