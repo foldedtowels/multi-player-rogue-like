@@ -268,12 +268,21 @@ func _calculate_incoming_damage(player_index: int) -> Dictionary:
 	return result
 
 ## Build icon string for incoming attacks (shown next to character name)
-## STEP 1: Only showing ATTACK + damage number for now
+## Only shows if player is SPECIFICALLY targeted (not random "might be hit")
 func _get_incoming_icons(player_index: int) -> String:
-	var incoming = _calculate_incoming_damage(player_index)
+	# Calculate damage from attacks that SPECIFICALLY target this player
+	var confirmed_damage = 0
 
-	# STEP 1: Only show attack damage
-	if incoming.damage > 0:
-		return " ⚔%d" % incoming.damage
+	for enemy_idx in cached_enemy_intents:
+		var intent: EnemyIntent = cached_enemy_intents[enemy_idx]
+
+		# Only count damage if this player is specifically targeted
+		for target_idx in intent.targets:
+			if target_idx == player_index:  # Specific target, not -1 (random)
+				confirmed_damage += intent.damage_amount
+				break
+
+	if confirmed_damage > 0:
+		return " 🎯%d" % confirmed_damage  # Bullseye icon
 
 	return ""
