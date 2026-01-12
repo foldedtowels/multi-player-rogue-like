@@ -300,6 +300,7 @@ func update_enemy_display(display: Panel, enemy: Character):
 	display.add_theme_stylebox_override("panel", style)
 
 ## Update the intent display in the enemy panel
+## STEP 1: Only showing ATTACK + damage number for now
 func _update_intent_display(container: HBoxContainer, enemy: Character):
 	# Clear existing intent display
 	for child in container.get_children():
@@ -316,74 +317,13 @@ func _update_intent_display(container: HBoxContainer, enemy: Character):
 
 	var intent: EnemyIntent = game_manager.enemy_intents[enemy_idx]
 
-	# Build intent display based on type
-	# Icon + number + target indicators
-
-	# Intent icon
-	var icon_label = Label.new()
-	icon_label.text = intent.get_icon()
-	icon_label.add_theme_font_size_override("font_size", 24)
-	icon_label.add_theme_color_override("font_color", intent.get_color())
-	container.add_child(icon_label)
-
-	# Damage/shield number (if applicable)
+	# STEP 1: Only show attack damage
 	if intent.damage_amount > 0:
-		var damage_label = Label.new()
-		damage_label.text = " %d " % intent.damage_amount
-		damage_label.add_theme_font_size_override("font_size", 18)
-		damage_label.add_theme_color_override("font_color", Color.RED)
-		container.add_child(damage_label)
-
-	# Arrow for targeting
-	if intent.targets.size() > 0:
-		var arrow_label = Label.new()
-		arrow_label.text = " -> "
-		arrow_label.add_theme_font_size_override("font_size", 14)
-		container.add_child(arrow_label)
-
-	# Target indicators
-	for target_idx in intent.targets:
-		var target_label = Label.new()
-		target_label.add_theme_font_size_override("font_size", 14)
-
-		if target_idx == -1:
-			# Random target
-			target_label.text = "[?]"
-			target_label.add_theme_color_override("font_color", Color.YELLOW)
-		else:
-			# Specific player
-			if target_idx >= 0 and target_idx < game_manager.players.size():
-				var player = game_manager.players[target_idx]
-				# Get first letter of name
-				var initial = player.character_name.substr(0, 1)
-				target_label.text = "[%s]" % initial
-				target_label.add_theme_color_override("font_color", Color.ORANGE)
-
-		container.add_child(target_label)
-
-	# Show debuff icons if any
-	if not intent.debuffs.is_empty():
-		var debuff_icon = Label.new()
-		debuff_icon.text = " 🌀"
-		debuff_icon.add_theme_font_size_override("font_size", 16)
-		debuff_icon.add_theme_color_override("font_color", Color.PURPLE)
-		container.add_child(debuff_icon)
-
-	# Show buff icon if self-buffing
-	if not intent.buffs.is_empty():
-		var buff_icon = Label.new()
-		buff_icon.text = " 🔥"
-		buff_icon.add_theme_font_size_override("font_size", 16)
-		buff_icon.add_theme_color_override("font_color", Color.ORANGE)
-		container.add_child(buff_icon)
-
-	# Show shield if applying shield
-	if intent.shield_amount > 0:
-		var shield_label = Label.new()
-		shield_label.text = " 🛡"
-		shield_label.add_theme_font_size_override("font_size", 16)
-		shield_label.add_theme_color_override("font_color", Color.CYAN)
-		container.add_child(shield_label)
+		var attack_label = Label.new()
+		attack_label.text = "⚔ %d" % intent.damage_amount
+		attack_label.add_theme_font_size_override("font_size", 20)
+		attack_label.add_theme_color_override("font_color", Color.RED)
+		container.add_child(attack_label)
 
 func update_turn_display():
 	var my_index = game_manager.local_player_index

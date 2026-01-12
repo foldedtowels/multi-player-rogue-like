@@ -268,23 +268,12 @@ func _calculate_incoming_damage(player_index: int) -> Dictionary:
 	return result
 
 ## Build icon string for incoming attacks (shown next to character name)
+## STEP 1: Only showing ATTACK + damage number for now
 func _get_incoming_icons(player_index: int) -> String:
 	var incoming = _calculate_incoming_damage(player_index)
 
-	if incoming.damage == 0 and incoming.debuffs.is_empty():
-		return ""
-
-	var icons = " "
-
-	# Attack damage icon
+	# STEP 1: Only show attack damage
 	if incoming.damage > 0:
-		if incoming.is_potential:
-			icons += "⚔%d? " % incoming.damage  # ? indicates might be targeted
-		else:
-			icons += "⚔%d " % incoming.damage
+		return " ⚔%d" % incoming.damage
 
-	# Debuff icons
-	for debuff in incoming.debuffs:
-		icons += "🌀 "  # Generic debuff icon
-
-	return icons
+	return ""
