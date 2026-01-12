@@ -78,7 +78,9 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 	var hp_label = panel.get_node("VBoxContainer/HPLabel")
 	var stamina_label = panel.get_node("VBoxContainer/EnergyLabel")
 
-	name_label.text = character.character_name
+	# Build name with incoming danger icons
+	var incoming_icons = _get_incoming_icons(player_index)
+	name_label.text = character.character_name + incoming_icons
 	hp_label.text = "HP: %d/%d" % [character.current_health, character.max_health]
 
 	if character.shield > 0:
@@ -156,9 +158,6 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 		small_card_visual.set_playable(false)  # Not playable, just for display
 		small_card_visual.scale = Vector2(0.67, 0.67)  # Scale to 100x140 from 150x220
 
-	# Update incoming attack warning
-	_update_incoming_warning(panel, player_index, false)
-
 ## Update your character panel (bottom)
 func _update_your_panel(character: Character):
 	# Connect click handler for self-targeting
@@ -170,7 +169,10 @@ func _update_your_panel(character: Character):
 	var stamina_label = your_character_panel.get_node("HBoxContainer/EnergyLabel")
 	var shield_label = your_character_panel.get_node("HBoxContainer/ShieldLabel")
 
-	name_label.text = character.character_name
+	# Build name with incoming danger icons
+	var my_index = game_manager.local_player_index
+	var incoming_icons = _get_incoming_icons(my_index) if my_index >= 0 else ""
+	name_label.text = character.character_name + incoming_icons
 	hp_label.text = "HP: %d/%d" % [character.current_health, character.max_health]
 	stamina_label.text = "Stamina: %d/%d" % [character.current_stamina, character.max_stamina]
 	shield_label.text = "Shield: %d" % character.shield
@@ -216,11 +218,6 @@ func _update_your_panel(character: Character):
 	style.border_width_top = 3
 	style.border_width_bottom = 3
 	your_character_panel.add_theme_stylebox_override("panel", style)
-
-	# Update incoming attack warning for your panel
-	var my_index = game_manager.local_player_index
-	if my_index >= 0:
-		_update_incoming_warning(your_character_panel, my_index, true)
 
 ## Forward panel clicks to parent for targeting
 signal panel_clicked(event: InputEvent, character: Character)
@@ -270,36 +267,24 @@ func _calculate_incoming_damage(player_index: int) -> Dictionary:
 
 	return result
 
-## Create or update the incoming attack warning label for a panel
-func _update_incoming_warning(panel: Panel, player_index: int, is_your_panel: bool = false):
-	var container_path = "HBoxContainer" if is_your_panel else "VBoxContainer"
-	var container = panel.get_node(container_path)
-
-	# Try to get existing warning label
-	var warning_label: Label = null
-	if container.has_node("IncomingWarning"):
-		warning_label = container.get_node("IncomingWarning")
-	else:
-		# Create new warning label
-		warning_label = Label.new()
-		warning_label.name = "IncomingWarning"
-		warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		warning_label.add_theme_font_size_override("font_size", 14)
-		container.add_child(warning_label)
-
-	# Calculate incoming damage
+## Build icon string for incoming attacks (shown next to character name)
+func _get_incoming_icons(player_index: int) -> String:
 	var incoming = _calculate_incoming_damage(player_index)
 
+	if incoming.damage == 0 and incoming.debuffs.is_empty():
+		return ""
+
+	var icons = " "
+
+	# Attack damage icon
 	if incoming.damage > 0:
-		var warning_text = "⚠ INCOMING: %d" % incoming.damage
 		if incoming.is_potential:
-			warning_text += " (?)"  # Indicate potential/random targeting
+			icons += "⚔%d? " % incoming.damage  # ? indicates might be targeted
+		else:
+			icons += "⚔%d " % incoming.damage
 
-		if incoming.debuffs.size() > 0:
-			warning_text += " + " + ", ".join(incoming.debuffs)
+	# Debuff icons
+	for debuff in incoming.debuffs:
+		icons += "🌀 "  # Generic debuff icon
 
-		warning_label.text = warning_text
-		warning_label.add_theme_color_override("font_color", Color.RED)
-		warning_label.visible = true
-	else:
-		warning_label.visible = false
+	return icons

@@ -1456,9 +1456,8 @@ func client_receive_enemy_intents(serialized: Dictionary):
 		return
 
 	enemy_intents.clear()
-	for idx_str in serialized:
-		var idx = int(idx_str)
-		enemy_intents[idx] = EnemyIntent.deserialize(serialized[idx_str])
+	for idx in serialized:
+		enemy_intents[idx] = EnemyIntent.deserialize(serialized[idx])
 
 	# Emit signal for UI update
 	enemy_intents_calculated.emit(enemy_intents)
