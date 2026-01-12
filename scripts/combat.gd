@@ -64,6 +64,7 @@ func _ready():
 	game_manager.card_v2_choice_needed.connect(_on_card_v2_choice_needed)
 	game_manager.card_retain_choice_needed.connect(_on_card_retain_choice_needed)
 	game_manager.boss_intent_revealed.connect(_on_boss_intent_revealed)
+	game_manager.enemy_intents_calculated.connect(_on_enemy_intents_calculated)
 
 	# Connect button signals
 	ready_button.pressed.connect(_on_ready_pressed)
@@ -230,6 +231,12 @@ func update_enemy_displays():
 		status_label.add_theme_font_size_override("font_size", 12)
 		vbox.add_child(status_label)
 
+		# Intent row for displaying enemy intentions
+		var intent_container = HBoxContainer.new()
+		intent_container.name = "IntentContainer"
+		intent_container.alignment = BoxContainer.ALIGNMENT_CENTER
+		vbox.add_child(intent_container)
+
 		# Connect click handler
 		enemy_panel.gui_input.connect(_on_character_clicked.bind(enemy))
 
@@ -244,6 +251,7 @@ func update_enemy_display(display: Panel, enemy: Character):
 	var name_label = display.get_node("VBoxContainer/NameLabel")
 	var hp_label = display.get_node("VBoxContainer/HPLabel")
 	var status_label = display.get_node("VBoxContainer/StatusLabel")
+	var intent_container = display.get_node("VBoxContainer/IntentContainer")
 
 	name_label.text = enemy.character_name
 	hp_label.text = "HP: %d/%d" % [enemy.current_health, enemy.max_health]
@@ -277,6 +285,9 @@ func update_enemy_display(display: Panel, enemy: Character):
 		status_text += "Fatigued %d " % enemy.fatigued
 	status_label.text = status_text
 
+	# Display enemy intent
+	_update_intent_display(intent_container, enemy)
+
 	# Background color
 	var bg_color = Color(0.4, 0.2, 0.2) if not enemy.is_alive() else Color(0.3, 0.1, 0.1)
 	var style = StyleBoxFlat.new()
@@ -287,6 +298,92 @@ func update_enemy_display(display: Panel, enemy: Character):
 	style.border_width_top = 2
 	style.border_width_bottom = 2
 	display.add_theme_stylebox_override("panel", style)
+
+## Update the intent display in the enemy panel
+func _update_intent_display(container: HBoxContainer, enemy: Character):
+	# Clear existing intent display
+	for child in container.get_children():
+		child.queue_free()
+
+	# Get enemy index
+	var enemy_idx = game_manager.enemies.find(enemy)
+	if enemy_idx == -1:
+		return
+
+	# Get intent from game manager
+	if not game_manager.enemy_intents.has(enemy_idx):
+		return
+
+	var intent: EnemyIntent = game_manager.enemy_intents[enemy_idx]
+
+	# Build intent display based on type
+	# Icon + number + target indicators
+
+	# Intent icon
+	var icon_label = Label.new()
+	icon_label.text = intent.get_icon()
+	icon_label.add_theme_font_size_override("font_size", 24)
+	icon_label.add_theme_color_override("font_color", intent.get_color())
+	container.add_child(icon_label)
+
+	# Damage/shield number (if applicable)
+	if intent.damage_amount > 0:
+		var damage_label = Label.new()
+		damage_label.text = " %d " % intent.damage_amount
+		damage_label.add_theme_font_size_override("font_size", 18)
+		damage_label.add_theme_color_override("font_color", Color.RED)
+		container.add_child(damage_label)
+
+	# Arrow for targeting
+	if intent.targets.size() > 0:
+		var arrow_label = Label.new()
+		arrow_label.text = " -> "
+		arrow_label.add_theme_font_size_override("font_size", 14)
+		container.add_child(arrow_label)
+
+	# Target indicators
+	for target_idx in intent.targets:
+		var target_label = Label.new()
+		target_label.add_theme_font_size_override("font_size", 14)
+
+		if target_idx == -1:
+			# Random target
+			target_label.text = "[?]"
+			target_label.add_theme_color_override("font_color", Color.YELLOW)
+		else:
+			# Specific player
+			if target_idx >= 0 and target_idx < game_manager.players.size():
+				var player = game_manager.players[target_idx]
+				# Get first letter of name
+				var initial = player.character_name.substr(0, 1)
+				target_label.text = "[%s]" % initial
+				target_label.add_theme_color_override("font_color", Color.ORANGE)
+
+		container.add_child(target_label)
+
+	# Show debuff icons if any
+	if not intent.debuffs.is_empty():
+		var debuff_icon = Label.new()
+		debuff_icon.text = " 🌀"
+		debuff_icon.add_theme_font_size_override("font_size", 16)
+		debuff_icon.add_theme_color_override("font_color", Color.PURPLE)
+		container.add_child(debuff_icon)
+
+	# Show buff icon if self-buffing
+	if not intent.buffs.is_empty():
+		var buff_icon = Label.new()
+		buff_icon.text = " 🔥"
+		buff_icon.add_theme_font_size_override("font_size", 16)
+		buff_icon.add_theme_color_override("font_color", Color.ORANGE)
+		container.add_child(buff_icon)
+
+	# Show shield if applying shield
+	if intent.shield_amount > 0:
+		var shield_label = Label.new()
+		shield_label.text = " 🛡"
+		shield_label.add_theme_font_size_override("font_size", 16)
+		shield_label.add_theme_color_override("font_color", Color.CYAN)
+		container.add_child(shield_label)
 
 func update_turn_display():
 	var my_index = game_manager.local_player_index
@@ -765,3 +862,9 @@ func _on_boss_intent_revealed(card_names: Array[String]):
 	await get_tree().create_timer(5.0).timeout
 	if is_instance_valid(notification):
 		notification.queue_free()
+
+func _on_enemy_intents_calculated(_intents: Dictionary):
+	# Refresh enemy displays to show new intents
+	# Also update player panels to show incoming attack warnings
+	update_all_displays()
+	player_status_panel.update_incoming_attacks(game_manager.enemy_intents)

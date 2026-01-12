@@ -10,6 +10,9 @@ var right_player_panel: Panel
 var your_character_panel: Panel
 var card_scene = preload("res://scenes/card_visual.tscn")
 
+# Cached enemy intents for displaying incoming attacks
+var cached_enemy_intents: Dictionary = {}
+
 func setup(gm: Node, left: Panel, right: Panel, your: Panel):
 	game_manager = gm
 	left_player_panel = left
@@ -153,6 +156,9 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 		small_card_visual.set_playable(false)  # Not playable, just for display
 		small_card_visual.scale = Vector2(0.67, 0.67)  # Scale to 100x140 from 150x220
 
+	# Update incoming attack warning
+	_update_incoming_warning(panel, player_index, false)
+
 ## Update your character panel (bottom)
 func _update_your_panel(character: Character):
 	# Connect click handler for self-targeting
@@ -211,8 +217,89 @@ func _update_your_panel(character: Character):
 	style.border_width_bottom = 3
 	your_character_panel.add_theme_stylebox_override("panel", style)
 
+	# Update incoming attack warning for your panel
+	var my_index = game_manager.local_player_index
+	if my_index >= 0:
+		_update_incoming_warning(your_character_panel, my_index, true)
+
 ## Forward panel clicks to parent for targeting
 signal panel_clicked(event: InputEvent, character: Character)
 
 func _on_panel_clicked(event: InputEvent, character: Character):
 	panel_clicked.emit(event, character)
+
+## Update cached enemy intents and refresh panels
+func update_incoming_attacks(intents: Dictionary):
+	cached_enemy_intents = intents
+	# The panels will be updated via update_all() which is called separately
+
+## Calculate total incoming damage for a specific player
+func _calculate_incoming_damage(player_index: int) -> Dictionary:
+	var result = {
+		"damage": 0,
+		"is_potential": false,  # True if player might be targeted (random)
+		"debuffs": []
+	}
+
+	for enemy_idx in cached_enemy_intents:
+		var intent: EnemyIntent = cached_enemy_intents[enemy_idx]
+
+		# Check if this player is targeted
+		var is_targeted = false
+		var is_random_target = false
+
+		for target_idx in intent.targets:
+			if target_idx == player_index:
+				is_targeted = true
+			elif target_idx == -1:
+				# Random target - could be this player
+				is_random_target = true
+
+		if is_targeted:
+			result.damage += intent.damage_amount
+			for debuff_name in intent.debuffs:
+				if debuff_name not in result.debuffs:
+					result.debuffs.append(debuff_name)
+		elif is_random_target:
+			# Potential damage (might be targeted)
+			result.damage += intent.damage_amount
+			result.is_potential = true
+			for debuff_name in intent.debuffs:
+				if debuff_name not in result.debuffs:
+					result.debuffs.append(debuff_name)
+
+	return result
+
+## Create or update the incoming attack warning label for a panel
+func _update_incoming_warning(panel: Panel, player_index: int, is_your_panel: bool = false):
+	var container_path = "HBoxContainer" if is_your_panel else "VBoxContainer"
+	var container = panel.get_node(container_path)
+
+	# Try to get existing warning label
+	var warning_label: Label = null
+	if container.has_node("IncomingWarning"):
+		warning_label = container.get_node("IncomingWarning")
+	else:
+		# Create new warning label
+		warning_label = Label.new()
+		warning_label.name = "IncomingWarning"
+		warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		warning_label.add_theme_font_size_override("font_size", 14)
+		container.add_child(warning_label)
+
+	# Calculate incoming damage
+	var incoming = _calculate_incoming_damage(player_index)
+
+	if incoming.damage > 0:
+		var warning_text = "⚠ INCOMING: %d" % incoming.damage
+		if incoming.is_potential:
+			warning_text += " (?)"  # Indicate potential/random targeting
+
+		if incoming.debuffs.size() > 0:
+			warning_text += " + " + ", ".join(incoming.debuffs)
+
+		warning_label.text = warning_text
+		warning_label.add_theme_color_override("font_color", Color.RED)
+		warning_label.visible = true
+	else:
+		warning_label.visible = false

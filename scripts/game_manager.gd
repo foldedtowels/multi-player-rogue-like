@@ -9,6 +9,7 @@ signal enemy_damaged_player(enemy_name: String, card_name: String, damage: int, 
 signal card_v2_choice_needed(caster: Character, card: Card, target: Character)
 signal card_retain_choice_needed(player_index: int, expires_after_round: int)  # Player needs to select a card to retain
 signal boss_intent_revealed(card_names: Array[String])  # Boss's next turn cards are revealed
+signal enemy_intents_calculated(intents: Dictionary)  # Enemy intents calculated at round start
 
 enum GameState {
 	CHARACTER_SELECTION,
@@ -83,6 +84,9 @@ var protected_by: Dictionary = {}
 # When > 0, shows what the boss will play on that round
 var boss_intent_revealed_for_round: int = 0
 var boss_next_turn_cards: Array[String] = []  # Card names boss will play next turn
+
+# Enemy intent system - shows what enemies will do this turn
+var enemy_intents: Dictionary = {}  # enemy_index -> EnemyIntent
 
 func _ready():
 	hero_db = get_node("/root/HeroDatabase")
@@ -189,6 +193,7 @@ func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 	protected_by.clear()
 	boss_intent_revealed_for_round = 0
 	boss_next_turn_cards.clear()
+	enemy_intents.clear()
 
 	# Step 2: Set game state
 	current_state = GameState.COMBAT
@@ -698,6 +703,9 @@ func start_round():
 
 	# Clear protection from previous turn (Protector lasts one turn)
 	protected_by.clear()
+
+	# Calculate and broadcast enemy intents for this round
+	calculate_enemy_intents()
 
 	turn_phase = TurnPhase.PLAYER_TURN
 	queued_cards.clear()
@@ -1414,6 +1422,146 @@ func _reveal_boss_intent():
 
 	# Emit signal for UI
 	boss_intent_revealed.emit(boss_next_turn_cards)
+
+## ENEMY INTENT SYSTEM ##
+## Calculate what enemies will do this turn and broadcast to all clients
+
+func calculate_enemy_intents():
+	if not multiplayer.is_server(): return
+
+	enemy_intents.clear()
+
+	for i in range(enemies.size()):
+		var enemy = enemies[i]
+		if not enemy.is_alive():
+			continue
+
+		var intent = _calculate_single_enemy_intent(enemy, i)
+		enemy_intents[i] = intent
+
+	# Serialize and broadcast to all clients
+	var serialized_intents: Dictionary = {}
+	for idx in enemy_intents:
+		serialized_intents[idx] = enemy_intents[idx].serialize()
+
+	rpc("client_receive_enemy_intents", serialized_intents)
+
+	# Emit signal for local UI update
+	enemy_intents_calculated.emit(enemy_intents)
+
+@rpc("any_peer", "call_local", "reliable")
+func client_receive_enemy_intents(serialized: Dictionary):
+	# Server already has the intents, skip processing
+	if multiplayer.is_server():
+		return
+
+	enemy_intents.clear()
+	for idx_str in serialized:
+		var idx = int(idx_str)
+		enemy_intents[idx] = EnemyIntent.deserialize(serialized[idx_str])
+
+	# Emit signal for UI update
+	enemy_intents_calculated.emit(enemy_intents)
+
+func _calculate_single_enemy_intent(enemy: Character, enemy_idx: int) -> EnemyIntent:
+	var intent = EnemyIntent.new()
+	intent.enemy_index = enemy_idx
+
+	# Simulate what cards the enemy will draw and play
+	var simulated_hand = _simulate_enemy_hand(enemy)
+
+	# Simulate which cards enemy will play (greedy AI: all affordable cards in order)
+	var simulated_stamina = enemy.max_stamina
+
+	for card in simulated_hand:
+		if card.stamina_cost > simulated_stamina:
+			continue
+
+		simulated_stamina -= card.stamina_cost
+		_aggregate_card_effects(intent, card, enemy)
+
+	# Calculate intent type based on aggregated effects
+	intent.calculate_intent_type()
+
+	return intent
+
+func _simulate_enemy_hand(enemy: Character) -> Array[Card]:
+	# Peek at what cards enemy will have
+	# If enemy already has hand (shouldn't at round start), use that
+	# Otherwise simulate drawing 5 cards from deck
+
+	var hand: Array[Card] = []
+
+	# Create temporary copy of deck + discard
+	var temp_deck = enemy.deck.duplicate()
+
+	# If deck is too small, shuffle in discard
+	if temp_deck.size() < 5:
+		var temp_discard = enemy.discard_pile.duplicate()
+		temp_discard.shuffle()
+		temp_deck.append_array(temp_discard)
+
+	# Draw up to 5 cards
+	for j in range(min(5, temp_deck.size())):
+		hand.append(temp_deck[j])
+
+	return hand
+
+func _aggregate_card_effects(intent: EnemyIntent, card: Card, enemy: Character):
+	# Determine targets based on card target type
+	match card.target_type:
+		Card.TargetType.SELF:
+			# Self-targeting cards don't target players
+			pass
+		Card.TargetType.SINGLE_ENEMY, Card.TargetType.RANDOM_ENEMY:
+			# Single target - we don't know who exactly, mark as random
+			if intent.targets.is_empty() or -1 not in intent.targets:
+				if -1 not in intent.targets:
+					intent.targets.append(-1)  # -1 = random single target
+		Card.TargetType.ALL_ENEMIES:
+			# AOE - targets all players
+			intent.is_aoe = true
+			intent.targets.clear()
+			for i in range(players.size()):
+				if players[i].is_alive():
+					intent.targets.append(i)
+
+	# Calculate damage (including strength bonus)
+	if card.damage > 0:
+		var total_damage = card.damage
+		if card.card_type == Card.CardType.ATTACK:
+			total_damage += enemy.strength
+			total_damage += enemy.damage_plus
+			total_damage -= enemy.weakness
+			total_damage = max(0, total_damage)
+
+		# Apply multi-hit
+		total_damage *= card.multi_hit
+		intent.damage_amount += total_damage
+
+	# Shield
+	if card.shield_amount > 0:
+		intent.shield_amount += card.shield_amount
+
+	# Debuffs applied to targets (poison, burn, weakness, vulnerable, fatigued)
+	if card.apply_poison > 0:
+		intent.debuffs["poison"] = intent.debuffs.get("poison", 0) + card.apply_poison
+	if card.apply_burn > 0:
+		intent.debuffs["burn"] = intent.debuffs.get("burn", 0) + card.apply_burn
+	if card.apply_weakness > 0:
+		intent.debuffs["weakness"] = intent.debuffs.get("weakness", 0) + card.apply_weakness
+	if card.apply_vulnerable > 0:
+		intent.debuffs["vulnerable"] = intent.debuffs.get("vulnerable", 0) + card.apply_vulnerable
+	if card.apply_fatigued > 0:
+		intent.debuffs["fatigued"] = intent.debuffs.get("fatigued", 0) + card.apply_fatigued
+
+	# Buffs (self-applied by enemy)
+	if card.apply_strength > 0:
+		intent.buffs["strength"] = intent.buffs.get("strength", 0) + card.apply_strength
+	if card.apply_armor > 0:
+		intent.buffs["armor"] = intent.buffs.get("armor", 0) + card.apply_armor
+
+## END ENEMY INTENT SYSTEM ##
 
 func boss_defeated():
 	current_state = GameState.REWARD
