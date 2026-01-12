@@ -269,6 +269,7 @@ func _create_all_cards():
 		Card.TargetType.SELF,
 		2, 0, 0, 0, 2
 	)
+	all_cards["divination"].plays_immediately = true
 
 	all_cards["lightning_strike"] = create_card(
 		"Lightning Strike",
@@ -294,6 +295,7 @@ func _create_all_cards():
 		Card.TargetType.SELF,
 		1, 0, 0, 0, 2
 	)
+	all_cards["arcane_intellect"].plays_immediately = true
 
 	all_cards["chain_lightning"] = create_card(
 		"Chain Lightning",
@@ -363,6 +365,7 @@ func _create_all_cards():
 		1, 0, 0, 0, 1
 	)
 	all_cards["natures_lore"].apply_armor = 2
+	all_cards["natures_lore"].plays_immediately = true
 
 	all_cards["primal_rage"] = create_card(
 		"Primal Rage",
@@ -399,6 +402,7 @@ func _create_all_cards():
 		Card.TargetType.SELF,
 		3, 0, 0, 0, 3
 	)
+	all_cards["time_warp"].plays_immediately = true
 
 	all_cards["blink"] = create_card(
 		"Blink",
@@ -407,6 +411,7 @@ func _create_all_cards():
 		Card.TargetType.SELF,
 		1, 0, 0, 10, 1
 	)
+	all_cards["blink"].plays_immediately = true
 
 	all_cards["temporal_bolt"] = create_card(
 		"Temporal Bolt",
@@ -423,6 +428,7 @@ func _create_all_cards():
 		Card.TargetType.SINGLE_ALLY,
 		2, 0, 14, 0, 1
 	)
+	all_cards["rewind"].plays_immediately = true
 
 	all_cards["haste"] = create_card(
 		"Haste",
@@ -431,6 +437,7 @@ func _create_all_cards():
 		Card.TargetType.SELF,
 		1, 0, 0, 0, 2
 	)
+	all_cards["haste"].plays_immediately = true
 
 	all_cards["slow"] = create_card(
 		"Slow",
@@ -457,6 +464,297 @@ func _create_all_cards():
 		Card.TargetType.SELF,
 		2, 0, 0, 12, 2
 	)
+	all_cards["moment_of_clarity"].plays_immediately = true
+
+	# === FABIO CARDS (Phase 1 - The Warrior) ===
+
+	# Base Deck Cards (9)
+	all_cards["slash"] = create_card(
+		"Slash",
+		"A quick sword strike.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		2, 7, 0, 0, 0
+	)
+
+	all_cards["big_smack"] = create_card(
+		"Big Smack",
+		"A powerful overhead blow.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		3, 10, 0, 0, 0
+	)
+
+	all_cards["duel_purpose"] = create_card(
+		"Duel Purpose",
+		"Strike while defending yourself.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		1, 3, 0, 5, 0
+	)
+
+	all_cards["rest"] = create_card(
+		"Rest",
+		"Take a breather and recover your stamina.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		1, 0, 0, 0, 0
+	)
+	all_cards["rest"].apply_rested = 1
+
+	all_cards["bulk_up"] = create_card(
+		"Bulk Up",
+		"Push your body to the limit for explosive power.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		0, 0, 0, 0, 0
+	)
+	all_cards["bulk_up"].apply_invigorated = 1
+	all_cards["bulk_up"].apply_fatigued = 2  # Lasts 2 turns per CSV
+
+	all_cards["dig_a_hole"] = create_card(
+		"Dig a Hole",
+		"Select a card to retain. It stays in hand until played or end of next turn.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		0, 0, 0, 0, 0  # No draw cards - retention only
+	)
+	all_cards["dig_a_hole"].plays_immediately = true
+	all_cards["dig_a_hole"].grants_card_retain = true
+
+	all_cards["protector"] = create_card(
+		"Protector",
+		"Redirect enemy attacks from an ally to yourself this turn.",
+		Card.CardType.BUFF,
+		Card.TargetType.SINGLE_ALLY,
+		0, 0, 0, 0, 0  # No shield - just redirects attacks
+	)
+	all_cards["protector"].swaps_enemy_target = true
+
+	all_cards["protective_footwear"] = create_card(
+		"Protective Footwear",
+		"Sturdy boots provide defense.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		1, 0, 0, 5, 0
+	)
+
+	all_cards["hunters_instinct"] = create_card(
+		"Hunter's Instinct",
+		"Reveal what cards the boss will play next turn.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		1, 0, 0, 0, 0  # No card draw - reveals boss intent
+	)
+	all_cards["hunters_instinct"].plays_immediately = true
+	all_cards["hunters_instinct"].reveals_boss_intent = true
+
+	# Reward Cards (17)
+	all_cards["dual_wield"] = create_card(
+		"Dual Wield",
+		"Strike twice with both weapons.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		2, 2, 0, 0, 0
+	)
+	all_cards["dual_wield"].multi_hit = 2
+
+	all_cards["circular_strike"] = create_card(
+		"Circular Strike",
+		"Swing in a wide arc hitting all enemies.",
+		Card.CardType.ATTACK,
+		Card.TargetType.ALL_ENEMIES,
+		1, 3, 0, 0, 0
+	)
+	all_cards["circular_strike"].aoe_damage = true
+
+	all_cards["cursed_dagger"] = create_card(
+		"Cursed Dagger",
+		"A free but weak strike with a cursed blade.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		0, 2, 0, 0, 0
+	)
+
+	all_cards["jumping_strike"] = create_card(
+		"Jumping Strike",
+		"Leap attack. Next turn: Deal 5 damage if you took no damage this turn.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		1, 0, 0, 0, 0  # 0 immediate damage
+	)
+	all_cards["jumping_strike"].is_delayed_damage = true
+	all_cards["jumping_strike"].delay_condition = "no_damage_taken"
+	all_cards["jumping_strike"].delayed_damage_amount = 5
+
+	all_cards["execution"] = create_card(
+		"Execution",
+		"Finishing blow. Deals bonus damage to wounded bosses.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		2, 4, 0, 0, 0
+	)
+	# TODO: Implement conditional damage (+4 if boss below 50% HP)
+
+	all_cards["frenzy"] = create_card(
+		"Frenzy!",
+		"Unleash wild fury on all enemies, exhausting yourself.",
+		Card.CardType.ATTACK,
+		Card.TargetType.ALL_ENEMIES,
+		2, 8, 0, 0, 0
+	)
+	all_cards["frenzy"].aoe_damage = true
+	all_cards["frenzy"].apply_exhausted = 1  # Cannot play more cards this turn
+
+	all_cards["weak_point"] = create_card(
+		"Weak Point!",
+		"Expose enemy vulnerabilities.",
+		Card.CardType.DEBUFF,
+		Card.TargetType.SINGLE_ENEMY,
+		1, 0, 0, 0, 0
+	)
+	all_cards["weak_point"].apply_vulnerable = 2
+
+	all_cards["medkit"] = create_card(
+		"Medkit",
+		"Emergency healing, but applies Decay.",
+		Card.CardType.HEAL,
+		Card.TargetType.SELF,
+		2, 0, 10, 0, 0
+	)
+	all_cards["medkit"].apply_decay = 1  # Cannot heal for rest of turn
+
+	# v2 Card System - Fighter's Spirit
+	var fighters_spirit_v1 = create_card(
+		"Fighter's Spirit",
+		"Channel your inner strength.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		1, 0, 0, 0, 0
+	)
+	fighters_spirit_v1.apply_strength = 1
+	fighters_spirit_v1.has_v2 = true
+
+	var fighters_spirit_v2 = create_card(
+		"Fighter's Spirit",
+		"Fortify your defenses.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		1, 0, 0, 5, 0
+	)
+
+	fighters_spirit_v1.v2_card = fighters_spirit_v2
+	all_cards["fighters_spirit"] = fighters_spirit_v1
+
+	all_cards["sacrifice"] = create_card(
+		"Sacrifice",
+		"Empower an ally with your strength.",
+		Card.CardType.BUFF,
+		Card.TargetType.SINGLE_ALLY,
+		1, 0, 0, 0, 0
+	)
+	all_cards["sacrifice"].apply_strength = 1
+
+	# v2 Card System - Leader
+	var leader_v1 = create_card(
+		"Leader",
+		"Rally the team.",
+		Card.CardType.BUFF,
+		Card.TargetType.ALL_ALLIES,
+		0, 0, 0, 0, 2
+	)
+	leader_v1.has_v2 = true
+	leader_v1.plays_immediately = true
+
+	var leader_v2 = create_card(
+		"Leader",
+		"Focus your own strategy.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		0, 0, 0, 0, 1
+	)
+	leader_v2.plays_immediately = true
+
+	leader_v1.v2_card = leader_v2
+	all_cards["leader"] = leader_v1
+
+	# Shared reward card (used by multiple characters)
+	all_cards["energy"] = create_card(
+		"Energy!",
+		"Gain 1 stamina immediately.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		0, 0, 0, 0, 0
+	)
+	# TODO: Implement immediate stamina gain effect
+
+	# === NEW DEMONSTRATION CARDS (Composability Examples) ===
+
+	all_cards["vampiric_strike"] = create_card(
+		"Vampiric Strike",
+		"Drain the life from your enemy.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		2, 12, 0, 0, 0
+	)
+	all_cards["vampiric_strike"].lifesteal = true
+
+	all_cards["fortify"] = create_card(
+		"Fortify",
+		"Harden your defenses permanently.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		2, 0, 0, 10, 0
+	)
+	all_cards["fortify"].apply_armor = 3
+
+	all_cards["toxic_cloud"] = create_card(
+		"Toxic Cloud",
+		"Poison all enemies with noxious fumes.",
+		Card.CardType.SPELL,
+		Card.TargetType.ALL_ENEMIES,
+		3, 8, 0, 0, 0
+	)
+	all_cards["toxic_cloud"].apply_poison = 4
+	all_cards["toxic_cloud"].aoe_damage = true
+
+	all_cards["dark_pact"] = create_card(
+		"Dark Pact",
+		"Sacrifice health for power and knowledge.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		1, 0, -5, 0, 2
+	)
+	all_cards["dark_pact"].apply_strength = 4
+
+	all_cards["blazing_fury"] = create_card(
+		"Blazing Fury",
+		"Channel rage into a devastating strike that weakens enemies.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		2, 15, 0, 0, 0
+	)
+	all_cards["blazing_fury"].apply_burn = 3
+	all_cards["blazing_fury"].apply_vulnerable = 2
+
+	all_cards["ember"] = create_card(
+		"Ember",
+		"A small flame token.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		0, 4, 0, 0, 0
+	)
+
+	all_cards["pyroclasm"] = create_card(
+		"Pyroclasm",
+		"Massive explosion that generates embers.",
+		Card.CardType.SPELL,
+		Card.TargetType.ALL_ENEMIES,
+		4, 18, 0, 0, 0
+	)
+	all_cards["pyroclasm"].aoe_damage = true
+	var pyroclasm_embers: Array[String] = ["ember", "ember"]
+	all_cards["pyroclasm"].generate_cards = pyroclasm_embers
 
 ## Factory function for creating cards with basic stats
 ##
@@ -480,7 +778,7 @@ func create_card(name: String, desc: String, type: Card.CardType, target: Card.T
 	card.description = desc
 	card.card_type = type
 	card.target_type = target
-	card.energy_cost = cost
+	card.stamina_cost = cost
 	card.damage = dmg
 	card.heal_amount = heal
 	card.shield_amount = shield
@@ -653,6 +951,7 @@ func create_reward_cards():
 		Card.TargetType.SELF,
 		1, 0, 0, 0, 2
 	)
+	all_cards["tactical_advantage"].plays_immediately = true
 
 func get_rare_cards() -> Array[Card]:
 	create_reward_cards()

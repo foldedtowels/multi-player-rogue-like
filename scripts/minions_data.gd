@@ -6,7 +6,7 @@ const MINIONS = {
 	"thorn_imp": {
 		"name": "Thorn Imp",
 		"max_health": 40,
-		"starting_energy": 2,
+		"starting_stamina": 2,
 		"boss_index": 0,
 		"deck": [
 			{"name": "Thorn Strike", "type": "ATTACK", "cost": 1, "damage": 6, "target": "SINGLE_ENEMY"},
@@ -19,7 +19,7 @@ const MINIONS = {
 	"vine_horror": {
 		"name": "Vine Horror",
 		"max_health": 60,
-		"starting_energy": 2,
+		"starting_stamina": 2,
 		"boss_index": 0,
 		"deck": [
 			{"name": "Entangle", "type": "ATTACK", "cost": 1, "damage": 5, "vulnerable": 1, "target": "SINGLE_ENEMY"},
@@ -34,7 +34,7 @@ const MINIONS = {
 	"fire_imp": {
 		"name": "Fire Imp",
 		"max_health": 35,
-		"starting_energy": 2,
+		"starting_stamina": 2,
 		"boss_index": 1,
 		"deck": [
 			{"name": "Fireball", "type": "ATTACK", "cost": 1, "damage": 7, "target": "SINGLE_ENEMY"},
@@ -47,7 +47,7 @@ const MINIONS = {
 	"molten_warrior": {
 		"name": "Molten Warrior",
 		"max_health": 70,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"boss_index": 1,
 		"deck": [
 			{"name": "Molten Slash", "type": "ATTACK", "cost": 1, "damage": 9, "target": "SINGLE_ENEMY"},
@@ -62,7 +62,7 @@ const MINIONS = {
 	"skeleton_warrior": {
 		"name": "Skeleton Warrior",
 		"max_health": 45,
-		"starting_energy": 2,
+		"starting_stamina": 2,
 		"boss_index": 2,
 		"deck": [
 			{"name": "Bone Strike", "type": "ATTACK", "cost": 1, "damage": 8, "target": "SINGLE_ENEMY"},
@@ -75,7 +75,7 @@ const MINIONS = {
 	"wraith": {
 		"name": "Wraith",
 		"max_health": 50,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"boss_index": 2,
 		"deck": [
 			{"name": "Soul Drain", "type": "ATTACK", "cost": 2, "damage": 10, "lifesteal": true, "target": "SINGLE_ENEMY"},
@@ -90,7 +90,7 @@ const MINIONS = {
 	"thunder_drake": {
 		"name": "Thunder Drake",
 		"max_health": 55,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"boss_index": 3,
 		"deck": [
 			{"name": "Lightning Bite", "type": "ATTACK", "cost": 1, "damage": 9, "target": "SINGLE_ENEMY"},
@@ -103,7 +103,7 @@ const MINIONS = {
 	"storm_elemental": {
 		"name": "Storm Elemental",
 		"max_health": 65,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"boss_index": 3,
 		"deck": [
 			{"name": "Gale Force", "type": "ATTACK", "cost": 2, "damage": 12, "vulnerable": 1, "target": "SINGLE_ENEMY"},
@@ -118,7 +118,7 @@ const MINIONS = {
 	"void_spawn": {
 		"name": "Void Spawn",
 		"max_health": 50,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"boss_index": 4,
 		"deck": [
 			{"name": "Void Strike", "type": "ATTACK", "cost": 1, "damage": 10, "target": "SINGLE_ENEMY"},
@@ -131,7 +131,7 @@ const MINIONS = {
 	"chaos_horror": {
 		"name": "Chaos Horror",
 		"max_health": 80,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"boss_index": 4,
 		"deck": [
 			{"name": "Chaos Bolt", "type": "ATTACK", "cost": 2, "damage": 15, "target": "SINGLE_ENEMY"},

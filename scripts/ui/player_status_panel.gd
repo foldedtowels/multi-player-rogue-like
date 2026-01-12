@@ -70,10 +70,10 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 	if not panel.gui_input.is_connected(_on_panel_clicked):
 		panel.gui_input.connect(_on_panel_clicked.bind(character))
 
-	# Update name, HP, Energy
+	# Update name, HP, Stamina
 	var name_label = panel.get_node("VBoxContainer/NameLabel")
 	var hp_label = panel.get_node("VBoxContainer/HPLabel")
-	var energy_label = panel.get_node("VBoxContainer/EnergyLabel")
+	var stamina_label = panel.get_node("VBoxContainer/EnergyLabel")
 
 	name_label.text = character.character_name
 	hp_label.text = "HP: %d/%d" % [character.current_health, character.max_health]
@@ -83,8 +83,18 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 
 	# Add status effects display
 	var status_text = ""
+	# Buffs (green)
 	if character.strength > 0:
 		status_text += "Str +%d " % character.strength
+	if character.armor > 0:
+		status_text += "Armor +%d " % character.armor
+	if character.rested > 0:
+		status_text += "Rested %d " % character.rested
+	if character.invigorated > 0:
+		status_text += "Invig %d " % character.invigorated
+	if character.damage_plus > 0:
+		status_text += "Dmg+ %d " % character.damage_plus
+	# Debuffs (red)
 	if character.poison > 0:
 		status_text += "Poison %d " % character.poison
 	if character.burn > 0:
@@ -93,13 +103,13 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 		status_text += "Vuln %d " % character.vulnerable
 	if character.weakness > 0:
 		status_text += "Weak %d " % character.weakness
-	if character.armor > 0:
-		status_text += "Armor %d " % character.armor
+	if character.fatigued > 0:
+		status_text += "Fatigued %d " % character.fatigued
 
 	if status_text != "":
 		hp_label.text += "\n" + status_text
 
-	energy_label.text = "E: %d/%d" % [character.current_energy, character.max_energy]
+	stamina_label.text = "S: %d/%d" % [character.current_stamina, character.max_stamina]
 
 	# Update panel background color based on status
 	var bg_color = Color(0.2, 0.2, 0.2)
@@ -119,12 +129,22 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 
 	# Update "playing card" display
 	var playing_card_container = panel.get_node("VBoxContainer/PlayingCardContainer")
+
 	# Clear existing
 	for child in playing_card_container.get_children():
 		child.queue_free()
 
-	# Show last played card if available
-	if game_manager.last_played_cards.has(player_index):
+	# Priority 1: Show previewed card (if player is previewing)
+	if game_manager.card_previews.has(player_index):
+		var preview_card = game_manager.card_previews[player_index]
+		var small_card_visual = card_scene.instantiate()
+		playing_card_container.add_child(small_card_visual)
+
+		small_card_visual.set_card(preview_card)
+		small_card_visual.set_playable(false)  # Not playable, just for display
+		small_card_visual.scale = Vector2(0.67, 0.67)  # Scale to 100x140 from 150x220
+	# Priority 2: Show last played card (if no preview)
+	elif game_manager.last_played_cards.has(player_index):
 		var last_card = game_manager.last_played_cards[player_index]
 		var small_card_visual = card_scene.instantiate()
 		playing_card_container.add_child(small_card_visual)
@@ -141,18 +161,28 @@ func _update_your_panel(character: Character):
 
 	var name_label = your_character_panel.get_node("HBoxContainer/NameLabel")
 	var hp_label = your_character_panel.get_node("HBoxContainer/HPLabel")
-	var energy_label = your_character_panel.get_node("HBoxContainer/EnergyLabel")
+	var stamina_label = your_character_panel.get_node("HBoxContainer/EnergyLabel")
 	var shield_label = your_character_panel.get_node("HBoxContainer/ShieldLabel")
 
 	name_label.text = character.character_name
 	hp_label.text = "HP: %d/%d" % [character.current_health, character.max_health]
-	energy_label.text = "Energy: %d/%d" % [character.current_energy, character.max_energy]
+	stamina_label.text = "Stamina: %d/%d" % [character.current_stamina, character.max_stamina]
 	shield_label.text = "Shield: %d" % character.shield
 
 	# Add status effects display
 	var status_parts = []
+	# Buffs
 	if character.strength > 0:
 		status_parts.append("Strength +%d" % character.strength)
+	if character.armor > 0:
+		status_parts.append("Armor +%d" % character.armor)
+	if character.rested > 0:
+		status_parts.append("Rested %d" % character.rested)
+	if character.invigorated > 0:
+		status_parts.append("Invigorated %d" % character.invigorated)
+	if character.damage_plus > 0:
+		status_parts.append("Damage+ %d" % character.damage_plus)
+	# Debuffs
 	if character.poison > 0:
 		status_parts.append("Poison %d" % character.poison)
 	if character.burn > 0:
@@ -161,8 +191,8 @@ func _update_your_panel(character: Character):
 		status_parts.append("Vulnerable %d" % character.vulnerable)
 	if character.weakness > 0:
 		status_parts.append("Weakness %d" % character.weakness)
-	if character.armor > 0:
-		status_parts.append("Armor %d" % character.armor)
+	if character.fatigued > 0:
+		status_parts.append("Fatigued %d" % character.fatigued)
 
 	# Append to shield label for now (or create separate label if needed)
 	if status_parts.size() > 0:

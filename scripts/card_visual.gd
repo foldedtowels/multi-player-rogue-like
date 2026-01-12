@@ -3,6 +3,8 @@ extends Control
 var card_data: Card
 var is_playable: bool = false
 var is_hovered: bool = false
+var last_click_time: float = 0.0
+const DOUBLE_CLICK_TIME: float = 0.3  # 300ms for double-click
 
 @onready var card_bg: Panel = $Background
 @onready var name_label: Label = $VBoxContainer/NameLabel
@@ -11,7 +13,10 @@ var is_hovered: bool = false
 @onready var type_label: Label = $VBoxContainer/TypeLabel
 
 signal card_clicked(card: Card)
+signal card_double_clicked(card: Card)
 signal card_hovered(card: Card)
+signal card_drag_started(card: Card)
+signal card_drag_ended(card: Card)
 
 func _ready():
 	mouse_entered.connect(_on_mouse_entered)
@@ -43,7 +48,7 @@ func update_display():
 		return
 
 	name_label.text = card_data.card_name
-	cost_label.text = str(card_data.energy_cost)
+	cost_label.text = str(card_data.stamina_cost)
 	description_label.text = card_data.get_full_description()
 
 	var type_text = ""
@@ -113,4 +118,39 @@ func _on_gui_input(event: InputEvent):
 	if event is InputEventMouseButton:
 		if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			if is_playable:
-				card_clicked.emit(card_data)
+				# Check for double-click
+				var current_time = Time.get_ticks_msec() / 1000.0
+				var time_since_last_click = current_time - last_click_time
+
+				if time_since_last_click < DOUBLE_CLICK_TIME:
+					# Double-click detected!
+					card_double_clicked.emit(card_data)
+					last_click_time = 0.0  # Reset to prevent triple-click from triggering
+				else:
+					# Single click (might become double-click)
+					card_clicked.emit(card_data)
+					last_click_time = current_time
+
+## Drag-and-drop support
+func _get_drag_data(at_position: Vector2):
+	if not is_playable or not card_data:
+		return null
+
+	# Emit drag started signal
+	card_drag_started.emit(card_data)
+
+	# Create ghost preview (semi-transparent copy of card)
+	var preview = Control.new()
+	var ghost_card = duplicate() as Control
+	ghost_card.modulate = Color(1, 1, 1, 0.5)  # Semi-transparent
+	preview.add_child(ghost_card)
+
+	set_drag_preview(preview)
+
+	# Return card data as drag data
+	return {"card": card_data, "source": self}
+
+## Called when drag ends (whether successful drop or cancelled)
+func _notification(what: int):
+	if what == NOTIFICATION_DRAG_END:
+		card_drag_ended.emit(card_data)

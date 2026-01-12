@@ -9,14 +9,14 @@ class_name HeroesData
 ## - name: Display name shown in UI
 ## - description: Flavor text describing the hero's playstyle
 ## - max_health: Starting and maximum HP for this hero
-## - starting_energy: Energy available per turn
+## - starting_stamina: Stamina available per turn
 ## - deck: Array of card IDs that make up the hero's starting deck (14+ cards recommended)
 const HEROES = {
 	"flame_wielder": {
 		"name": "Pyra, Flame Wielder",
 		"description": "Master of fire magic, dealing devastating burn damage.",
 		"max_health": 90,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"deck": [
 			"lightning_bolt",
 			"lightning_bolt",
@@ -39,7 +39,7 @@ const HEROES = {
 		"name": "Selene, Life Weaver",
 		"description": "Divine healer and protector of allies.",
 		"max_health": 110,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"deck": [
 			"healing_salve",
 			"healing_salve",
@@ -63,7 +63,7 @@ const HEROES = {
 		"name": "Nyx, Shadow Assassin",
 		"description": "Silent killer who drains life and spreads poison.",
 		"max_health": 85,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"deck": [
 			"doom_blade",
 			"doom_blade",
@@ -86,7 +86,7 @@ const HEROES = {
 		"name": "Zephyr, Storm Caller",
 		"description": "Lightning mage who controls the battlefield with spells.",
 		"max_health": 95,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"deck": [
 			"lightning_strike",
 			"lightning_strike",
@@ -109,7 +109,7 @@ const HEROES = {
 		"name": "Thorne, Beast Tamer",
 		"description": "Primal warrior who channels nature's fury.",
 		"max_health": 120,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"deck": [
 			"wild_strike",
 			"wild_strike",
@@ -132,7 +132,7 @@ const HEROES = {
 		"name": "Kairos, Chrono Mage",
 		"description": "Time manipulator with unmatched card advantage.",
 		"max_health": 100,
-		"starting_energy": 3,
+		"starting_stamina": 3,
 		"deck": [
 			"temporal_bolt",
 			"temporal_bolt",
@@ -148,6 +148,43 @@ const HEROES = {
 			"time_warp",
 			"chrono_blast",
 			"moment_of_clarity"
+		]
+	},
+
+	# Phase 1: New Heroes (Fabio, Enrique, Kevin)
+	"fabio": {
+		"name": "Fabio, The Warrior",
+		"description": "Versatile fighter with tactical abilities and battlefield control.",
+		"max_health": 50,
+		"starting_stamina": 2,
+		"passive_ability_id": "fabio_warrior_choice",
+		"deck": [
+			"slash",
+			"big_smack",
+			"duel_purpose",
+			"rest",
+			"bulk_up",
+			"dig_a_hole",
+			"protector",
+			"protective_footwear",
+			"hunters_instinct"
+		],
+		# Reward deck: cards offered after defeating bosses (50% heal OR one of these)
+		"reward_deck": [
+			# Attack cards (Fabio Special)
+			"dual_wield",
+			"circular_strike",
+			"cursed_dagger",
+			"jumping_strike",
+			"execution",
+			"frenzy",
+			"weak_point",
+			# Skill cards (Fabio Reward)
+			"energy",
+			"medkit",
+			"fighters_spirit",
+			"sacrifice",
+			"leader"
 		]
 	}
 }

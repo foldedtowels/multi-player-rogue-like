@@ -23,6 +23,8 @@ HeroDatabase="*res://scripts/hero_database.gd"
 BossDatabase="*res://scripts/boss_database.gd"
 MinionDatabase="*res://scripts/minion_database.gd"
 GameManager="*res://scripts/game_manager.gd"
+PassiveAbilityManager="*res://scripts/passive_ability_manager.gd"
+StatusEffectRegistry="*res://scripts/status_effect_registry.gd"
 
 [display]
 

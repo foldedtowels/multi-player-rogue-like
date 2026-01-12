@@ -75,9 +75,9 @@ func _on_hero_button_hovered(index: int):
 	info_panel.visible = true
 	info_name.text = hero.character_name
 	info_description.text = hero.description
-	info_stats.text = "HP: %d | Energy: %d | Deck Size: %d" % [
+	info_stats.text = "HP: %d | Stamina: %d | Deck Size: %d" % [
 		hero.max_health,
-		hero.starting_energy,
+		hero.starting_stamina,
 		hero.starting_deck.size()
 	]
 

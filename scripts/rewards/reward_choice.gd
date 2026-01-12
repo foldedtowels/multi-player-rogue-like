@@ -20,7 +20,7 @@ enum ChoiceType {
 # Type-specific data
 @export var card_data: Card = null          ## If choice_type == CARD
 @export var heal_amount: int = 0            ## If choice_type == HEAL
-@export var buff_type: String = ""          ## If choice_type == BUFF (e.g., "max_energy", "max_health")
+@export var buff_type: String = ""          ## If choice_type == BUFF (e.g., "max_stamina", "max_health")
 @export var buff_amount: int = 0            ## Amount to increase buff by
 @export var gold_amount: int = 0            ## If choice_type == GOLD
 
@@ -49,9 +49,9 @@ func apply_to_player(player: Character):
 ## Apply a buff to the player (permanent stat increase)
 func _apply_buff(player: Character, type: String, amount: int):
 	match type:
-		"max_energy":
-			player.max_energy += amount
-			player.current_energy = player.max_energy
+		"max_stamina":
+			player.max_stamina += amount
+			player.current_stamina = player.max_stamina
 		"max_health":
 			player.max_health += amount
 			player.current_health = min(player.current_health + amount, player.max_health)

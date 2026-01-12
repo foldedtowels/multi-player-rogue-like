@@ -19,9 +19,9 @@ func create_minion_by_id(minion_id: String) -> Character:
 	minion.description = "Minion of the " + ["Corrupted Treant", "Flame Warlord", "Lich Summoner", "Storm Dragon", "Void Titan"][data.boss_index]
 	minion.max_health = data.max_health
 	minion.current_health = data.max_health
-	minion.starting_energy = data.starting_energy
-	minion.max_energy = data.starting_energy
-	minion.current_energy = data.starting_energy
+	minion.starting_stamina = data.starting_stamina
+	minion.max_stamina = data.starting_stamina
+	minion.current_stamina = data.starting_stamina
 	minion.character_role = Character.CharacterRole.MINION
 	minion.is_minion = true
 
@@ -69,7 +69,7 @@ func create_card_from_data(data: Dictionary) -> Card:
 		"RANDOM_ENEMY":
 			card.target_type = Card.TargetType.RANDOM_ENEMY
 
-	card.energy_cost = data.cost
+	card.stamina_cost = data.cost
 	card.damage = data.get("damage", 0)
 	card.heal_amount = data.get("heal", 0)
 	card.shield_amount = data.get("shield", 0)

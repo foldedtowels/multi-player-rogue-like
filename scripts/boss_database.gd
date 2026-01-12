@@ -26,7 +26,7 @@ func create_boss_cards():
 		# Set basic properties
 		card.card_name = data.card_name
 		card.description = data.description
-		card.energy_cost = data.energy_cost
+		card.stamina_cost = data.get("stamina_cost", data.get("energy_cost", 0))  # Support old data with energy_cost
 
 		# Parse card type from string
 		match data.card_type:
@@ -78,9 +78,9 @@ func create_boss_by_id(boss_id: String) -> Character:
 	boss.description = data.description
 	boss.max_health = data.max_health
 	boss.current_health = data.max_health
-	boss.starting_energy = data.starting_energy
-	boss.max_energy = data.starting_energy
-	boss.current_energy = data.starting_energy
+	boss.starting_stamina = data.starting_stamina
+	boss.max_stamina = data.starting_stamina
+	boss.current_stamina = data.starting_stamina
 
 	# Build deck from card IDs and counts
 	# Data format: {"root_lash": 6, "bark_armor": 4, ...}

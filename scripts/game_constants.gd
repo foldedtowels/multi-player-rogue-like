@@ -47,9 +47,9 @@ const BOSS_HP_SCALING: Dictionary = {
 	4: 600   # Void Titan - 33% health increase (final boss)
 }
 
-## Energy available to bosses per turn
-## Bosses gain more energy in later encounters
-const BOSS_ENERGY_SCALING: Dictionary = {
+## Stamina available to bosses per turn
+## Bosses gain more stamina in later encounters
+const BOSS_STAMINA_SCALING: Dictionary = {
 	0: 2,  # Corrupted Treant
 	1: 3,  # Flame Warlord
 	2: 3,  # Lich Summoner
@@ -71,9 +71,9 @@ const HERO_MAX_HEALTH: Dictionary = {
 	"chrono_mage": 100      # Balanced time mage
 }
 
-## Starting energy for all heroes
+## Starting stamina for all heroes
 ## Currently uniform, but extracted for future per-hero tuning
-const HERO_STARTING_ENERGY: int = 3
+const HERO_STARTING_STAMINA: int = 3
 
 # =============================================================================
 # REWARD SYSTEM

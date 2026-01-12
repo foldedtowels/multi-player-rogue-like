@@ -1,6 +1,9 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/combat.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/ui/passive_ability_modal.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/ui/card_v2_choice_modal.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/ui/deck_view_modal.tscn" id="4"]
 
 [node name="Combat" type="Control"]
 layout_mode = 3
@@ -261,6 +264,19 @@ vertical_alignment = 1
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="ViewDeckButton" type="Button" parent="BottomArea/YourCharacterPanel/HBoxContainer"]
+custom_minimum_size = Vector2(100, 60)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "View Deck"
+
+[node name="PassiveButton" type="Button" parent="BottomArea/YourCharacterPanel/HBoxContainer"]
+custom_minimum_size = Vector2(140, 60)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Passive Ability"
+visible = false
+
 [node name="PhaseLabel" type="Label" parent="BottomArea/YourCharacterPanel/HBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 16
@@ -303,4 +319,13 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 10
 alignment = 1
+
+[node name="PassiveAbilityModal" parent="." instance=ExtResource("2")]
+visible = false
+
+[node name="CardV2ChoiceModal" parent="." instance=ExtResource("3")]
+visible = false
+
+[node name="DeckViewModal" parent="." instance=ExtResource("4")]
+visible = false
 

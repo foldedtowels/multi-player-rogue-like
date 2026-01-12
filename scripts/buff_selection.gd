@@ -6,6 +6,7 @@ extends Control
 
 var game_manager: Node
 var card_db: Node
+var hero_db: Node
 var reward_manager: RewardManager
 
 # UI Elements
@@ -17,6 +18,7 @@ var skip_button: Button
 func _ready():
 	game_manager = get_node("/root/GameManager")
 	card_db = get_node("/root/CardDatabase")
+	hero_db = get_node("/root/HeroDatabase")
 
 	# CRITICAL: Background must not block clicks - set to IGNORE so clicks reach buttons/cards
 	$ColorRect.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -32,7 +34,7 @@ func _ready():
 
 	# Create skip button
 	skip_button = Button.new()
-	skip_button.text = "Skip (Auto-select +1 Energy)"
+	skip_button.text = "Skip (Auto-select +1 Stamina)"
 	skip_button.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	skip_button.position = Vector2(-150, -80)
 	skip_button.custom_minimum_size = Vector2(300, 50)
@@ -70,14 +72,14 @@ func _generate_buff_choices() -> Dictionary:
 		var player = game_manager.players[player_idx]
 		var player_choices: Array[RewardChoice] = []
 
-		# Option 1: +1 Max Energy
-		var energy_buff = RewardChoice.new()
-		energy_buff.choice_type = RewardChoice.ChoiceType.BUFF
-		energy_buff.display_name = "+1 Energy"
-		energy_buff.description = "Increase max energy by 1"
-		energy_buff.buff_type = "max_energy"
-		energy_buff.buff_amount = 1
-		player_choices.append(energy_buff)
+		# Option 1: +1 Max Stamina
+		var stamina_buff = RewardChoice.new()
+		stamina_buff.choice_type = RewardChoice.ChoiceType.BUFF
+		stamina_buff.display_name = "+1 Stamina"
+		stamina_buff.description = "Increase max stamina by 1"
+		stamina_buff.buff_type = "max_stamina"
+		stamina_buff.buff_amount = 1
+		player_choices.append(stamina_buff)
 
 		# Option 2: +15 Max HP
 		var hp_buff = RewardChoice.new()
@@ -88,16 +90,26 @@ func _generate_buff_choices() -> Dictionary:
 		hp_buff.buff_amount = 15
 		player_choices.append(hp_buff)
 
-		# Option 3: Random rare card
-		var rare_pool = card_db.get_rare_cards()
-		rare_pool.shuffle()
-		var rare_card = rare_pool[0]
+		# Option 3: Random card from reward deck (hero-specific) or rare pool
+		var card_pool: Array[Card] = []
+
+		# Check if this hero has a custom reward deck
+		if player.hero_id != "" and hero_db.has_reward_deck(player.hero_id):
+			card_pool = hero_db.get_reward_deck(player.hero_id)
+			print("[BUFF] Using hero-specific reward deck for ", player.character_name)
+		else:
+			# Fallback to generic rare cards for placeholder heroes
+			card_pool = card_db.get_rare_cards()
+			print("[BUFF] Using generic rare pool for ", player.character_name)
+
+		card_pool.shuffle()
+		var reward_card = card_pool[0]
 
 		var card_choice = RewardChoice.new()
 		card_choice.choice_type = RewardChoice.ChoiceType.CARD
-		card_choice.card_data = rare_card
-		card_choice.display_name = rare_card.card_name
-		card_choice.description = rare_card.description
+		card_choice.card_data = reward_card
+		card_choice.display_name = reward_card.card_name
+		card_choice.description = reward_card.description
 		player_choices.append(card_choice)
 
 		choices[player_idx] = player_choices
@@ -203,12 +215,12 @@ func _continue_to_boss():
 		push_error("[BUFF] NetworkManager not found!")
 
 func _on_skip_pressed():
-	print("[BUFF] Player skipped buff selection - auto-selecting +1 Energy")
+	print("[BUFF] Player skipped buff selection - auto-selecting +1 Stamina")
 
 	# Hide skip button
 	skip_button.visible = false
 
 	var my_index = game_manager.local_player_index
 	var choices = _generate_buff_choices()[my_index]
-	# Auto-select first choice (+1 Energy)
+	# Auto-select first choice (+1 Stamina)
 	_on_private_choice_made(my_index, choices[0])

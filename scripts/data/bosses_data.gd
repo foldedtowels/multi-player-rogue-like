@@ -14,7 +14,7 @@ const BOSS_CARDS = {
 		"description": "Whip with thorny roots.",
 		"card_type": "ATTACK",
 		"target_type": "RANDOM_ENEMY",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"damage": 8
 	},
 	"bark_armor": {
@@ -22,7 +22,7 @@ const BOSS_CARDS = {
 		"description": "Harden bark for protection.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"shield_amount": 10
 	},
 	"natures_wrath": {
@@ -30,7 +30,7 @@ const BOSS_CARDS = {
 		"description": "Channel corrupted nature energy.",
 		"card_type": "ATTACK",
 		"target_type": "ALL_ENEMIES",
-		"energy_cost": 2,
+		"stamina_cost": 2,
 		"damage": 6,
 		"aoe_damage": true
 	},
@@ -41,7 +41,7 @@ const BOSS_CARDS = {
 		"description": "Heavy strike with flaming weapon.",
 		"card_type": "ATTACK",
 		"target_type": "RANDOM_ENEMY",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"damage": 12
 	},
 	"war_cry": {
@@ -49,7 +49,7 @@ const BOSS_CARDS = {
 		"description": "Rally strength for the next assault.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"apply_strength": 3
 	},
 	"inferno_wave": {
@@ -57,7 +57,7 @@ const BOSS_CARDS = {
 		"description": "Massive fire blast.",
 		"card_type": "ATTACK",
 		"target_type": "ALL_ENEMIES",
-		"energy_cost": 2,
+		"stamina_cost": 2,
 		"damage": 10,
 		"apply_burn": 3,
 		"aoe_damage": true
@@ -67,7 +67,7 @@ const BOSS_CARDS = {
 		"description": "Barrier of living fire.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"shield_amount": 15
 	},
 
@@ -77,7 +77,7 @@ const BOSS_CARDS = {
 		"description": "Drain life from enemies.",
 		"card_type": "ATTACK",
 		"target_type": "RANDOM_ENEMY",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"damage": 10,
 		"lifesteal": true
 	},
@@ -86,7 +86,7 @@ const BOSS_CARDS = {
 		"description": "Spread disease to all foes.",
 		"card_type": "DEBUFF",
 		"target_type": "ALL_ENEMIES",
-		"energy_cost": 2,
+		"stamina_cost": 2,
 		"apply_poison": 4,
 		"damage": 5,
 		"aoe_damage": true
@@ -96,7 +96,7 @@ const BOSS_CARDS = {
 		"description": "Summon protective bones.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"shield_amount": 12,
 		"apply_armor": 2
 	},
@@ -105,7 +105,7 @@ const BOSS_CARDS = {
 		"description": "Sacrifice life for power.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"apply_strength": 4,
 		"heal_amount": -8
 	},
@@ -114,7 +114,7 @@ const BOSS_CARDS = {
 		"description": "Consume enemy essence.",
 		"card_type": "ATTACK",
 		"target_type": "RANDOM_ENEMY",
-		"energy_cost": 2,
+		"stamina_cost": 2,
 		"damage": 15,
 		"lifesteal": true,
 		"apply_weakness": 2
@@ -126,7 +126,7 @@ const BOSS_CARDS = {
 		"description": "Crushing jaws.",
 		"card_type": "ATTACK",
 		"target_type": "RANDOM_ENEMY",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"damage": 16
 	},
 	"lightning_breath": {
@@ -134,7 +134,7 @@ const BOSS_CARDS = {
 		"description": "Devastating electrical discharge.",
 		"card_type": "ATTACK",
 		"target_type": "ALL_ENEMIES",
-		"energy_cost": 2,
+		"stamina_cost": 2,
 		"damage": 14,
 		"apply_vulnerable": 2,
 		"aoe_damage": true
@@ -144,7 +144,7 @@ const BOSS_CARDS = {
 		"description": "Powerful wind blast.",
 		"card_type": "ATTACK",
 		"target_type": "ALL_ENEMIES",
-		"energy_cost": 2,
+		"stamina_cost": 2,
 		"damage": 10,
 		"apply_weakness": 2,
 		"aoe_damage": true
@@ -154,7 +154,7 @@ const BOSS_CARDS = {
 		"description": "Impenetrable armor.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"shield_amount": 20,
 		"apply_armor": 3
 	},
@@ -163,7 +163,7 @@ const BOSS_CARDS = {
 		"description": "Call down devastating lightning.",
 		"card_type": "ATTACK",
 		"target_type": "ALL_ENEMIES",
-		"energy_cost": 3,
+		"stamina_cost": 3,
 		"damage": 18,
 		"aoe_damage": true
 	},
@@ -174,7 +174,7 @@ const BOSS_CARDS = {
 		"description": "Reality-shattering blow.",
 		"card_type": "ATTACK",
 		"target_type": "RANDOM_ENEMY",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"damage": 20,
 		"piercing": true
 	},
@@ -183,7 +183,7 @@ const BOSS_CARDS = {
 		"description": "Annihilating energy blast.",
 		"card_type": "ATTACK",
 		"target_type": "ALL_ENEMIES",
-		"energy_cost": 2,
+		"stamina_cost": 2,
 		"damage": 16,
 		"piercing": true,
 		"aoe_damage": true
@@ -193,7 +193,7 @@ const BOSS_CARDS = {
 		"description": "Shield of nothingness.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
-		"energy_cost": 1,
+		"stamina_cost": 1,
 		"shield_amount": 25,
 		"apply_armor": 5
 	},
@@ -202,7 +202,7 @@ const BOSS_CARDS = {
 		"description": "Rip through existence itself.",
 		"card_type": "ATTACK",
 		"target_type": "ALL_ENEMIES",
-		"energy_cost": 3,
+		"stamina_cost": 3,
 		"damage": 22,
 		"apply_vulnerable": 3,
 		"piercing": true,
@@ -213,7 +213,7 @@ const BOSS_CARDS = {
 		"description": "Spread chaos and decay.",
 		"card_type": "DEBUFF",
 		"target_type": "ALL_ENEMIES",
-		"energy_cost": 2,
+		"stamina_cost": 2,
 		"apply_poison": 5,
 		"apply_burn": 5,
 		"apply_weakness": 2
@@ -225,14 +225,14 @@ const BOSS_CARDS = {
 ## - name: Display name shown in UI
 ## - description: Flavor text describing the boss
 ## - max_health: Boss HP (also set in GameConstants.BOSS_HP_SCALING)
-## - starting_energy: Energy per turn (also set in GameConstants.BOSS_ENERGY_SCALING)
+## - starting_stamina: Stamina per turn (also set in GameConstants.BOSS_STAMINA_SCALING)
 ## - deck: Dictionary mapping card IDs to counts
 const BOSSES = {
 	"corrupted_treant": {
 		"name": "Corrupted Treant",
 		"description": "Ancient guardian twisted by dark magic.",
 		"max_health": 200,  # See GameConstants.BOSS_HP_SCALING[0]
-		"starting_energy": 2,  # See GameConstants.BOSS_ENERGY_SCALING[0]
+		"starting_stamina": 2,  # See GameConstants.BOSS_ENERGY_SCALING[0]
 		"deck": {
 			"root_lash": 6,
 			"bark_armor": 4,
@@ -244,7 +244,7 @@ const BOSSES = {
 		"name": "Flame Warlord",
 		"description": "Brutal warrior engulfed in eternal flames.",
 		"max_health": 280,  # See GameConstants.BOSS_HP_SCALING[1]
-		"starting_energy": 3,  # See GameConstants.BOSS_ENERGY_SCALING[1]
+		"starting_stamina": 3,  # See GameConstants.BOSS_ENERGY_SCALING[1]
 		"deck": {
 			"battle_axe": 5,
 			"war_cry": 3,
@@ -257,7 +257,7 @@ const BOSSES = {
 		"name": "Lich Summoner",
 		"description": "Undead necromancer who commands death itself.",
 		"max_health": 350,  # See GameConstants.BOSS_HP_SCALING[2]
-		"starting_energy": 3,  # See GameConstants.BOSS_ENERGY_SCALING[2]
+		"starting_stamina": 3,  # See GameConstants.BOSS_ENERGY_SCALING[2]
 		"deck": {
 			"death_coil": 4,
 			"plague_cloud": 4,
@@ -271,7 +271,7 @@ const BOSSES = {
 		"name": "Storm Dragon",
 		"description": "Ancient wyrm that commands lightning and thunder.",
 		"max_health": 450,  # See GameConstants.BOSS_HP_SCALING[3]
-		"starting_energy": 4,  # See GameConstants.BOSS_ENERGY_SCALING[3]
+		"starting_stamina": 4,  # See GameConstants.BOSS_ENERGY_SCALING[3]
 		"deck": {
 			"dragon_bite": 4,
 			"lightning_breath": 4,
@@ -285,7 +285,7 @@ const BOSSES = {
 		"name": "Void Titan",
 		"description": "Cosmic horror from beyond reality.",
 		"max_health": 600,  # See GameConstants.BOSS_HP_SCALING[4]
-		"starting_energy": 4,  # See GameConstants.BOSS_ENERGY_SCALING[4]
+		"starting_stamina": 4,  # See GameConstants.BOSS_ENERGY_SCALING[4]
 		"deck": {
 			"void_slam": 5,
 			"cosmic_beam": 4,

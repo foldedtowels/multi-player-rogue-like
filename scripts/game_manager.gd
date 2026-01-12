@@ -6,6 +6,9 @@ signal card_played(character: Character, card: Card, target: Character)
 signal combat_ended(victory: bool)
 signal game_state_changed()
 signal enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int)
+signal card_v2_choice_needed(caster: Character, card: Card, target: Character)
+signal card_retain_choice_needed(player_index: int, expires_after_round: int)  # Player needs to select a card to retain
+signal boss_intent_revealed(card_names: Array[String])  # Boss's next turn cards are revealed
 
 enum GameState {
 	CHARACTER_SELECTION,
@@ -22,9 +25,8 @@ enum CombatPhase {
 }
 
 enum TurnPhase {
-	PLAYER_SELECTION,  # All players selecting cards
-	PLAYER_ACTION,     # Players playing selected cards in flexible order
-	ENEMY_TURN        # Enemies taking turns
+	PLAYER_TURN,  # All players take turns simultaneously
+	ENEMY_TURN    # Enemies taking turns
 }
 
 enum EncounterType {
@@ -34,7 +36,7 @@ enum EncounterType {
 }
 
 var current_state: GameState = GameState.CHARACTER_SELECTION
-var turn_phase: TurnPhase = TurnPhase.PLAYER_SELECTION
+var turn_phase: TurnPhase = TurnPhase.PLAYER_TURN
 var players: Array[Character] = []
 var enemies: Array[Character] = []  # Up to 3 enemies (minions + boss)
 var current_boss: Character  # Points to boss in enemies array
@@ -47,6 +49,7 @@ var next_queue_id: int = 1  # Counter for unique queue instance IDs
 var hero_db: Node
 var boss_db: Node
 var minion_db: Node
+var card_db: Node
 
 # Network tracking
 var network_player_mapping: Dictionary = {}  # peer_id -> player_index
@@ -59,15 +62,33 @@ var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 # Last played cards for UI display (player_index -> Card)
 var last_played_cards: Dictionary = {}
 
-# Simultaneous card selection system
-var players_ready: Dictionary = {}  # player_index -> bool
+# Card previews for UI display (player_index -> Card)
+# Shows which card each player is currently previewing (not yet played)
+var card_previews: Dictionary = {}
+
+# Simultaneous turn system
 var queued_cards: Dictionary = {}   # player_index -> Array[Card] (no targets yet)
-var players_done_acting: Dictionary = {}  # player_index -> bool (who clicked Done)
+var players_done_acting: Dictionary = {}  # player_index -> bool (who clicked "End Turn")
+
+# Delayed effects system (e.g., Jumping Strike)
+# Each entry: {caster_idx: int, target_idx: int, damage: int, condition: String, source_card: String}
+var delayed_effects: Array = []
+
+# Protection system (e.g., Protector)
+# Maps protected_player_idx -> protector_player_idx
+# When enemy targets a protected player, attack redirects to protector
+var protected_by: Dictionary = {}
+
+# Boss intent reveal system (e.g., Hunter's Instinct)
+# When > 0, shows what the boss will play on that round
+var boss_intent_revealed_for_round: int = 0
+var boss_next_turn_cards: Array[String] = []  # Card names boss will play next turn
 
 func _ready():
 	hero_db = get_node("/root/HeroDatabase")
 	boss_db = get_node("/root/BossDatabase")
 	minion_db = get_node("/root/MinionDatabase")
+	card_db = get_node("/root/CardDatabase")
 
 func start_new_game():
 	players.clear()
@@ -157,14 +178,17 @@ func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 		boss_idx: Which boss (0-4) to load enemies for
 	"""
 
-	print("[GameManager] initialize_combat_encounter - type: ", encounter_type, " boss_idx: ", boss_idx)
 
 	# Step 1: Clear ALL combat state
 	enemies.clear()
 	queued_cards.clear()
-	players_ready.clear()
 	players_done_acting.clear()
 	last_played_cards.clear()
+	card_previews.clear()
+	delayed_effects.clear()
+	protected_by.clear()
+	boss_intent_revealed_for_round = 0
+	boss_next_turn_cards.clear()
 
 	# Step 2: Set game state
 	current_state = GameState.COMBAT
@@ -184,19 +208,16 @@ func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 			for minion in minions:
 				enemies.append(minion)
 			combat_phase = CombatPhase.MINION_COMBAT
-			print("[GameManager] Loaded ", minions.size(), " minions for boss ", boss_idx, " (boss loaded for later: ", current_boss.character_name, ")")
 
 		EncounterType.BOSS_PHASE_1:
 			current_boss.character_role = Character.CharacterRole.BOSS
 			enemies.append(current_boss)
 			combat_phase = CombatPhase.BOSS_PHASE_1
-			print("[GameManager] Loaded boss: ", current_boss.character_name)
 
 		EncounterType.BOSS_PHASE_2:
 			# Boss already exists, just add back to enemies
 			enemies.append(current_boss)
 			combat_phase = CombatPhase.BOSS_PHASE_2
-			print("[GameManager] Boss phase 2: ", current_boss.character_name)
 
 	# Step 5: Reset player state (keep earned cards!)
 	for i in range(players.size()):
@@ -219,10 +240,9 @@ func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 
 		# Reset temporary combat state
 		player.shield = 0
-		player.current_energy = player.max_energy
+		player.current_stamina = player.max_stamina
 		player.reset_debuffs()
 
-		print("[GameManager] Player ", i, " (", player.character_name, ") reset - deck: ", player.deck.size(), " cards")
 
 	# Step 6: Sync state to all clients (server only)
 	if multiplayer.is_server():
@@ -246,10 +266,9 @@ func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 
 	rng.seed = game_seed
 
-	print("[GameManager] initialize_combat_encounter complete - enemies: ", enemies.size(), " queued_cards cleared")
 
 # Character state sync RPCs
-@rpc("any_peer", "call_local", "reliable")
+@rpc("any_peer", "call_remote", "reliable")
 func sync_character_state(char_index: int, is_player: bool, state: Dictionary):
 	# Safety check: ensure arrays are populated
 	if is_player and (char_index < 0 or char_index >= players.size()):
@@ -264,7 +283,11 @@ func sync_character_state(char_index: int, is_player: bool, state: Dictionary):
 		character = players[char_index]
 	else:
 		character = enemies[char_index]
+
 	character.apply_state_dict(state)
+
+	# Emit signal to update UI on clients
+	game_state_changed.emit()
 
 @rpc("any_peer", "call_remote", "reliable")
 func sync_character_hand(char_index: int, hand_data: Array):
@@ -277,6 +300,32 @@ func sync_last_played_card(player_index: int, card_data: Dictionary):
 	var card = Card.deserialize(card_data)
 	last_played_cards[player_index] = card
 	# UI will refresh and display this card in side panels
+
+## Client calls this when previewing a card (single-click)
+func preview_card(player_index: int, card: Card):
+	if multiplayer.is_server():
+		# Server: update local state and broadcast
+		card_previews[player_index] = card
+		rpc("sync_card_preview", player_index, card.serialize())
+	else:
+		# Client: send to server
+		rpc_id(1, "sync_card_preview", player_index, card.serialize())
+
+@rpc("any_peer", "call_local", "reliable")
+func sync_card_preview(player_index: int, card_data: Dictionary):
+	# Deserialize card and store preview
+	var card = Card.deserialize(card_data)
+	card_previews[player_index] = card
+
+	# Don't emit game_state_changed - it causes hand to rebuild and breaks drag-and-drop!
+	# Player status panels update automatically via their own update cycles
+
+@rpc("any_peer", "call_local", "reliable")
+func clear_card_preview(player_index: int):
+	card_previews.erase(player_index)
+
+	# Don't emit game_state_changed - it causes hand to rebuild and breaks drag-and-drop!
+	# Player status panels update automatically via their own update cycles
 
 func broadcast_character_state(character: Character):
 	if not multiplayer.is_server(): return
@@ -298,7 +347,7 @@ func send_hand_to_owner(character: Character):
 	if char_index == -1: return
 
 	var hand_data = character.get_hand_dict()
-	print("[GameManager] send_hand_to_owner - ", character.character_name, " (player ", char_index, ") | hand size: ", hand_data.size())
+	print("[CARD_DRAW] Syncing hand to client for ", character.character_name, " (", hand_data.size(), " cards)")
 
 	# Broadcast to clients via RPC
 	rpc("sync_character_hand", char_index, hand_data)
@@ -357,10 +406,12 @@ func _server_start_player_turn(player_index: int):
 	broadcast_character_state(player)
 	send_hand_to_owner(player)
 	# Notify all clients
-	rpc("client_player_turn_started", player_index)
+	rpc("client_sequential_turn_started", player_index)
 
 @rpc("any_peer", "call_local", "reliable")
-func client_player_turn_started(player_index: int):
+func client_sequential_turn_started(player_index: int):
+	# OLD SEQUENTIAL TURN SYSTEM - DEPRECATED
+	# Kept for compatibility but no longer used in new simultaneous turn system
 	current_player_index = player_index
 	player_turn_started.emit(player_index)
 
@@ -378,7 +429,7 @@ func server_end_player_turn():
 
 func _server_end_player_turn():
 	var player = players[current_player_index]
-	player.end_turn()
+	player.end_turn(round_number)
 	# Sync state to all clients
 	broadcast_character_state(player)
 
@@ -445,21 +496,14 @@ func transition_to_buff_phase():
 ## This function is kept for compatibility but should not be used in new code
 func reset_players_between_encounters():
 	push_warning("[DEPRECATED] reset_players_between_encounters() is deprecated. Use initialize_combat_encounter() instead.")
-	print("[GameManager] Resetting players between encounters (keeping earned cards)")
-
-	# DEBUG: Show queued_cards before clearing
-	print("[QUEUED_CARDS DEBUG] BEFORE reset_players_between_encounters:")
-	for player_idx in queued_cards.keys():
-		print("  Player ", player_idx, ": ", queued_cards[player_idx].size(), " cards")
 
 	# Clear all combat state dictionaries
 	queued_cards.clear()
-	players_ready.clear()
 	players_done_acting.clear()
 	last_played_cards.clear()
+	card_previews.clear()
 
 	# DEBUG: Confirm cleared
-	print("[QUEUED_CARDS DEBUG] AFTER reset_players_between_encounters - queued_cards.size(): ", queued_cards.size())
 
 	# Reset each player's temporary state (but keep their deck!)
 	for i in range(players.size()):
@@ -486,23 +530,21 @@ func reset_players_between_encounters():
 		player.shield = 0
 
 		# Reset energy to max
-		player.current_energy = player.max_energy
+		player.current_stamina = player.max_stamina
 
 		# Clear debuffs between fights (keep permanent buffs like strength/armor)
 		player.reset_debuffs()
 
-		print("[GameManager] Player ", i, " (", player.character_name, ") reset - deck: ", player.deck.size(), " cards")
 
 ## Reset players to starting deck for a NEW RUN (LOSES earned cards!)
 ## Only use this when starting a brand new run, not between encounters
 func reset_players_for_new_run():
-	print("[GameManager] Resetting players for NEW RUN (back to starting deck)")
 
 	# Clear all combat state dictionaries
 	queued_cards.clear()
-	players_ready.clear()
 	players_done_acting.clear()
 	last_played_cards.clear()
+	card_previews.clear()
 
 	# Reset each player to starting state
 	for i in range(players.size()):
@@ -521,7 +563,7 @@ func reset_players_for_new_run():
 		player.shield = 0
 
 		# Reset energy to max
-		player.current_energy = player.max_energy
+		player.current_stamina = player.max_stamina
 
 		# Clear debuffs
 		player.reset_debuffs()
@@ -627,11 +669,11 @@ func play_enemy_turn(enemy: Character):
 	if not enemy.is_alive():
 		return
 
-	# Simple AI: Play cards until out of energy
+	# Simple AI: Play cards until out of stamina
 	var enemy_hand = enemy.hand.duplicate()
 
 	for card in enemy_hand:
-		if not card.can_afford(enemy.current_energy):
+		if not card.can_afford(enemy.current_stamina):
 			continue
 
 		var target = select_enemy_target(enemy, card)
@@ -639,7 +681,7 @@ func play_enemy_turn(enemy: Character):
 			play_card(enemy, card, target)
 			await get_tree().create_timer(0.5).timeout
 
-	enemy.end_turn()
+	enemy.end_turn(round_number)
 	# Sync state to all clients
 	broadcast_character_state(enemy)
 
@@ -651,19 +693,17 @@ func start_round():
 
 	print("\n##################### ROUND ", round_number, " - FRIENDLY TURN #####################")
 
-	# DEBUG: Show queued_cards before clearing
-	print("[QUEUED_CARDS DEBUG] start_round() BEFORE clear - queued_cards:")
-	for player_idx in queued_cards.keys():
-		print("  Player ", player_idx, ": ", queued_cards[player_idx].size(), " cards")
+	# Process delayed effects from previous turn BEFORE players start their turn
+	_process_delayed_effects()
 
-	turn_phase = TurnPhase.PLAYER_SELECTION
-	players_ready.clear()
+	# Clear protection from previous turn (Protector lasts one turn)
+	protected_by.clear()
+
+	turn_phase = TurnPhase.PLAYER_TURN
 	queued_cards.clear()
 	players_done_acting.clear()
 
-	print("[QUEUED_CARDS DEBUG] start_round() AFTER clear - queued_cards.size(): ", queued_cards.size())
-
-	# All alive players start their turn (draw cards, gain energy)
+	# All alive players start their turn (draw cards, gain stamina)
 	for i in range(players.size()):
 		var player = players[i]
 		if player.is_alive():
@@ -671,15 +711,92 @@ func start_round():
 			broadcast_character_state(player)
 			send_hand_to_owner(player)
 			queued_cards[i] = []
-			print("[QUEUED_CARDS DEBUG] start_round() initialized queued_cards[", i, "] = []")
 
-	# Notify all clients to enter selection phase
-	rpc("client_selection_phase_started")
+	# Notify all clients to enter player turn phase
+	rpc("client_player_turn_started")
 
 @rpc("any_peer", "call_local", "reliable")
-func client_selection_phase_started():
-	turn_phase = TurnPhase.PLAYER_SELECTION
+func client_player_turn_started():
+	turn_phase = TurnPhase.PLAYER_TURN
 	game_state_changed.emit()
+
+## Process delayed effects from previous turn (e.g., Jumping Strike)
+func _process_delayed_effects():
+	if delayed_effects.is_empty():
+		return
+
+	print("[DELAYED] Processing ", delayed_effects.size(), " delayed effects")
+
+	for effect in delayed_effects:
+		var caster_idx = effect.caster_idx
+		var target_idx = effect.target_idx
+		var damage = effect.damage
+		var condition = effect.condition
+		var source_card = effect.source_card
+		var piercing = effect.get("piercing", false)
+
+		# Validate indices
+		if caster_idx < 0 or caster_idx >= players.size():
+			print("[DELAYED] Invalid caster index: ", caster_idx)
+			continue
+		if target_idx < 0 or target_idx >= enemies.size():
+			print("[DELAYED] Invalid target index: ", target_idx)
+			continue
+
+		var caster = players[caster_idx]
+		var target = enemies[target_idx]
+
+		# Check if both are still alive
+		if not caster.is_alive():
+			print("[DELAYED] ", source_card, " fizzled - caster ", caster.character_name, " is dead")
+			continue
+		if not target.is_alive():
+			print("[DELAYED] ", source_card, " fizzled - target ", target.character_name, " is dead")
+			continue
+
+		# Check condition
+		var condition_met = true
+		match condition:
+			"no_damage_taken":
+				# Check if caster took 0 damage last turn
+				condition_met = caster.damage_taken_this_turn == 0
+				if not condition_met:
+					print("[DELAYED] ", source_card, " fizzled - ", caster.character_name, " took ", caster.damage_taken_this_turn, " damage last turn")
+			"":
+				# No condition, always applies
+				condition_met = true
+
+		if condition_met:
+			print("[DELAYED] ", source_card, " triggers! ", caster.character_name, " deals ", damage, " damage to ", target.character_name)
+			var damage_dealt = target.take_damage(damage, piercing)
+			broadcast_character_state(target)
+
+			# Check if enemy died from delayed damage
+			if not target.is_alive():
+				print("[DELAYED] ", target.character_name, " defeated by delayed damage!")
+
+	# Clear processed effects
+	delayed_effects.clear()
+
+## Apply card retention - called when player selects a card to retain
+func apply_card_retention(player_index: int, card_name: String, expires_after_round: int):
+	if multiplayer.is_server():
+		_server_apply_card_retention(player_index, card_name, expires_after_round)
+	else:
+		rpc_id(1, "server_apply_card_retention", player_index, card_name, expires_after_round)
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_apply_card_retention(player_index: int, card_name: String, expires_after_round: int):
+	_server_apply_card_retention(player_index, card_name, expires_after_round)
+
+func _server_apply_card_retention(player_index: int, card_name: String, expires_after_round: int):
+	if player_index < 0 or player_index >= players.size():
+		push_error("[RETAIN] Invalid player index: " + str(player_index))
+		return
+
+	var player = players[player_index]
+	player.retain_card(card_name, expires_after_round)
+	broadcast_character_state(player)
 
 # Sync a queued card from a player (no target yet)
 func sync_queued_card(player_index: int, card_data: Dictionary):
@@ -705,7 +822,6 @@ func _server_receive_queued_card(player_index: int, card_data: Dictionary):
 	queued_cards[player_index].append(card)
 
 	# DEBUG: Log card being added
-	print("[QUEUED_CARDS DEBUG] _server_receive_queued_card - Player ", player_index, " queued ", card.card_name, " (total now: ", queued_cards[player_index].size(), ")")
 
 	# Broadcast to all clients (with the assigned queue_instance_id)
 	rpc("client_receive_queued_card", player_index, card.serialize())
@@ -724,66 +840,6 @@ func client_receive_queued_card(player_index: int, card_data: Dictionary):
 		queued_cards[player_index] = []
 	queued_cards[player_index].append(card)
 
-	game_state_changed.emit()
-
-# Player marks ready (done selecting cards)
-func player_ready():
-	var my_index = local_player_index
-	if my_index == -1: return
-
-	# Send to server
-	if multiplayer.is_server():
-		_server_player_ready(my_index)
-	else:
-		rpc_id(1, "server_player_ready", my_index)
-
-@rpc("any_peer", "call_remote", "reliable")
-func server_player_ready(player_index: int):
-	_server_player_ready(player_index)
-
-func _server_player_ready(player_index: int):
-	players_ready[player_index] = true
-
-	# Broadcast ready status
-	rpc("client_player_ready_status", Array(players_ready.keys()))
-
-	# Check if all alive players are ready
-	check_all_players_ready()
-
-@rpc("any_peer", "call_local", "reliable")
-func client_player_ready_status(ready_indices: Array):
-	players_ready.clear()
-	for idx in ready_indices:
-		players_ready[idx] = true
-	game_state_changed.emit()
-
-func check_all_players_ready():
-	if not multiplayer.is_server(): return
-
-	var alive_count = 0
-	for player in players:
-		if player.is_alive():
-			alive_count += 1
-
-	print("[SYNC] Players ready: ", players_ready.size(), "/", alive_count)
-	if players_ready.size() >= alive_count:
-		print("[SYNC] All players ready - starting action phase")
-		start_action_phase()
-
-# Transition to action phase
-func start_action_phase():
-	if not multiplayer.is_server(): return
-
-	turn_phase = TurnPhase.PLAYER_ACTION
-	players_done_acting.clear()
-
-	# Notify all clients
-	rpc("client_action_phase_started")
-
-@rpc("any_peer", "call_local", "reliable")
-func client_action_phase_started():
-	turn_phase = TurnPhase.PLAYER_ACTION
-	players_done_acting.clear()
 	game_state_changed.emit()
 
 # Remove a played card from the queue
@@ -875,7 +931,7 @@ func check_action_phase_complete():
 			for i in range(players.size()):
 				var player = players[i]
 				if player.is_alive():
-					player.end_turn()
+					player.end_turn(round_number)
 					broadcast_character_state(player)
 					send_hand_to_owner(player)  # Sync cleared hand
 			rpc("client_enemy_turn_phase_started")
@@ -903,7 +959,7 @@ func start_enemy_turn_phase():
 	for i in range(players.size()):
 		var player = players[i]
 		if player.is_alive():
-			player.end_turn()
+			player.end_turn(round_number)
 			broadcast_character_state(player)
 			send_hand_to_owner(player)  # Sync cleared hand
 
@@ -982,7 +1038,19 @@ func select_enemy_target(enemy: Character, card: Card) -> Character:
 			# Target random alive player using deterministic RNG
 			var alive_players = players.filter(func(p): return p.is_alive())
 			if alive_players.size() > 0:
-				return alive_players[rng.randi() % alive_players.size()]
+				var selected = alive_players[rng.randi() % alive_players.size()]
+				var selected_idx = players.find(selected)
+
+				# Check if selected player is protected by another player
+				if protected_by.has(selected_idx):
+					var protector_idx = protected_by[selected_idx]
+					if protector_idx >= 0 and protector_idx < players.size():
+						var protector = players[protector_idx]
+						if protector.is_alive():
+							print("[PROTECT] ", selected.character_name, " is protected! Attack redirected to ", protector.character_name)
+							return protector
+
+				return selected
 		Card.TargetType.ALL_ENEMIES:
 			return players[0]  # Will be handled as AoE
 
@@ -990,7 +1058,7 @@ func select_enemy_target(enemy: Character, card: Card) -> Character:
 
 func end_boss_turn():
 	# Apply boss end-of-turn effects (status decay, etc.)
-	current_boss.end_turn()
+	current_boss.end_turn(round_number)
 
 	# NOTE: round_number increment removed - handled by start_enemy_turn_phase()
 	# NOTE: start_player_turn() removed - using new simultaneous turn system via start_round()
@@ -1006,6 +1074,13 @@ func end_boss_turn():
 		return
 
 func play_card(caster: Character, card: Card, target: Character):
+	# Check if card has v2 variant and needs player choice
+	if card.has_v2 and card.v2_card != null:
+		# Signal to combat.gd to show modal
+		# Combat.gd will handle showing modal and calling play_card_version()
+		card_v2_choice_needed.emit(caster, card, target)
+		return
+
 	# Server validates and processes
 	if not multiplayer.is_server():
 		# Client sends request to server
@@ -1029,6 +1104,31 @@ func play_card(caster: Character, card: Card, target: Character):
 	# Server processes card
 	_server_play_card(caster, card, target)
 
+func play_card_version(caster: Character, chosen_card: Card, target: Character):
+	# Play the chosen version directly (skip v2 check)
+	# Server validates and processes
+	if not multiplayer.is_server():
+		# Client sends request to server
+		var caster_index = -1
+		var caster_is_player = players.has(caster)
+		if caster_is_player:
+			caster_index = players.find(caster)
+		else:
+			caster_index = enemies.find(caster)
+
+		var target_index = -1
+		var target_is_player = players.has(target)
+		if target_is_player:
+			target_index = players.find(target)
+		else:
+			target_index = enemies.find(target)
+
+		rpc_id(1, "server_play_card", chosen_card.serialize(), caster_index, caster_is_player, target_index, target_is_player)
+		return
+
+	# Server processes card
+	_server_play_card(caster, chosen_card, target)
+
 @rpc("any_peer", "call_remote", "reliable")
 func server_play_card(card_data: Dictionary, caster_index: int, caster_is_player: bool, target_index: int, target_is_player: bool):
 	# Reconstruct card and characters
@@ -1048,11 +1148,16 @@ func server_play_card(card_data: Dictionary, caster_index: int, caster_is_player
 	_server_play_card(caster, card, target)
 
 func _server_play_card(caster: Character, card: Card, target: Character):
+	# Check if caster is exhausted (cannot play cards)
+	if caster.exhausted > 0:
+		print("[GameManager] Cannot play cards while exhausted")
+		return
+
 	if not caster.play_card(card):
 		return
 
-	# Apply card effects
-	apply_card_effects(caster, card, target)
+	# Apply card effects and get affected targets
+	var affected_targets = apply_card_effects(caster, card, target)
 
 	# Track last played card (only for players, not enemies)
 	var player_index = players.find(caster)
@@ -1064,20 +1169,18 @@ func _server_play_card(caster: Character, card: Card, target: Character):
 		# Remove card from queued cards (server authoritative removal)
 		remove_queued_card(player_index, card)
 
-	# Sync all affected characters
+	# Sync caster
 	broadcast_character_state(caster)
 	if caster.network_owner_id != -1:
 		send_hand_to_owner(caster)
-	if target != caster:
-		broadcast_character_state(target)
 
-	# Sync all enemies (for AoE effects)
-	for enemy in enemies:
-		broadcast_character_state(enemy)
-
-	# Sync all players (for AoE effects)
-	for player in players:
-		broadcast_character_state(player)
+	# Sync all affected targets (for card draw, token generation, state changes)
+	for t in affected_targets:
+		if t != caster:
+			broadcast_character_state(t)
+			# Only send hand if this is a player character
+			if t.network_owner_id != -1:
+				send_hand_to_owner(t)
 
 	# Notify all clients
 	var caster_index = -1
@@ -1114,7 +1217,7 @@ func client_card_played(card_data: Dictionary, caster_index: int, caster_is_play
 	card_played.emit(caster, card, target)
 	game_state_changed.emit()
 
-func apply_card_effects(caster: Character, card: Card, target: Character):
+func apply_card_effects(caster: Character, card: Card, target: Character) -> Array[Character]:
 	# Determine targets based on target type
 	var targets: Array[Character] = []
 
@@ -1145,13 +1248,23 @@ func apply_card_effects(caster: Character, card: Card, target: Character):
 		if not t.is_alive():
 			continue
 
-		# Damage
-		if card.damage > 0:
+		# Determine if t is an ally or enemy of caster
+		var is_ally = (players.has(caster) and players.has(t)) or \
+					  (enemies.has(caster) and enemies.has(t))
+		var is_enemy = (players.has(caster) and enemies.has(t)) or \
+					   (enemies.has(caster) and players.has(t))
+
+		# Damage - only apply to enemies, not allies
+		if card.damage > 0 and is_enemy:
 			for i in card.multi_hit:
 				# Apply strength bonus to attack damage
 				var total_damage = card.damage
 				if card.card_type == Card.CardType.ATTACK:
 					total_damage += caster.strength
+					total_damage += caster.damage_plus  # Phase 1: Temporary damage boost
+					# Apply weakness penalty to attack damage (opposite of strength)
+					total_damage -= caster.weakness
+					total_damage = max(0, total_damage)  # Can't go negative
 
 				var damage_dealt = t.take_damage(total_damage, card.piercing)
 
@@ -1165,31 +1278,142 @@ func apply_card_effects(caster: Character, card: Card, target: Character):
 				if card.lifesteal:
 					caster.heal(damage_dealt)
 
-		# Healing
-		if card.heal_amount > 0:
+		# DELAYED DAMAGE - queue effect for next turn instead of dealing now
+		if card.is_delayed_damage and card.delayed_damage_amount > 0 and is_enemy:
+			var caster_idx = players.find(caster)
+			var target_idx = enemies.find(t)
+			if caster_idx >= 0 and target_idx >= 0:
+				var delayed = {
+					"caster_idx": caster_idx,
+					"target_idx": target_idx,
+					"damage": card.delayed_damage_amount,
+					"condition": card.delay_condition,
+					"source_card": card.card_name,
+					"piercing": card.piercing
+				}
+				delayed_effects.append(delayed)
+				print("[DELAYED] Queued ", card.card_name, " - ", card.delayed_damage_amount, " damage next turn if ", card.delay_condition)
+
+		# Healing - only apply to allies, not enemies
+		if card.heal_amount > 0 and is_ally:
 			t.heal(card.heal_amount)
 
-		# Shield
+		# Shield - apply to caster when attacking enemies, or to target when buffing allies
 		if card.shield_amount > 0:
-			t.gain_shield(card.shield_amount)
+			if is_enemy:
+				# Attacking an enemy, shield yourself (e.g., "Duel Purpose")
+				caster.gain_shield(card.shield_amount)
+			elif is_ally:
+				# Buffing an ally, shield them
+				t.gain_shield(card.shield_amount)
 
-		# Status effects
-		if card.apply_poison > 0:
-			t.poison += card.apply_poison
-		if card.apply_burn > 0:
-			t.burn += card.apply_burn
-		if card.apply_strength > 0:
-			t.strength += card.apply_strength
-		if card.apply_vulnerable > 0:
-			t.vulnerable += card.apply_vulnerable
-		if card.apply_weakness > 0:
-			t.weakness += card.apply_weakness
-		if card.apply_armor > 0:
-			t.armor += card.apply_armor
+		# HARMFUL STATUS EFFECTS - only apply to enemies
+		if is_enemy:
+			if card.apply_poison > 0:
+				t.poison += card.apply_poison
+			if card.apply_burn > 0:
+				t.burn += card.apply_burn
+			if card.apply_vulnerable > 0:
+				t.vulnerable += card.apply_vulnerable
+			if card.apply_weakness > 0:
+				t.weakness += card.apply_weakness
+			if card.apply_fatigued > 0:
+				t.fatigued += card.apply_fatigued
 
-		# Card draw
-		if card.draw_cards > 0 and (t == caster):
+		# BENEFICIAL STATUS EFFECTS - only apply to allies
+		if is_ally:
+			if card.apply_strength > 0:
+				t.strength += card.apply_strength
+			if card.apply_armor > 0:
+				t.armor += card.apply_armor
+			if card.apply_rested > 0:
+				t.rested += card.apply_rested
+			if card.apply_invigorated > 0:
+				t.invigorated += card.apply_invigorated
+				t.damage_plus += card.apply_invigorated * 2  # Apply bonus immediately
+			if card.apply_damage_plus > 0:
+				t.damage_plus += card.apply_damage_plus
+
+		# SELF DEBUFFS - apply to caster when effect targets self
+		if t == caster:
+			if card.apply_exhausted > 0:
+				caster.exhausted += card.apply_exhausted
+			if card.apply_decay > 0:
+				caster.decay += card.apply_decay
+			if card.apply_fatigued > 0:
+				caster.fatigued += card.apply_fatigued
+
+		# Card draw - draw cards for the target (t), not necessarily the caster
+		if card.draw_cards > 0:
 			t.draw_cards(card.draw_cards)
+
+		# Generate token cards (adds specific cards to hand) - only caster gets generated cards
+		if card.generate_cards.size() > 0 and (t == caster):
+			for card_name in card.generate_cards:
+				var token_card = card_db.get_card(card_name)
+				if token_card:
+					# Add to hand if room, otherwise add to discard
+					if t.hand.size() < GameConstants.MAX_HAND_SIZE:
+						t.hand.append(token_card)
+					else:
+						t.discard_pile.append(token_card)
+
+		# CARD RETENTION - prompt player to select a card to retain
+		if card.grants_card_retain and t == caster:
+			var caster_idx = players.find(caster)
+			if caster_idx >= 0:
+				# Retention expires at end of NEXT round (current_round + 1)
+				var expires_after = round_number + 1
+				print("[RETAIN] ", caster.character_name, " needs to select a card to retain until round ", expires_after)
+				card_retain_choice_needed.emit(caster_idx, expires_after)
+
+		# ENEMY TARGET SWAP - redirect enemy attacks from target to caster (Protector)
+		if card.swaps_enemy_target and is_ally and t != caster:
+			var target_idx = players.find(t)
+			var caster_idx = players.find(caster)
+			if target_idx >= 0 and caster_idx >= 0:
+				protected_by[target_idx] = caster_idx
+				print("[PROTECT] ", caster.character_name, " now protects ", t.character_name, " - enemy attacks will be redirected")
+
+		# BOSS INTENT REVEAL - reveal what the boss will play next turn
+		if card.reveals_boss_intent and t == caster:
+			_reveal_boss_intent()
+
+	return targets
+
+## Reveal boss's next turn cards (Hunter's Instinct)
+func _reveal_boss_intent():
+	if current_boss == null:
+		print("[INTENT] No boss to reveal intent for")
+		return
+
+	# Calculate what cards boss will have next turn (peek at deck)
+	boss_next_turn_cards.clear()
+
+	# The boss will draw cards at start of their turn
+	# Peek at what's in their deck (first 5 cards they'd draw)
+	var deck_peek: Array[Card] = []
+	var temp_deck = current_boss.deck.duplicate()
+
+	# If deck is too small, include discard pile (shuffle)
+	if temp_deck.size() < 5:
+		var temp_discard = current_boss.discard_pile.duplicate()
+		temp_discard.shuffle()
+		temp_deck.append_array(temp_discard)
+
+	# Get first 5 (or fewer if not enough)
+	for i in range(min(5, temp_deck.size())):
+		deck_peek.append(temp_deck[i])
+
+	# Store card names
+	for card in deck_peek:
+		boss_next_turn_cards.append(card.card_name)
+
+	boss_intent_revealed_for_round = round_number + 1
+	print("[INTENT] Revealed boss intent for round ", round_number + 1, ": ", boss_next_turn_cards)
+
+	# Emit signal for UI
+	boss_intent_revealed.emit(boss_next_turn_cards)
 
 func boss_defeated():
 	current_state = GameState.REWARD
@@ -1214,4 +1438,88 @@ func game_over():
 func victory():
 	current_state = GameState.VICTORY
 	combat_ended.emit(true)
+	game_state_changed.emit()
+
+# Passive Ability Helper Functions
+func get_character_network_id(character: Character) -> int:
+	# Return a unique network ID for this character
+	# For players, use their index; for enemies, use negative index
+	var player_idx = players.find(character)
+	if player_idx >= 0:
+		return player_idx
+
+	var enemy_idx = enemies.find(character)
+	if enemy_idx >= 0:
+		return -(enemy_idx + 1)  # Negative to distinguish from players
+
+	return -999  # Invalid
+
+func get_character_by_network_id(network_id: int) -> Character:
+	if network_id >= 0:
+		# Player
+		if network_id < players.size():
+			return players[network_id]
+	else:
+		# Enemy (negative index)
+		var enemy_idx = -(network_id + 1)
+		if enemy_idx >= 0 and enemy_idx < enemies.size():
+			return enemies[enemy_idx]
+
+	return null
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_apply_passive_ability(player_index: int, ability_id: String, choice_index: int, target_network_id: int):
+	if not multiplayer.is_server():
+		return
+
+	# Validate player
+	if player_index < 0 or player_index >= players.size():
+		return
+
+	var character = players[player_index]
+	var ability = PassiveAbilityManager.get_ability(ability_id)
+
+	if not ability:
+		print("[GameManager] Invalid ability_id: ", ability_id)
+		return
+
+	# Find target by network_id
+	var target = get_character_by_network_id(target_network_id)
+
+	# Apply the passive ability
+	apply_passive_ability(character, ability, choice_index, target)
+
+func apply_passive_ability(character: Character, ability: PassiveAbility, choice_index: int, target: Character):
+	# Deduct stamina
+	character.current_stamina -= ability.stamina_cost
+
+	# Mark as used if uses_per_turn > 0
+	if ability.uses_per_turn > 0:
+		character.passive_ability_used_this_turn = true
+
+	# Apply the chosen effect
+	if choice_index >= 0 and choice_index < ability.choices.size():
+		var choice = ability.choices[choice_index]
+
+		match choice.effect:
+			"damage":
+				if target:
+					target.take_damage(choice.value, false)
+			"draw":
+				character.draw_cards(choice.value)
+			"shield":
+				character.gain_shield(choice.value)
+			"heal":
+				if target:
+					target.heal(choice.value)
+
+	# Sync character states
+	broadcast_character_state(character)
+	if target and target != character:
+		broadcast_character_state(target)
+
+	# Sync hand if drew cards
+	if character.network_owner_id != -1:
+		send_hand_to_owner(character)
+
 	game_state_changed.emit()

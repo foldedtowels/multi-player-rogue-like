@@ -5,6 +5,7 @@ extends Control
 
 var game_manager: Node
 var card_db: Node
+var hero_db: Node
 var wizard: Node2D
 var reward_manager: RewardManager
 
@@ -22,6 +23,7 @@ var skip_button: Button
 func _ready():
 	game_manager = get_node("/root/GameManager")
 	card_db = get_node("/root/CardDatabase")
+	hero_db = get_node("/root/HeroDatabase")
 
 	# Create reward panels programmatically
 	rare_panel = RewardDisplayPanel.new()
@@ -119,16 +121,28 @@ func _show_rare_reward():
 		skip_button.visible = true
 
 func _generate_rare_choices() -> Array[RewardChoice]:
-	var rare_pool = card_db.get_rare_cards()
-	rare_pool.shuffle()
+	var chosen_player = game_manager.players[chosen_player_index]
+	var card_pool: Array[Card] = []
+
+	# Check if chosen player's hero has a custom reward deck
+	if chosen_player.hero_id != "" and hero_db.has_reward_deck(chosen_player.hero_id):
+		card_pool = hero_db.get_reward_deck(chosen_player.hero_id)
+		print("[REWARD] Rare phase: Using hero-specific reward deck for ", chosen_player.character_name, " (", chosen_player.hero_id, ")")
+	else:
+		# Fallback to generic rare cards for placeholder heroes
+		card_pool = card_db.get_rare_cards()
+		print("[REWARD] Rare phase: Using generic rare pool for ", chosen_player.character_name)
+
+	card_pool.shuffle()
 
 	var choices: Array[RewardChoice] = []
-	for i in range(GameConstants.REWARD_RARE_CARD_CHOICES):
+	var num_cards = min(GameConstants.REWARD_RARE_CARD_CHOICES, card_pool.size())
+	for i in range(num_cards):
 		var choice = RewardChoice.new()
 		choice.choice_type = RewardChoice.ChoiceType.CARD
-		choice.card_data = rare_pool[i]
-		choice.display_name = rare_pool[i].card_name
-		choice.description = rare_pool[i].description
+		choice.card_data = card_pool[i]
+		choice.display_name = card_pool[i].card_name
+		choice.description = card_pool[i].description
 		choices.append(choice)
 
 	return choices
@@ -167,7 +181,7 @@ func _generate_common_choices() -> Dictionary:
 		var player = game_manager.players[player_idx]
 		var player_choices: Array[RewardChoice] = []
 
-		# Option 1: Heal
+		# Option 1: Heal (50% of max health)
 		var heal_choice = RewardChoice.new()
 		heal_choice.choice_type = RewardChoice.ChoiceType.HEAL
 		heal_choice.heal_amount = int(player.max_health * GameConstants.REWARD_HEAL_PERCENTAGE)
@@ -175,16 +189,28 @@ func _generate_common_choices() -> Dictionary:
 		heal_choice.description = "Restore %d HP" % heal_choice.heal_amount
 		player_choices.append(heal_choice)
 
-		# Options 2-4: Random common cards
-		var common_pool = card_db.get_common_cards()
-		common_pool.shuffle()
+		# Options 2-4: Cards from reward deck (hero-specific) or generic pool
+		var card_pool: Array[Card] = []
 
-		for i in range(GameConstants.REWARD_COMMON_CARD_CHOICES):
+		# Check if this hero has a custom reward deck
+		if player.hero_id != "" and hero_db.has_reward_deck(player.hero_id):
+			card_pool = hero_db.get_reward_deck(player.hero_id)
+			print("[REWARD] Using hero-specific reward deck for ", player.character_name, " (", player.hero_id, "): ", card_pool.size(), " cards")
+		else:
+			# Fallback to generic common cards for placeholder heroes
+			card_pool = card_db.get_common_cards()
+			print("[REWARD] Using generic common pool for ", player.character_name)
+
+		card_pool.shuffle()
+
+		# Offer up to 3 cards (or less if pool is smaller)
+		var num_cards = min(GameConstants.REWARD_COMMON_CARD_CHOICES, card_pool.size())
+		for i in range(num_cards):
 			var card_choice = RewardChoice.new()
 			card_choice.choice_type = RewardChoice.ChoiceType.CARD
-			card_choice.card_data = common_pool[i]
-			card_choice.display_name = common_pool[i].card_name
-			card_choice.description = common_pool[i].description
+			card_choice.card_data = card_pool[i]
+			card_choice.display_name = card_pool[i].card_name
+			card_choice.description = card_pool[i].description
 			player_choices.append(card_choice)
 
 		choices[player_idx] = player_choices
