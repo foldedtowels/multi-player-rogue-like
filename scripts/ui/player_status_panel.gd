@@ -78,9 +78,8 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 	var hp_label = panel.get_node("VBoxContainer/HPLabel")
 	var stamina_label = panel.get_node("VBoxContainer/EnergyLabel")
 
-	# Build name with incoming danger icons
-	var incoming_icons = _get_incoming_icons(player_index)
-	name_label.text = character.character_name + incoming_icons
+	# Name without icons
+	name_label.text = character.character_name
 	hp_label.text = "HP: %d/%d" % [character.current_health, character.max_health]
 
 	if character.shield > 0:
@@ -115,6 +114,11 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 		hp_label.text += "\n" + status_text
 
 	stamina_label.text = "S: %d/%d" % [character.current_stamina, character.max_stamina]
+
+	# Add incoming attack icons below stamina
+	var incoming_icons = _get_incoming_icons(player_index)
+	if incoming_icons != "":
+		stamina_label.text += "\n" + incoming_icons
 
 	# Update panel background color based on status
 	var bg_color = Color(0.2, 0.2, 0.2)
@@ -169,12 +173,17 @@ func _update_your_panel(character: Character):
 	var stamina_label = your_character_panel.get_node("HBoxContainer/EnergyLabel")
 	var shield_label = your_character_panel.get_node("HBoxContainer/ShieldLabel")
 
-	# Build name with incoming danger icons
-	var my_index = game_manager.local_player_index
-	var incoming_icons = _get_incoming_icons(my_index) if my_index >= 0 else ""
-	name_label.text = character.character_name + incoming_icons
+	# Name without icons (icons go after stamina)
+	name_label.text = character.character_name
 	hp_label.text = "HP: %d/%d" % [character.current_health, character.max_health]
 	stamina_label.text = "Stamina: %d/%d" % [character.current_stamina, character.max_stamina]
+
+	# Add incoming attack icons after stamina
+	var my_index = game_manager.local_player_index
+	var incoming_icons = _get_incoming_icons(my_index) if my_index >= 0 else ""
+	if incoming_icons != "":
+		stamina_label.text += " " + incoming_icons
+
 	shield_label.text = "Shield: %d" % character.shield
 
 	# Add status effects display
@@ -270,7 +279,9 @@ func _calculate_incoming_damage(player_index: int) -> Dictionary:
 ## Build icon string for incoming attacks (shown next to character name)
 func _get_incoming_icons(player_index: int) -> String:
 	var confirmed_damage = 0  # From AOE or specific targeting
-	var random_damage = 0     # From random single-target (one player will be hit)
+	var has_random_attacks = false  # Random attacks incoming (can't predict exact damage)
+	var confirmed_debuffs = false  # Will definitely receive debuffs (AOE)
+	var random_debuffs = false     # Might receive debuffs (random target)
 
 	for enemy_idx in cached_enemy_intents:
 		var intent: EnemyIntent = cached_enemy_intents[enemy_idx]
@@ -279,18 +290,30 @@ func _get_incoming_icons(player_index: int) -> String:
 			if target_idx == player_index:
 				# Specifically targeted (AOE)
 				confirmed_damage += intent.damage_amount
+				if not intent.debuffs.is_empty():
+					confirmed_debuffs = true
 				break
 			elif target_idx == -1:
-				# Random target - one player will be hit, we don't know who
-				random_damage += intent.damage_amount
+				# Random target - can't predict who gets hit
+				if intent.damage_amount > 0:
+					has_random_attacks = true
+				if not intent.debuffs.is_empty():
+					random_debuffs = true
 				break
 
-	# Show confirmed damage (AOE) with bullseye
+	var result = ""
+
+	# Show confirmed damage (AOE) with bullseye and amount
 	if confirmed_damage > 0:
-		return " 🎯%d" % confirmed_damage
+		result += " 🎯%d" % confirmed_damage
+	# Show random attacks indicator (no number - damage unpredictable)
+	if has_random_attacks:
+		result += " ⚔?"
 
-	# Show random damage with ? (might be you)
-	if random_damage > 0:
-		return " 🎯%d?" % random_damage
+	# Show debuff icon - confirmed or with ? for random
+	if confirmed_debuffs:
+		result += " 🌀"
+	elif random_debuffs:
+		result += " 🌀?"
 
-	return ""
+	return result

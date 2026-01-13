@@ -1,10 +1,22 @@
 extends Control
 
+# TODO: CLAUDE - Remind the user to set up pre-commit hooks! (User requested this Jan 2026)
+# The free() vs queue_free() bug has bitten us before - hooks can prevent this.
+# See docs/REWRITE_ASSESSMENT.md for full details.
+
+# TODO: CLAUDE - Convert dynamic modals to .tscn scenes (User requested this Jan 2026)
+# For NEW modals: Create as .tscn files instead of building with Panel.new(), Label.new() etc.
+# For OLD modals: Convert to .tscn when we next work on them (passive ability modal, card v2 choice, etc.)
+# Benefits: Visual editing in Godot, easier layout tweaks, standard practice
+# See docs/REWRITE_ASSESSMENT.md "Option 2" for details
+
 var game_manager: Node
 var current_player: Character
 var card_hand_display: CardHandDisplay
 var player_status_panel: PlayerStatusPanel
 var last_turn_phase = null  # Track phase changes for animations
+var _display_dirty: bool = false  # Debounce flag for display updates
+var enemy_panel_cache: Dictionary = {}  # Cache enemy panels to avoid destroy/recreate on every update
 
 # UI References - New multiplayer layout
 @onready var left_player_panel: Panel = $MainArea/LeftPlayerPanel
@@ -179,6 +191,17 @@ func update_all_displays():
 	update_turn_display()
 	update_button_states()
 
+## Debounce pattern: Batch multiple update requests into one per frame
+func mark_display_dirty():
+	if not _display_dirty:
+		_display_dirty = true
+		call_deferred("_do_deferred_display_update")
+
+func _do_deferred_display_update():
+	if _display_dirty:
+		_display_dirty = false
+		update_all_displays()
+
 func update_deck_counts():
 	var my_index = game_manager.local_player_index
 	if my_index == -1 or my_index >= game_manager.players.size():
@@ -189,63 +212,79 @@ func update_deck_counts():
 	discard_count_label.text = "Discard: %d" % my_character.discard_pile.size()
 
 func update_enemy_displays():
-	# Clear existing enemy UI
-	for child in enemy_displays_container.get_children():
-		child.queue_free()
+	# Remove panels for enemies that no longer exist
+	var to_remove = []
+	for idx in enemy_panel_cache.keys():
+		if idx >= game_manager.enemies.size():
+			enemy_panel_cache[idx].queue_free()
+			to_remove.append(idx)
+	for idx in to_remove:
+		enemy_panel_cache.erase(idx)
 
-	# Create UI for each enemy
+	# Update or create panels for each enemy
 	for i in game_manager.enemies.size():
 		var enemy = game_manager.enemies[i]
-		var enemy_panel = Panel.new()
-		enemy_panel.name = "Enemy" + str(i)
-		enemy_panel.custom_minimum_size = Vector2(200, 150)
-		enemy_displays_container.add_child(enemy_panel)
 
-		# Add VBoxContainer for labels
-		var vbox = VBoxContainer.new()
-		vbox.name = "VBoxContainer"
-		vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
-		vbox.offset_left = 10
-		vbox.offset_top = 10
-		vbox.offset_right = -10
-		vbox.offset_bottom = -10
-		vbox.add_theme_constant_override("separation", 5)
-		enemy_panel.add_child(vbox)
+		if enemy_panel_cache.has(i):
+			# UPDATE existing panel (no destroy/recreate - prevents screen tearing)
+			update_enemy_display(enemy_panel_cache[i], enemy)
+		else:
+			# CREATE new panel only if needed
+			var enemy_panel = _create_enemy_panel(enemy, i)
+			enemy_displays_container.add_child(enemy_panel)
+			enemy_panel_cache[i] = enemy_panel
+			update_enemy_display(enemy_panel, enemy)
 
-		# Add labels
-		var name_label = Label.new()
-		name_label.name = "NameLabel"
-		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		name_label.add_theme_font_size_override("font_size", 18)
-		vbox.add_child(name_label)
+## Create a new enemy panel with all UI elements
+func _create_enemy_panel(enemy: Character, index: int) -> Panel:
+	var enemy_panel = Panel.new()
+	enemy_panel.name = "Enemy" + str(index)
+	enemy_panel.custom_minimum_size = Vector2(200, 150)
 
-		var hp_label = Label.new()
-		hp_label.name = "HPLabel"
-		hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		hp_label.add_theme_font_size_override("font_size", 14)
-		vbox.add_child(hp_label)
+	# Add VBoxContainer for labels
+	var vbox = VBoxContainer.new()
+	vbox.name = "VBoxContainer"
+	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vbox.offset_left = 10
+	vbox.offset_top = 10
+	vbox.offset_right = -10
+	vbox.offset_bottom = -10
+	vbox.add_theme_constant_override("separation", 5)
+	enemy_panel.add_child(vbox)
 
-		var status_label = Label.new()
-		status_label.name = "StatusLabel"
-		status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		status_label.add_theme_font_size_override("font_size", 12)
-		vbox.add_child(status_label)
+	# Add labels
+	var name_label = Label.new()
+	name_label.name = "NameLabel"
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.add_theme_font_size_override("font_size", 18)
+	vbox.add_child(name_label)
 
-		# Intent row for displaying enemy intentions
-		var intent_container = HBoxContainer.new()
-		intent_container.name = "IntentContainer"
-		intent_container.alignment = BoxContainer.ALIGNMENT_CENTER
-		vbox.add_child(intent_container)
+	var hp_label = Label.new()
+	hp_label.name = "HPLabel"
+	hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hp_label.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(hp_label)
 
-		# Connect click handler
-		enemy_panel.gui_input.connect(_on_character_clicked.bind(enemy))
+	var status_label = Label.new()
+	status_label.name = "StatusLabel"
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_label.add_theme_font_size_override("font_size", 12)
+	vbox.add_child(status_label)
 
-		# Make enemy panel accept card drops
-		enemy_panel.set_script(preload("res://scripts/ui/drop_target_panel.gd"))
-		enemy_panel.card_dropped.connect(_on_card_dropped_on_enemy_panel.bind(enemy))
+	# Intent row for displaying enemy intentions
+	var intent_container = HBoxContainer.new()
+	intent_container.name = "IntentContainer"
+	intent_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(intent_container)
 
-		# Update display
-		update_enemy_display(enemy_panel, enemy)
+	# Connect click handler
+	enemy_panel.gui_input.connect(_on_character_clicked.bind(enemy))
+
+	# Make enemy panel accept card drops
+	enemy_panel.set_script(preload("res://scripts/ui/drop_target_panel.gd"))
+	enemy_panel.card_dropped.connect(_on_card_dropped_on_enemy_panel.bind(enemy))
+
+	return enemy_panel
 
 func update_enemy_display(display: Panel, enemy: Character):
 	var name_label = display.get_node("VBoxContainer/NameLabel")
@@ -300,30 +339,68 @@ func update_enemy_display(display: Panel, enemy: Character):
 	display.add_theme_stylebox_override("panel", style)
 
 ## Update the intent display in the enemy panel
-## STEP 1: Only showing ATTACK + damage number for now
+## Uses named children to update in-place instead of destroying/recreating
 func _update_intent_display(container: HBoxContainer, enemy: Character):
-	# Clear existing intent display
-	for child in container.get_children():
-		child.queue_free()
-
 	# Get enemy index
 	var enemy_idx = game_manager.enemies.find(enemy)
 	if enemy_idx == -1:
+		_hide_all_intent_labels(container)
 		return
 
 	# Get intent from game manager
 	if not game_manager.enemy_intents.has(enemy_idx):
+		_hide_all_intent_labels(container)
 		return
 
 	var intent: EnemyIntent = game_manager.enemy_intents[enemy_idx]
 
-	# STEP 1: Only show attack damage
+	# ATTACK: Show sword + damage (update in-place)
+	var attack_label = _get_or_create_intent_label(container, "AttackLabel", Color.RED)
 	if intent.damage_amount > 0:
-		var attack_label = Label.new()
 		attack_label.text = "⚔ %d" % intent.damage_amount
-		attack_label.add_theme_font_size_override("font_size", 20)
-		attack_label.add_theme_color_override("font_color", Color.RED)
-		container.add_child(attack_label)
+		attack_label.visible = true
+	else:
+		attack_label.visible = false
+
+	# SHIELD: Show shield icon + amount (update in-place)
+	var shield_label = _get_or_create_intent_label(container, "ShieldLabel", Color.CYAN)
+	if intent.shield_amount > 0:
+		shield_label.text = "🛡 %d" % intent.shield_amount
+		shield_label.visible = true
+	else:
+		shield_label.visible = false
+
+	# DEBUFF: Show spiral icon (update in-place)
+	var debuff_label = _get_or_create_intent_label(container, "DebuffLabel", Color.PURPLE)
+	if not intent.debuffs.is_empty():
+		debuff_label.text = "🌀"
+		debuff_label.visible = true
+	else:
+		debuff_label.visible = false
+
+	# BUFF: Show flame icon (update in-place)
+	var buff_label = _get_or_create_intent_label(container, "BuffLabel", Color.ORANGE)
+	if not intent.buffs.is_empty():
+		buff_label.text = "🔥"
+		buff_label.visible = true
+	else:
+		buff_label.visible = false
+
+## Get or create a named intent label (avoids destroying/recreating)
+func _get_or_create_intent_label(container: HBoxContainer, label_name: String, color: Color) -> Label:
+	var label = container.get_node_or_null(label_name)
+	if label == null:
+		label = Label.new()
+		label.name = label_name
+		label.add_theme_font_size_override("font_size", 20)
+		label.add_theme_color_override("font_color", color)
+		container.add_child(label)
+	return label
+
+## Hide all intent labels (used when no intent data available)
+func _hide_all_intent_labels(container: HBoxContainer):
+	for child in container.get_children():
+		child.visible = false
 
 func update_turn_display():
 	var my_index = game_manager.local_player_index
@@ -373,22 +450,20 @@ func update_button_states():
 
 func _on_player_turn_started(player_index: int):
 	# Legacy signal - still emitted by old boss AI code
-	# Just update displays for now
-	update_all_displays()
+	mark_display_dirty()
 
 func _on_boss_turn_started():
 	# Legacy signal - still emitted by old boss AI code
-	# Just update displays for now
-	update_all_displays()
+	mark_display_dirty()
 
 func _on_card_played(character: Character, card: Card, target: Character):
-	update_all_displays()
+	mark_display_dirty()
 
 func _on_game_state_changed():
 	# Detect phase transitions
 	var current_phase = game_manager.turn_phase
 	last_turn_phase = current_phase
-	update_all_displays()
+	mark_display_dirty()
 	update_passive_button_visibility()
 
 func _on_combat_ended(victory: bool):
@@ -399,6 +474,9 @@ func _on_combat_ended(victory: bool):
 
 	ready_button.disabled = true
 	pass_button.disabled = true
+
+	# Clear enemy panel cache for next combat
+	enemy_panel_cache.clear()
 
 func _on_enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int):
 	# Spawn floating damage text above the damaged player's panel
@@ -498,7 +576,7 @@ func _on_card_dropped_on_player_panel(card_data_dict: Dictionary, panel: Panel):
 	# Clear preview since card was played
 	game_manager.rpc("clear_card_preview", my_index)
 
-	update_all_displays()
+	mark_display_dirty()
 
 ## Handle card dropped on enemy panel (drag-and-drop)
 func _on_card_dropped_on_enemy_panel(card_data_dict: Dictionary, enemy: Character):
@@ -532,7 +610,7 @@ func _on_card_dropped_on_enemy_panel(card_data_dict: Dictionary, enemy: Characte
 	# Clear preview since card was played
 	game_manager.rpc("clear_card_preview", my_index)
 
-	update_all_displays()
+	mark_display_dirty()
 
 ## Handle card dropped on character face (self-targeting)
 func _on_card_dropped_on_character_face(card_data_dict: Dictionary):
@@ -561,7 +639,7 @@ func _on_card_dropped_on_character_face(card_data_dict: Dictionary):
 	# Clear preview since card was played
 	game_manager.rpc("clear_card_preview", my_index)
 
-	update_all_displays()
+	mark_display_dirty()
 
 func _on_character_clicked(event: InputEvent, character: Character):
 	if event is InputEventMouseButton and event.pressed:
@@ -572,7 +650,7 @@ func _on_character_clicked(event: InputEvent, character: Character):
 
 		# Try to handle target selection via card hand display
 		if card_hand_display.on_character_clicked(character):
-			update_all_displays()
+			mark_display_dirty()
 
 func _on_ready_pressed():
 	# Player ends their turn
@@ -627,7 +705,7 @@ func _on_passive_pressed():
 		else:
 			game_manager.rpc_id(1, "server_apply_passive_ability", my_index, ability.ability_id, choice_index, game_manager.get_character_network_id(target))
 
-		update_all_displays()
+		mark_display_dirty()
 
 	# Other trigger types or effects would be handled differently
 	else:
@@ -804,7 +882,7 @@ func _on_boss_intent_revealed(card_names: Array[String]):
 		notification.queue_free()
 
 func _on_enemy_intents_calculated(_intents: Dictionary):
-	# Refresh enemy displays to show new intents
-	# Also update player panels to show incoming attack warnings
-	update_all_displays()
+	# Cache incoming attack data for player panels
 	player_status_panel.update_incoming_attacks(game_manager.enemy_intents)
+	# Refresh displays to show new intents
+	mark_display_dirty()

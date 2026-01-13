@@ -1,5 +1,13 @@
 extends Node
 
+# TODO: CLAUDE - Remind the user to set up pre-commit hooks! (User requested this Jan 2026)
+# Hooks should block: free() calls (use queue_free()), DEBUG/FIXME comments, print() without prefixes
+# See docs/REWRITE_ASSESSMENT.md "Option 4: Pre-commit Hooks" for details
+# Effort: 1-2 hours, High value - prevents known bug patterns
+
+# TODO: CLAUDE - Periodically review .claude/CLAUDE.md to keep it up to date
+# Remove stale info, keep it concise, prefer TODOs in code over documentation files
+
 signal player_turn_started(player_index: int)
 signal boss_turn_started()
 signal card_played(character: Character, card: Card, target: Character)
@@ -352,7 +360,6 @@ func send_hand_to_owner(character: Character):
 	if char_index == -1: return
 
 	var hand_data = character.get_hand_dict()
-	print("[CARD_DRAW] Syncing hand to client for ", character.character_name, " (", hand_data.size(), " cards)")
 
 	# Broadcast to clients via RPC
 	rpc("sync_character_hand", char_index, hand_data)
@@ -453,11 +460,27 @@ func _server_start_boss_turn():
 
 func start_enemies_turn() -> bool:
 	# Each enemy takes a turn sequentially
+	# NOTE: Enemies already drew cards at round start (pre-draw for intent calculation)
 	for enemy in enemies:
 		if not enemy.is_alive():
 			continue
 
-		enemy.start_turn()
+		# DON'T call start_turn() - enemies already have cards from pre-draw
+		# Apply the parts of start_turn() that were skipped:
+		enemy.current_stamina = enemy.max_stamina
+		enemy.shield = 0  # Reset shield at start of turn (persists through player turn)
+		enemy.passive_ability_used_this_turn = false
+		enemy.damage_taken_this_turn = 0
+		enemy.apply_status_effects()  # Poison, burn damage happens here
+
+		print("[ENEMY TURN START] ", enemy.character_name, " hand: ", enemy.hand.map(func(c): return c.card_name), " HP: ", enemy.current_health)
+
+		# Check if enemy died from status effects
+		if not enemy.is_alive():
+			print("[ENEMY TURN] ", enemy.character_name, " died from status effects!")
+			broadcast_character_state(enemy)
+			continue
+
 		# Sync state to all clients
 		broadcast_character_state(enemy)
 		# Notify all clients
@@ -573,8 +596,6 @@ func reset_players_for_new_run():
 		# Clear debuffs
 		player.reset_debuffs()
 
-		print("[GameManager] Player ", i, " (", player.character_name, ") reset to starting deck - ", player.deck.size(), " cards")
-
 ## DEPRECATED: Use initialize_combat_encounter() instead
 ## This function is kept for compatibility but should not be used in new code
 func start_boss_phase_1():
@@ -674,17 +695,37 @@ func play_enemy_turn(enemy: Character):
 	if not enemy.is_alive():
 		return
 
+	# Pick ONE random target for this enemy's turn (consistent targeting)
+	var alive_players = players.filter(func(p): return p.is_alive())
+	var turn_target: Character = null
+	if alive_players.size() > 0:
+		turn_target = alive_players[rng.randi() % alive_players.size()]
+
+	print("[ENEMY TURN] ", enemy.character_name, " targeting: ", turn_target.character_name if turn_target else "NONE")
+
 	# Simple AI: Play cards until out of stamina
 	var enemy_hand = enemy.hand.duplicate()
+	var total_damage_dealt = 0
 
 	for card in enemy_hand:
 		if not card.can_afford(enemy.current_stamina):
 			continue
 
-		var target = select_enemy_target(enemy, card)
+		var target = select_enemy_target(enemy, card, turn_target)
 		if target:
+			# Calculate actual damage (matching apply_card_effects calculation)
+			var actual_dmg = card.damage
+			if card.card_type == Card.CardType.ATTACK:
+				actual_dmg += enemy.strength + enemy.damage_plus - enemy.weakness
+				actual_dmg = max(0, actual_dmg)
+			actual_dmg *= card.multi_hit
+			# Note: vulnerable multiplier applied in take_damage(), not shown here
+			print("[ENEMY TURN]   Playing ", card.card_name, " (", actual_dmg, " dmg) -> ", target.character_name, " (vuln=", target.vulnerable, ")")
+			total_damage_dealt += actual_dmg
 			play_card(enemy, card, target)
 			await get_tree().create_timer(0.5).timeout
+
+	print("[ENEMY TURN] ", enemy.character_name, " total expected: ", total_damage_dealt, " (before vuln multiplier)")
 
 	enemy.end_turn(round_number)
 	# Sync state to all clients
@@ -704,7 +745,14 @@ func start_round():
 	# Clear protection from previous turn (Protector lasts one turn)
 	protected_by.clear()
 
-	# Calculate and broadcast enemy intents for this round
+	# PRE-DRAW enemy cards so intent calculation uses actual hands (not simulated)
+	# Only draw cards here - status effects applied at enemy turn start
+	for enemy in enemies:
+		if enemy.is_alive():
+			enemy.draw_cards(5)  # Just draw, don't apply status effects yet
+			print("[ENEMY PRE-DRAW] ", enemy.character_name, " pre-drew: ", enemy.hand.map(func(c): return c.card_name))
+
+	# Calculate and broadcast enemy intents for this round (now uses actual hands)
 	calculate_enemy_intents()
 
 	turn_phase = TurnPhase.PLAYER_TURN
@@ -733,8 +781,6 @@ func _process_delayed_effects():
 	if delayed_effects.is_empty():
 		return
 
-	print("[DELAYED] Processing ", delayed_effects.size(), " delayed effects")
-
 	for effect in delayed_effects:
 		var caster_idx = effect.caster_idx
 		var target_idx = effect.target_idx
@@ -745,10 +791,8 @@ func _process_delayed_effects():
 
 		# Validate indices
 		if caster_idx < 0 or caster_idx >= players.size():
-			print("[DELAYED] Invalid caster index: ", caster_idx)
 			continue
 		if target_idx < 0 or target_idx >= enemies.size():
-			print("[DELAYED] Invalid target index: ", target_idx)
 			continue
 
 		var caster = players[caster_idx]
@@ -756,32 +800,21 @@ func _process_delayed_effects():
 
 		# Check if both are still alive
 		if not caster.is_alive():
-			print("[DELAYED] ", source_card, " fizzled - caster ", caster.character_name, " is dead")
 			continue
 		if not target.is_alive():
-			print("[DELAYED] ", source_card, " fizzled - target ", target.character_name, " is dead")
 			continue
 
 		# Check condition
 		var condition_met = true
 		match condition:
 			"no_damage_taken":
-				# Check if caster took 0 damage last turn
 				condition_met = caster.damage_taken_this_turn == 0
-				if not condition_met:
-					print("[DELAYED] ", source_card, " fizzled - ", caster.character_name, " took ", caster.damage_taken_this_turn, " damage last turn")
 			"":
-				# No condition, always applies
 				condition_met = true
 
 		if condition_met:
-			print("[DELAYED] ", source_card, " triggers! ", caster.character_name, " deals ", damage, " damage to ", target.character_name)
 			var damage_dealt = target.take_damage(damage, piercing)
 			broadcast_character_state(target)
-
-			# Check if enemy died from delayed damage
-			if not target.is_alive():
-				print("[DELAYED] ", target.character_name, " defeated by delayed damage!")
 
 	# Clear processed effects
 	delayed_effects.clear()
@@ -923,7 +956,6 @@ func check_action_phase_complete():
 		if player.is_alive():
 			alive_count += 1
 
-	print("[SYNC] Players done acting: ", players_done_acting.size(), "/", alive_count)
 	if players_done_acting.size() >= alive_count:
 
 		# Check if all enemies are already dead (killed during action phase)
@@ -1038,15 +1070,23 @@ func select_boss_target(card: Card) -> Character:
 	# Legacy function for backward compatibility
 	return select_enemy_target(current_boss, card)
 
-func select_enemy_target(enemy: Character, card: Card) -> Character:
+func select_enemy_target(enemy: Character, card: Card, turn_target: Character = null) -> Character:
 	match card.target_type:
 		Card.TargetType.SELF:
 			return enemy
 		Card.TargetType.SINGLE_ENEMY, Card.TargetType.RANDOM_ENEMY:
-			# Target random alive player using deterministic RNG
-			var alive_players = players.filter(func(p): return p.is_alive())
-			if alive_players.size() > 0:
-				var selected = alive_players[rng.randi() % alive_players.size()]
+			# Use turn_target if provided (consistent targeting for the whole turn)
+			# This ensures all damage from one enemy goes to one player ("burst" damage)
+			var selected: Character = null
+			if turn_target and turn_target.is_alive():
+				selected = turn_target
+			else:
+				# Fallback: pick random alive player
+				var alive_players = players.filter(func(p): return p.is_alive())
+				if alive_players.size() > 0:
+					selected = alive_players[rng.randi() % alive_players.size()]
+
+			if selected:
 				var selected_idx = players.find(selected)
 
 				# Check if selected player is protected by another player
@@ -1055,7 +1095,6 @@ func select_enemy_target(enemy: Character, card: Card) -> Character:
 					if protector_idx >= 0 and protector_idx < players.size():
 						var protector = players[protector_idx]
 						if protector.is_alive():
-							print("[PROTECT] ", selected.character_name, " is protected! Attack redirected to ", protector.character_name)
 							return protector
 
 				return selected
@@ -1158,7 +1197,6 @@ func server_play_card(card_data: Dictionary, caster_index: int, caster_is_player
 func _server_play_card(caster: Character, card: Card, target: Character):
 	# Check if caster is exhausted (cannot play cards)
 	if caster.exhausted > 0:
-		print("[GameManager] Cannot play cards while exhausted")
 		return
 
 	if not caster.play_card(card):
@@ -1300,7 +1338,6 @@ func apply_card_effects(caster: Character, card: Card, target: Character) -> Arr
 					"piercing": card.piercing
 				}
 				delayed_effects.append(delayed)
-				print("[DELAYED] Queued ", card.card_name, " - ", card.delayed_damage_amount, " damage next turn if ", card.delay_condition)
 
 		# Healing - only apply to allies, not enemies
 		if card.heal_amount > 0 and is_ally:
@@ -1372,7 +1409,6 @@ func apply_card_effects(caster: Character, card: Card, target: Character) -> Arr
 			if caster_idx >= 0:
 				# Retention expires at end of NEXT round (current_round + 1)
 				var expires_after = round_number + 1
-				print("[RETAIN] ", caster.character_name, " needs to select a card to retain until round ", expires_after)
 				card_retain_choice_needed.emit(caster_idx, expires_after)
 
 		# ENEMY TARGET SWAP - redirect enemy attacks from target to caster (Protector)
@@ -1381,7 +1417,6 @@ func apply_card_effects(caster: Character, card: Card, target: Character) -> Arr
 			var caster_idx = players.find(caster)
 			if target_idx >= 0 and caster_idx >= 0:
 				protected_by[target_idx] = caster_idx
-				print("[PROTECT] ", caster.character_name, " now protects ", t.character_name, " - enemy attacks will be redirected")
 
 		# BOSS INTENT REVEAL - reveal what the boss will play next turn
 		if card.reveals_boss_intent and t == caster:
@@ -1469,26 +1504,36 @@ func _calculate_single_enemy_intent(enemy: Character, enemy_idx: int) -> EnemyIn
 	# Simulate what cards the enemy will draw and play
 	var simulated_hand = _simulate_enemy_hand(enemy)
 
+	print("[INTENT CALC] ", enemy.character_name, " simulated hand: ", simulated_hand.map(func(c): return c.card_name))
+	print("[INTENT CALC]   Enemy stats: str=", enemy.strength, " dmg+=", enemy.damage_plus, " weak=", enemy.weakness, " stamina=", enemy.max_stamina)
+
 	# Simulate which cards enemy will play (greedy AI: all affordable cards in order)
 	var simulated_stamina = enemy.max_stamina
 
 	for card in simulated_hand:
 		if card.stamina_cost > simulated_stamina:
+			print("[INTENT CALC]   Skip ", card.card_name, " (cost ", card.stamina_cost, " > ", simulated_stamina, ")")
 			continue
 
+		print("[INTENT CALC]   Will play ", card.card_name, " (base dmg=", card.damage, " x", card.multi_hit, ", cost=", card.stamina_cost, ")")
 		simulated_stamina -= card.stamina_cost
 		_aggregate_card_effects(intent, card, enemy)
 
 	# Calculate intent type based on aggregated effects
 	intent.calculate_intent_type()
 
+	print("[INTENT CALC] ", enemy.character_name, " FINAL intent: dmg=", intent.damage_amount, " shield=", intent.shield_amount)
+
 	return intent
 
 func _simulate_enemy_hand(enemy: Character) -> Array[Card]:
-	# Peek at what cards enemy will have
-	# If enemy already has hand (shouldn't at round start), use that
-	# Otherwise simulate drawing 5 cards from deck
+	# Use actual hand if enemy already has cards (from pre-draw at round start)
+	if enemy.hand.size() > 0:
+		print("[INTENT CALC]   Using actual hand (", enemy.hand.size(), " cards)")
+		return enemy.hand.duplicate()
 
+	# Fallback: simulate drawing if no hand (shouldn't happen with pre-draw)
+	print("[INTENT CALC]   WARNING: Simulating hand (no pre-draw)")
 	var hand: Array[Card] = []
 
 	# Create temporary copy of deck + discard
