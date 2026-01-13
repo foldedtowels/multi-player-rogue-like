@@ -38,6 +38,9 @@ func _ready():
 	hero_db = get_node("/root/HeroDatabase")
 	card_db = get_node("/root/CardDatabase")
 
+	# This node must process input even when paused (for Escape key)
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
 	# Create player status panel component
 	player_status_panel = PlayerStatusPanel.new()
 	add_child(player_status_panel)
@@ -53,8 +56,9 @@ func _ready():
 	kill_enemies_button.pressed.connect(_on_kill_enemies_pressed)
 	end_turn_button.pressed.connect(_on_end_turn_pressed)
 
-	# Setup escape menu
+	# Setup escape menu - must process when paused
 	escape_menu.visible = false
+	escape_menu.process_mode = Node.PROCESS_MODE_ALWAYS
 	var back_to_setup_btn = escape_menu.get_node("VBoxContainer/BackToSetupButton")
 	var resume_btn = escape_menu.get_node("VBoxContainer/ResumeButton")
 	var quit_btn = escape_menu.get_node("VBoxContainer/QuitButton")
@@ -159,8 +163,8 @@ func _display_hand():
 		card_visual.set_playable(true)
 		card_visual.scale = Vector2(0.6, 0.6)  # Smaller cards to fit more
 
-		# Connect click for playing
-		card_visual.card_clicked.connect(_on_card_clicked.bind(card))
+		# Connect click for playing (signal already passes the card)
+		card_visual.card_clicked.connect(_on_card_clicked)
 
 func _update_enemy_displays():
 	# Clear old panels
