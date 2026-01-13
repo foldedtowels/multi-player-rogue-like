@@ -15,10 +15,14 @@ enum TargetType {
 	SELF,
 	SINGLE_ALLY,
 	ALL_ALLIES,
+	OTHER_ALLIES,   # All allies except caster
 	SINGLE_ENEMY,
 	ALL_ENEMIES,
 	RANDOM_ENEMY,
-	ANY
+	ANY,
+	CCW_PLAYER,     # Targets the player with CCW marker (rotates each turn)
+	HIGHEST_HP,     # Targets the player with highest current HP
+	LOWEST_HP       # Targets the player with lowest current HP
 }
 
 @export var card_name: String
@@ -34,7 +38,8 @@ enum TargetType {
 
 # v2 Card System - allows player to choose between two effects during play
 @export var has_v2: bool = false
-var v2_card: Card = null  # Reference to the v2 variant (set at runtime, not exported)
+@export var v2_card_id: String = ""  # ID to look up v2 variant from CardDatabase
+var v2_card: Card = null  # Local reference (not serialized over network)
 
 # Status effects
 @export var apply_poison: int = 0
@@ -51,6 +56,8 @@ var v2_card: Card = null  # Reference to the v2 variant (set at runtime, not exp
 @export var apply_fatigued: int = 0        # Debuff: -1 Stamina next turn, removed after 2 turns
 @export var apply_exhausted: int = 0      # Debuff: Cannot play cards this turn
 @export var apply_decay: int = 0          # Debuff: Cannot heal this turn
+@export var apply_hinder: int = 0         # Debuff: -X strength until next attack turn
+@export var apply_scared: int = 0         # Debuff: Cannot play attacks next turn
 
 # Special mechanics
 @export var piercing: bool = false  # Ignores armor
@@ -76,6 +83,9 @@ var v2_card: Card = null  # Reference to the v2 variant (set at runtime, not exp
 # Card generation
 @export var generate_cards: Array[String] = []  # Names of cards to add to hand
 @export var scry_amount: int = 0  # Look at top X cards of deck
+
+# Discard effects
+@export var caster_discards_random: int = 0  # Caster discards X random cards from hand
 
 # Runtime-only unique ID for queued card instances (invisible to player, not saved to disk)
 # Used to distinguish between identical cards in the queue (e.g., two Fire Strike cards)
@@ -161,6 +171,8 @@ func serialize() -> Dictionary:
 		"apply_fatigued": apply_fatigued,
 		"apply_exhausted": apply_exhausted,
 		"apply_decay": apply_decay,
+		"apply_hinder": apply_hinder,
+		"apply_scared": apply_scared,
 		"piercing": piercing,
 		"lifesteal": lifesteal,
 		"multi_hit": multi_hit,
@@ -170,12 +182,14 @@ func serialize() -> Dictionary:
 		"scry_amount": scry_amount,
 		"queue_instance_id": queue_instance_id,
 		"has_v2": has_v2,
+		"v2_card_id": v2_card_id,
 		"is_delayed_damage": is_delayed_damage,
 		"delay_condition": delay_condition,
 		"delayed_damage_amount": delayed_damage_amount,
 		"grants_card_retain": grants_card_retain,
 		"swaps_enemy_target": swaps_enemy_target,
-		"reveals_boss_intent": reveals_boss_intent
+		"reveals_boss_intent": reveals_boss_intent,
+		"caster_discards_random": caster_discards_random
 	}
 
 static func deserialize(data: Dictionary) -> Card:
@@ -202,6 +216,8 @@ static func deserialize(data: Dictionary) -> Card:
 	card.apply_fatigued = data.get("apply_fatigued", 0)
 	card.apply_exhausted = data.get("apply_exhausted", 0)
 	card.apply_decay = data.get("apply_decay", 0)
+	card.apply_hinder = data.get("apply_hinder", 0)
+	card.apply_scared = data.get("apply_scared", 0)
 	card.piercing = data.piercing
 	card.lifesteal = data.lifesteal
 	card.multi_hit = data.multi_hit
@@ -211,10 +227,12 @@ static func deserialize(data: Dictionary) -> Card:
 	card.scry_amount = data.scry_amount
 	card.queue_instance_id = data.get("queue_instance_id", 0)  # Default to 0 for old cards
 	card.has_v2 = data.get("has_v2", false)  # Default to false for old cards
+	card.v2_card_id = data.get("v2_card_id", "")
 	card.is_delayed_damage = data.get("is_delayed_damage", false)
 	card.delay_condition = data.get("delay_condition", "")
 	card.delayed_damage_amount = data.get("delayed_damage_amount", 0)
 	card.grants_card_retain = data.get("grants_card_retain", false)
 	card.swaps_enemy_target = data.get("swaps_enemy_target", false)
 	card.reveals_boss_intent = data.get("reveals_boss_intent", false)
+	card.caster_discards_random = data.get("caster_discards_random", 0)
 	return card

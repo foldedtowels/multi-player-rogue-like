@@ -61,6 +61,12 @@ var exhausted: int:
 var decay: int:
 	get: return get_effect_amount("decay")
 	set(value): set_effect_amount("decay", value)
+var hinder: int:
+	get: return get_effect_amount("hinder")
+	set(value): set_effect_amount("hinder", value)
+var scared: int:
+	get: return get_effect_amount("scared")
+	set(value): set_effect_amount("scared", value)
 
 # Passive ability system
 var passive_ability_id: String = ""
@@ -71,6 +77,10 @@ var deck: Array[Card] = []
 var hand: Array[Card] = []
 var discard_pile: Array[Card] = []
 var exhaust_pile: Array[Card] = []
+
+# Special deck system (for minions/bosses with chance-based extra cards)
+var special_deck: Array[Card] = []
+var special_chance: float = 0.0  # Probability of playing a special card each turn
 
 # Card retention system (e.g., Dig a Hole)
 # Maps card_name -> expires_after_round (the round number when retention expires)
@@ -118,10 +128,8 @@ func draw_card() -> Card:
 	return card
 
 func draw_cards(amount: int):
-	print("[CARD_DRAW] ", character_name, " drawing ", amount, " cards (hand before: ", hand.size(), ")")
 	for i in amount:
 		var drawn = draw_card()
-	print("[CARD_DRAW] ", character_name, " finished drawing (hand after: ", hand.size(), ")")
 
 func discard_card(card: Card):
 	hand.erase(card)
@@ -201,6 +209,9 @@ func gain_shield(amount: int):
 func start_turn():
 	current_stamina = max_stamina
 
+	# Reset shield at start of turn (not end) - shield lasts until your next turn
+	shield = 0
+
 	# Reset passive ability usage
 	passive_ability_used_this_turn = false
 
@@ -235,8 +246,8 @@ func end_turn(current_round: int = 0):
 	for card in cards_to_discard:
 		discard_card(card)
 
-	# Reset shield
-	shield = 0
+	# NOTE: Shield is NOT reset here - it persists until start of next turn
+	# (Reset moved to start_turn())
 
 	# Process end-of-turn effects using registry
 	process_turn_end_effects()
@@ -402,6 +413,7 @@ func reset_debuffs():
 	weakness = 0
 	exhausted = 0
 	decay = 0
+	hinder = 0
 
 func add_card_to_deck(card: Card):
 	deck.append(card)
@@ -500,7 +512,6 @@ func get_hand_dict() -> Array[Dictionary]:
 	return hand_data
 
 func apply_hand_dict(hand_data: Array):
-	print("[CARD_DRAW] ", character_name, " hand synced from server (new size: ", hand_data.size(), ")")
 	hand.clear()
 	for card_dict in hand_data:
 		hand.append(Card.deserialize(card_dict))

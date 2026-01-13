@@ -634,14 +634,16 @@ func _create_all_cards():
 	)
 	fighters_spirit_v1.apply_strength = 1
 	fighters_spirit_v1.has_v2 = true
+	fighters_spirit_v1.v2_card_id = "fighters_spirit_v2"
 
 	var fighters_spirit_v2 = create_card(
-		"Fighter's Spirit",
+		"Fighter's Spirit V2",
 		"Fortify your defenses.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		1, 0, 0, 5, 0
 	)
+	all_cards["fighters_spirit_v2"] = fighters_spirit_v2
 
 	fighters_spirit_v1.v2_card = fighters_spirit_v2
 	all_cards["fighters_spirit"] = fighters_spirit_v1
@@ -664,19 +666,47 @@ func _create_all_cards():
 		0, 0, 0, 0, 2
 	)
 	leader_v1.has_v2 = true
+	leader_v1.v2_card_id = "leader_v2"
 	leader_v1.plays_immediately = true
 
 	var leader_v2 = create_card(
-		"Leader",
+		"Leader V2",
 		"Focus your own strategy.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		0, 0, 0, 0, 1
 	)
 	leader_v2.plays_immediately = true
+	all_cards["leader_v2"] = leader_v2
 
 	leader_v1.v2_card = leader_v2
 	all_cards["leader"] = leader_v1
+
+	# v2 Card System - Test
+	var test_v1 = create_card(
+		"Test",
+		"All teammates draw 1 card.",
+		Card.CardType.BUFF,
+		Card.TargetType.OTHER_ALLIES,
+		0, 0, 0, 0, 1  # 0 cost, draw 1 for other allies
+	)
+	test_v1.has_v2 = true
+	test_v1.v2_card_id = "test_v2"
+	test_v1.plays_immediately = true
+
+	var test_v2 = create_card(
+		"Test V2",
+		"Discard 2 random cards. Teammates draw 2.",
+		Card.CardType.BUFF,
+		Card.TargetType.OTHER_ALLIES,
+		0, 0, 0, 0, 2  # 0 cost, draw 2 for other allies
+	)
+	test_v2.caster_discards_random = 2
+	test_v2.plays_immediately = true
+	all_cards["test_v2"] = test_v2
+
+	test_v1.v2_card = test_v2
+	all_cards["test"] = test_v1
 
 	# Shared reward card (used by multiple characters)
 	all_cards["energy"] = create_card(
@@ -756,46 +786,54 @@ func _create_all_cards():
 	var pyroclasm_embers: Array[String] = ["ember", "ember"]
 	all_cards["pyroclasm"].generate_cards = pyroclasm_embers
 
-## Factory function for creating cards with basic stats
-##
-## @param name: Card display name
-## @param desc: Description text shown on card
-## @param type: Card type (ATTACK, SPELL, BUFF, DEBUFF, HEAL)
-## @param target: Who can be targeted (SELF, SINGLE_ENEMY, ALL_ENEMIES, etc.)
-## @param cost: Energy required to play (0-5 typically)
-## @param dmg: Base damage dealt (0 if no damage)
-## @param heal: HP restored (0 if no healing, can be negative for self-harm)
-## @param shield: Temporary HP gained (0 if no shield)
-## @param draw: Cards drawn when played (0 if no card draw)
-## @returns: New Card instance with properties set
-##
-## NOTE: For advanced effects (burn, poison, lifesteal, etc.), set properties
-##       on the returned Card object after calling this function.
-func create_card(name: String, desc: String, type: Card.CardType, target: Card.TargetType,
-				 cost: int, dmg: int, heal: int, shield: int, draw: int) -> Card:
-	var card = Card.new()
-	card.card_name = name
-	card.description = desc
-	card.card_type = type
-	card.target_type = target
-	card.stamina_cost = cost
-	card.damage = dmg
-	card.heal_amount = heal
-	card.shield_amount = shield
-	card.draw_cards = draw
-	return card
+	# === MINION CARDS (Boss 1: Swarm of Racoons + Alex) ===
 
-func get_card(card_id: String) -> Card:
-	if all_cards.has(card_id):
-		return all_cards[card_id].duplicate()
-	else:
-		push_error("Card not found: " + card_id)
-		return null
+	all_cards["ankle_nibble"] = create_card(
+		"Ankle Nibble",
+		"Quick bite at the ankles.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		1, 5, 0, 0, 0
+	)
 
-# === REWARD CARD POOLS ===
+	all_cards["swarm"] = create_card(
+		"Swarm!",
+		"The swarm attacks everyone!",
+		Card.CardType.ATTACK,
+		Card.TargetType.ALL_ENEMIES,
+		1, 3, 0, 0, 0
+	)
+	all_cards["swarm"].aoe_damage = true
 
-func create_reward_cards():
-	# RARE CARDS (Powerful rewards for single player)
+	all_cards["monkey_punch"] = create_card(
+		"Monkey Punch!",
+		"Alex throws a punch.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		1, 5, 0, 0, 0
+	)
+
+	all_cards["it_bit_my_hand"] = create_card(
+		"It bit my Hand!",
+		"A nasty bite that slows you down.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		1, 3, 0, 0, 0
+	)
+	all_cards["it_bit_my_hand"].apply_hinder = 1
+
+	all_cards["anger"] = create_card(
+		"Anger",
+		"Alex gets angry and stronger!",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		0, 0, 0, 0, 0
+	)
+	all_cards["anger"].apply_strength = 2
+
+	# === GENERIC REWARD CARDS ===
+
+	# RARE CARDS (Powerful rewards)
 	all_cards["apocalypse"] = create_card(
 		"Apocalypse",
 		"Destroy everything. Deals massive damage to all enemies.",
@@ -868,7 +906,7 @@ func create_reward_cards():
 	all_cards["omnipotence"].apply_strength = 3
 	all_cards["omnipotence"].apply_armor = 3
 
-	# COMMON CARDS (Decent rewards for all players)
+	# COMMON CARDS (Decent rewards)
 	all_cards["steel_strike"] = create_card(
 		"Steel Strike",
 		"Solid attack with good damage.",
@@ -953,8 +991,51 @@ func create_reward_cards():
 	)
 	all_cards["tactical_advantage"].plays_immediately = true
 
+## Factory function for creating cards with basic stats
+##
+## @param name: Card display name
+## @param desc: Description text shown on card
+## @param type: Card type (ATTACK, SPELL, BUFF, DEBUFF, HEAL)
+## @param target: Who can be targeted (SELF, SINGLE_ENEMY, ALL_ENEMIES, etc.)
+## @param cost: Energy required to play (0-5 typically)
+## @param dmg: Base damage dealt (0 if no damage)
+## @param heal: HP restored (0 if no healing, can be negative for self-harm)
+## @param shield: Temporary HP gained (0 if no shield)
+## @param draw: Cards drawn when played (0 if no card draw)
+## @returns: New Card instance with properties set
+##
+## NOTE: For advanced effects (burn, poison, lifesteal, etc.), set properties
+##       on the returned Card object after calling this function.
+func create_card(name: String, desc: String, type: Card.CardType, target: Card.TargetType,
+				 cost: int, dmg: int, heal: int, shield: int, draw: int) -> Card:
+	var card = Card.new()
+	card.card_name = name
+	card.description = desc
+	card.card_type = type
+	card.target_type = target
+	card.stamina_cost = cost
+	card.damage = dmg
+	card.heal_amount = heal
+	card.shield_amount = shield
+	card.draw_cards = draw
+	return card
+
+func get_card(card_id: String) -> Card:
+	if all_cards.has(card_id):
+		var original = all_cards[card_id]
+		var copy = original.duplicate()
+		# v2_card_id is @export so it's copied by duplicate()
+		# v2_card reference can be set locally for efficiency
+		if original.has_v2 and original.v2_card != null:
+			copy.v2_card = original.v2_card.duplicate()
+		return copy
+	else:
+		push_error("Card not found: " + card_id)
+		return null
+
+# === REWARD CARD GETTERS ===
+
 func get_rare_cards() -> Array[Card]:
-	create_reward_cards()
 	var rare_pool: Array[Card] = []
 	rare_pool.append(all_cards["apocalypse"].duplicate())
 	rare_pool.append(all_cards["divine_intervention"].duplicate())
@@ -967,7 +1048,6 @@ func get_rare_cards() -> Array[Card]:
 	return rare_pool
 
 func get_common_cards() -> Array[Card]:
-	create_reward_cards()
 	var common_pool: Array[Card] = []
 	common_pool.append(all_cards["steel_strike"].duplicate())
 	common_pool.append(all_cards["healing_potion"].duplicate())

@@ -167,7 +167,8 @@ const HEROES = {
 			"dig_a_hole",
 			"protector",
 			"protective_footwear",
-			"hunters_instinct"
+			"hunters_instinct",
+			"test"
 		],
 		# Reward deck: cards offered after defeating bosses (50% heal OR one of these)
 		"reward_deck": [

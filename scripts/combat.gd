@@ -49,6 +49,10 @@ var card_scene = preload("res://scenes/card_visual.tscn")
 var boss_visual: Node2D = null
 var character_face_panel: Panel = null  # Character face for self-targeting
 
+# Debug panel for enemy intents
+var enemy_intent_debug_panel: Panel = null
+var enemy_intent_debug_label: RichTextLabel = null
+
 func _ready():
 	game_manager = get_node("/root/GameManager")
 
@@ -65,6 +69,9 @@ func _ready():
 
 	# Add animated background
 	create_animated_background()
+
+	# Create enemy intent debug panel (light background, dark text)
+	_create_enemy_intent_debug_panel()
 
 	# Connect game manager signals
 	game_manager.player_turn_started.connect(_on_player_turn_started)
@@ -556,7 +563,7 @@ func _on_card_dropped_on_player_panel(card_data_dict: Dictionary, panel: Panel):
 	match card.target_type:
 		Card.TargetType.SELF:
 			valid_target = (target_character == my_character)
-		Card.TargetType.SINGLE_ALLY, Card.TargetType.ALL_ALLIES:
+		Card.TargetType.SINGLE_ALLY, Card.TargetType.ALL_ALLIES, Card.TargetType.OTHER_ALLIES:
 			valid_target = game_manager.players.has(target_character)
 		Card.TargetType.SINGLE_ENEMY, Card.TargetType.ALL_ENEMIES:
 			valid_target = false  # Can't drop on player panel for enemy-target cards
@@ -745,15 +752,16 @@ func update_passive_button_visibility():
 
 	passive_button.visible = true
 
-func _on_card_v2_choice_needed(caster: Character, card: Card, target: Character):
+func _on_card_v2_choice_needed(caster: Character, v1_card: Card, v2_card: Card, target: Character):
 	# Show the modal with both versions
-	card_v2_choice_modal.show_choice(card, card.v2_card)
+	card_v2_choice_modal.show_choice(v1_card, v2_card)
 
 	# Wait for player's choice
 	var chosen_card = await card_v2_choice_modal.choice_made
 
-	# Play the chosen version
-	game_manager.play_card_version(caster, chosen_card, target)
+	# Play the chosen version, but remove the ORIGINAL card from hand
+	# The original v1_card is what's actually in the hand
+	game_manager.play_card_version(caster, v1_card, chosen_card, target)
 
 func _on_card_retain_choice_needed(player_index: int, expires_after_round: int):
 	# Only show modal for the local player
@@ -884,5 +892,158 @@ func _on_boss_intent_revealed(card_names: Array[String]):
 func _on_enemy_intents_calculated(_intents: Dictionary):
 	# Cache incoming attack data for player panels
 	player_status_panel.update_incoming_attacks(game_manager.enemy_intents)
+	# Update debug panel with detailed intent info
+	_update_enemy_intent_debug_panel()
 	# Refresh displays to show new intents
 	mark_display_dirty()
+
+## Create the enemy intent debug panel (persistent, light background, dark text)
+func _create_enemy_intent_debug_panel():
+	enemy_intent_debug_panel = Panel.new()
+	enemy_intent_debug_panel.name = "EnemyIntentDebugPanel"
+
+	# Position: top-left corner, below top bar
+	enemy_intent_debug_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	enemy_intent_debug_panel.position = Vector2(10, 70)
+	enemy_intent_debug_panel.custom_minimum_size = Vector2(400, 200)
+	enemy_intent_debug_panel.size = Vector2(400, 200)
+
+	# Light background with slight transparency
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.95, 0.95, 0.9, 0.95)  # Light cream color
+	style.border_color = Color(0.3, 0.3, 0.3)
+	style.border_width_left = 2
+	style.border_width_right = 2
+	style.border_width_top = 2
+	style.border_width_bottom = 2
+	style.corner_radius_top_left = 5
+	style.corner_radius_top_right = 5
+	style.corner_radius_bottom_left = 5
+	style.corner_radius_bottom_right = 5
+	enemy_intent_debug_panel.add_theme_stylebox_override("panel", style)
+
+	# RichTextLabel for formatted text
+	enemy_intent_debug_label = RichTextLabel.new()
+	enemy_intent_debug_label.name = "DebugLabel"
+	enemy_intent_debug_label.bbcode_enabled = true
+	enemy_intent_debug_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	enemy_intent_debug_label.offset_left = 10
+	enemy_intent_debug_label.offset_top = 10
+	enemy_intent_debug_label.offset_right = -10
+	enemy_intent_debug_label.offset_bottom = -10
+	enemy_intent_debug_label.scroll_active = true
+	enemy_intent_debug_label.add_theme_color_override("default_color", Color(0.1, 0.1, 0.1))  # Dark text
+	enemy_intent_debug_label.add_theme_font_size_override("normal_font_size", 14)
+
+	enemy_intent_debug_panel.add_child(enemy_intent_debug_label)
+	add_child(enemy_intent_debug_panel)
+
+	# Initially hidden until intents are calculated
+	enemy_intent_debug_panel.visible = false
+
+## Update the debug panel with current enemy intent details
+## Shows ONLY the pre-selected cards that enemies will play this turn
+func _update_enemy_intent_debug_panel():
+	if not enemy_intent_debug_panel or not enemy_intent_debug_label:
+		return
+
+	var text = "[b][color=#333333]ENEMY INTENTS[/color][/b]\n"
+	text += "[color=#666666]─────────────────────────────[/color]\n"
+
+	for i in range(game_manager.enemies.size()):
+		var enemy = game_manager.enemies[i]
+		if not enemy.is_alive():
+			continue
+
+		# Check if we have intent data
+		if not game_manager.enemy_intents.has(i):
+			continue
+
+		var intent: EnemyIntent = game_manager.enemy_intents[i]
+
+		# Enemy header with name and stats
+		text += "\n[b][color=#AA0000]%s[/color][/b] (HP: %d, STR: %d)\n" % [
+			enemy.character_name,
+			enemy.current_health,
+			enemy.strength
+		]
+
+		# Show ONLY pre-selected cards (not full hand)
+		text += "[color=#555555]Cards to play:[/color]\n"
+
+		if intent.cards_to_play.size() == 0:
+			text += "  [color=#888888](no cards)[/color]\n"
+		else:
+			for card_info in intent.cards_to_play:
+				var card: Card = card_info.card
+				var target_index: int = card_info.target_index
+				var is_special: bool = card_info.get("is_special", false)
+
+				# Build card line
+				var line = "  "
+				if is_special:
+					line += "★ [color=#FF6600]%s[/color]" % card.card_name
+				else:
+					line += "• [color=#000088]%s[/color]" % card.card_name
+
+				# Add damage info
+				if card.damage > 0:
+					var total_dmg = card.damage + enemy.strength + enemy.damage_plus - enemy.weakness - enemy.hinder
+					total_dmg = max(0, total_dmg) * card.multi_hit
+					line += " [color=#CC0000]DMG: %d[/color]" % total_dmg
+
+				# Add shield info
+				if card.shield_amount > 0:
+					line += " [color=#00AAAA]SHD: %d[/color]" % card.shield_amount
+
+				# Add debuff info
+				if card.apply_hinder > 0:
+					line += " [color=#AA00AA]Hinder %d[/color]" % card.apply_hinder
+				if card.apply_poison > 0:
+					line += " [color=#00AA00]Poison %d[/color]" % card.apply_poison
+				if card.apply_weakness > 0:
+					line += " [color=#AA00AA]Weak %d[/color]" % card.apply_weakness
+				if card.apply_vulnerable > 0:
+					line += " [color=#AA00AA]Vuln %d[/color]" % card.apply_vulnerable
+
+				# Add buff info (self-buffs)
+				if card.apply_strength > 0:
+					line += " [color=#FF8800]+%d STR[/color]" % card.apply_strength
+
+				# Show pre-selected target (not dynamic lookup)
+				var target_str = _get_target_name_from_index(target_index, card)
+				line += " [color=#666666]→ %s[/color]" % target_str
+
+				text += line + "\n"
+
+		# Show aggregated intent totals
+		text += "[color=#AA0000]TOTAL: %d damage[/color]" % intent.damage_amount
+		if intent.shield_amount > 0:
+			text += ", [color=#00AAAA]%d shield[/color]" % intent.shield_amount
+		text += "\n"
+
+	enemy_intent_debug_label.text = text
+	enemy_intent_debug_panel.visible = true
+
+	# Resize panel to fit content (with max height)
+	var content_height = min(enemy_intent_debug_label.get_content_height() + 20, 400)
+	enemy_intent_debug_panel.custom_minimum_size.y = content_height
+	enemy_intent_debug_panel.size.y = content_height
+
+## Get display name for a pre-selected target index
+func _get_target_name_from_index(target_index: int, card: Card) -> String:
+	if target_index == -2:
+		return "Self"
+	elif target_index == -1 or card.target_type == Card.TargetType.ALL_ENEMIES:
+		return "ALL PLAYERS"
+	elif target_index >= 0 and target_index < game_manager.players.size():
+		return game_manager.players[target_index].character_name
+	return "?"
+
+## Helper to get the highest HP player name for debug display
+func _get_highest_hp_player_name() -> String:
+	var alive_players = game_manager.players.filter(func(p): return p.is_alive())
+	if alive_players.size() == 0:
+		return ""
+	alive_players.sort_custom(func(a, b): return a.current_health > b.current_health)
+	return alive_players[0].character_name

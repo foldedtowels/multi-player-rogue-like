@@ -50,7 +50,9 @@ func _display_hand_cards():
 
 		# Cards are playable if enough stamina available
 		var can_afford = (card.stamina_cost <= current_stamina)
-		card_visual.set_playable(can_afford)
+		# Check if scared (blocks attack cards only)
+		var is_scared_blocked = (my_character.scared > 0 and card.card_type == Card.CardType.ATTACK)
+		card_visual.set_playable(can_afford and not is_scared_blocked)
 
 		# Connect click signals
 		if not card_visual.card_clicked.is_connected(_on_hand_card_clicked):
@@ -93,6 +95,9 @@ func _on_hand_card_double_clicked(card: Card):
 		Card.TargetType.ALL_ALLIES:
 			can_auto_play = true
 			target = my_character  # Target doesn't matter for ALL_ALLIES
+		Card.TargetType.OTHER_ALLIES:
+			can_auto_play = true
+			target = my_character  # Target doesn't matter for OTHER_ALLIES
 		Card.TargetType.ALL_ENEMIES:
 			can_auto_play = true
 			# Target doesn't matter for ALL_ENEMIES, but pick first alive enemy
