@@ -70,10 +70,9 @@ const EFFECTS: Dictionary = {
 		"display_name": "Fatigued",
 		"short_name": "Ftg",
 		"type": EffectType.DEBUFF,
-		"decay": DecayType.PER_TURN,
-		"decay_amount": 1,
+		"decay": DecayType.AFTER_TURN_START,  # Apply at turn start, then remove (like Rested)
 		"stamina_modifier": -1,
-		"per_stack": false,  # Flat -1 stamina, amount just tracks duration
+		"per_stack": true,  # Fatigued N = -N stamina next turn
 		"apply_at": "turn_start"
 	},
 	"hinder": {

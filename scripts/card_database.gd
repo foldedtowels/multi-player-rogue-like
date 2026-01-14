@@ -548,7 +548,7 @@ func _create_all_cards():
 		0, 0, 0, 0, 0
 	)
 	all_cards["bulk_up"].apply_invigorated = 1
-	all_cards["bulk_up"].apply_fatigued = 2  # Lasts 2 turns per CSV
+	all_cards["bulk_up"].apply_fatigued = 1  # -1 stamina next turn
 
 	all_cards["dig_a_hole"] = create_card(
 		"Dig a Hole",
