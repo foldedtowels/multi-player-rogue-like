@@ -47,6 +47,7 @@ func _display_hand_cards():
 		hand_container.add_child(card_visual)
 
 		card_visual.set_card(card)
+		card_visual.set_owner(my_character)  # For dynamic description (damage/heal with buffs)
 
 		# Cards are playable if enough stamina available
 		var can_afford = (card.stamina_cost <= current_stamina)

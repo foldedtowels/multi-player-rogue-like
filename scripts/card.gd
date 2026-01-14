@@ -87,23 +87,40 @@ var v2_card: Card = null  # Local reference (not serialized over network)
 # Discard effects
 @export var caster_discards_random: int = 0  # Caster discards X random cards from hand
 
+# Conditional damage
+@export var bonus_damage_if_wounded: int = 0  # Extra damage if target below 50% HP
+
+# Stamina effects
+@export var stamina_gain: int = 0  # Stamina granted to caster when played
+
 # Runtime-only unique ID for queued card instances (invisible to player, not saved to disk)
 # Used to distinguish between identical cards in the queue (e.g., two Fire Strike cards)
 var queue_instance_id: int = 0
 
-func get_full_description() -> String:
+func get_full_description(caster = null) -> String:
 	var desc = description + "\n\n"
 
+	# DAMAGE - calculate effective damage with buffs/debuffs
 	if damage > 0:
-		desc += "Deal %d damage" % damage
+		var effective_damage = damage
+		if caster and card_type == CardType.ATTACK:
+			effective_damage += caster.strength + caster.damage_plus
+			effective_damage -= caster.weakness + caster.hinder
+			effective_damage = max(0, effective_damage)
+
+		desc += "Deal %d damage" % effective_damage
 		if multi_hit > 1:
 			desc += " %d times" % multi_hit
 		if piercing:
 			desc += " (Piercing)"
 		desc += "\n"
 
+	# HEALING - calculate effective healing with decay
 	if heal_amount > 0:
-		desc += "Heal %d HP\n" % heal_amount
+		var effective_heal = heal_amount
+		if caster and caster.decay > 0:
+			effective_heal = max(0, heal_amount - (caster.decay * 5))
+		desc += "Heal %d HP\n" % effective_heal
 
 	if shield_amount > 0:
 		desc += "Gain %d Shield\n" % shield_amount
@@ -139,7 +156,7 @@ func get_full_description() -> String:
 		desc += "Apply Exhausted (cannot play more cards)\n"
 
 	if apply_decay > 0:
-		desc += "Apply Decay (cannot heal this turn)\n"
+		desc += "Apply %d Decay\n" % apply_decay
 
 	return desc
 
@@ -189,7 +206,9 @@ func serialize() -> Dictionary:
 		"grants_card_retain": grants_card_retain,
 		"swaps_enemy_target": swaps_enemy_target,
 		"reveals_boss_intent": reveals_boss_intent,
-		"caster_discards_random": caster_discards_random
+		"caster_discards_random": caster_discards_random,
+		"bonus_damage_if_wounded": bonus_damage_if_wounded,
+		"stamina_gain": stamina_gain
 	}
 
 static func deserialize(data: Dictionary) -> Card:
@@ -235,4 +254,6 @@ static func deserialize(data: Dictionary) -> Card:
 	card.swaps_enemy_target = data.get("swaps_enemy_target", false)
 	card.reveals_boss_intent = data.get("reveals_boss_intent", false)
 	card.caster_discards_random = data.get("caster_discards_random", 0)
+	card.bonus_damage_if_wounded = data.get("bonus_damage_if_wounded", 0)
+	card.stamina_gain = data.get("stamina_gain", 0)
 	return card

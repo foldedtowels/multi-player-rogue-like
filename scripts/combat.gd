@@ -753,8 +753,8 @@ func update_passive_button_visibility():
 	passive_button.visible = true
 
 func _on_card_v2_choice_needed(caster: Character, v1_card: Card, v2_card: Card, target: Character):
-	# Show the modal with both versions
-	card_v2_choice_modal.show_choice(v1_card, v2_card)
+	# Show the modal with both versions (pass caster for dynamic descriptions)
+	card_v2_choice_modal.show_choice(v1_card, v2_card, caster)
 
 	# Wait for player's choice
 	var chosen_card = await card_v2_choice_modal.choice_made

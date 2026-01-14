@@ -6,6 +6,9 @@ var is_hovered: bool = false
 var last_click_time: float = 0.0
 const DOUBLE_CLICK_TIME: float = 0.3  # 300ms for double-click
 
+# Owner character for dynamic description calculations (damage/heal with buffs)
+var owner_character = null
+
 @onready var card_bg: Panel = $Background
 @onready var name_label: Label = $VBoxContainer/NameLabel
 @onready var cost_label: Label = $CostLabel
@@ -43,13 +46,18 @@ func set_card(card: Card):
 	card_data = card
 	update_display()
 
+func set_owner(character):
+	owner_character = character
+	update_display()
+
 func update_display():
 	if not card_data:
 		return
 
 	name_label.text = card_data.card_name
 	cost_label.text = str(card_data.stamina_cost)
-	description_label.text = card_data.get_full_description()
+	# Pass owner for dynamic description (damage/heal adjusted by buffs/debuffs)
+	description_label.text = card_data.get_full_description(owner_character)
 
 	var type_text = ""
 	match card_data.card_type:
