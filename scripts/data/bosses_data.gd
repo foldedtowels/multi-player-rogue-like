@@ -8,6 +8,58 @@ class_name BossesData
 ## Each boss has unique cards that are created and added to CardDatabase
 ## Format matches Card properties: card_name, description, card_type, target_type, etc.
 const BOSS_CARDS = {
+	# === GIANT MOOSE CARDS ===
+	"charge": {
+		"card_name": "Charge",
+		"description": "Rush at the weakest target.",
+		"card_type": "ATTACK",
+		"target_type": "LOWEST_HP",
+		"stamina_cost": 1,
+		"damage": 8
+	},
+	"stomp": {
+		"card_name": "Stomp",
+		"description": "Shake the ground beneath all foes.",
+		"card_type": "ATTACK",
+		"target_type": "ALL_ENEMIES",
+		"stamina_cost": 1,
+		"damage": 5,
+		"aoe_damage": true
+	},
+	"knocked_off_your_feet": {
+		"card_name": "Knocked Off your Feet",
+		"description": "A powerful blow that staggers the target.",
+		"card_type": "ATTACK",
+		"target_type": "HIGHEST_HP",
+		"stamina_cost": 1,
+		"damage": 5,
+		"apply_hinder": 2
+	},
+	"roar": {
+		"card_name": "Roar!",
+		"description": "A terrifying bellow that frightens enemies.",
+		"card_type": "DEBUFF",
+		"target_type": "HIGHEST_HP",
+		"stamina_cost": 1,
+		"apply_scared": 1
+	},
+	"forage": {
+		"card_name": "Forage",
+		"description": "Find sustenance in the wild.",
+		"card_type": "HEAL",
+		"target_type": "SELF",
+		"stamina_cost": 1,
+		"heal_amount": 10
+	},
+	"fur_coat": {
+		"card_name": "Fur Coat",
+		"description": "Thick hide provides protection.",
+		"card_type": "BUFF",
+		"target_type": "SELF",
+		"stamina_cost": 1,
+		"shield_amount": 3
+	},
+
 	# === CORRUPTED TREANT CARDS ===
 	"root_lash": {
 		"card_name": "Root Lash",
@@ -228,11 +280,31 @@ const BOSS_CARDS = {
 ## - starting_stamina: Stamina per turn (also set in GameConstants.BOSS_STAMINA_SCALING)
 ## - deck: Dictionary mapping card IDs to counts
 const BOSSES = {
+	"giant_moose": {
+		"name": "Giant Moose",
+		"description": "A massive territorial moose that charges at intruders.",
+		"max_health": 60,
+		"starting_stamina": 3,
+		"special_chance": 0.75,
+		"cards_per_turn": 1,
+		"deck": {
+			"charge": 4,
+			"stomp": 4,
+			"knocked_off_your_feet": 2
+		},
+		"special_deck": {
+			"roar": 5,
+			"forage": 2,
+			"fur_coat": 3
+		}
+	},
+
 	"corrupted_treant": {
 		"name": "Corrupted Treant",
 		"description": "Ancient guardian twisted by dark magic.",
 		"max_health": 200,  # See GameConstants.BOSS_HP_SCALING[0]
 		"starting_stamina": 2,  # See GameConstants.BOSS_ENERGY_SCALING[0]
+		"cards_per_turn": 1,
 		"deck": {
 			"root_lash": 6,
 			"bark_armor": 4,
@@ -245,6 +317,7 @@ const BOSSES = {
 		"description": "Brutal warrior engulfed in eternal flames.",
 		"max_health": 280,  # See GameConstants.BOSS_HP_SCALING[1]
 		"starting_stamina": 3,  # See GameConstants.BOSS_ENERGY_SCALING[1]
+		"cards_per_turn": 1,
 		"deck": {
 			"battle_axe": 5,
 			"war_cry": 3,
@@ -258,6 +331,7 @@ const BOSSES = {
 		"description": "Undead necromancer who commands death itself.",
 		"max_health": 350,  # See GameConstants.BOSS_HP_SCALING[2]
 		"starting_stamina": 3,  # See GameConstants.BOSS_ENERGY_SCALING[2]
+		"cards_per_turn": 1,
 		"deck": {
 			"death_coil": 4,
 			"plague_cloud": 4,
@@ -272,6 +346,7 @@ const BOSSES = {
 		"description": "Ancient wyrm that commands lightning and thunder.",
 		"max_health": 450,  # See GameConstants.BOSS_HP_SCALING[3]
 		"starting_stamina": 4,  # See GameConstants.BOSS_ENERGY_SCALING[3]
+		"cards_per_turn": 1,
 		"deck": {
 			"dragon_bite": 4,
 			"lightning_breath": 4,
@@ -286,6 +361,7 @@ const BOSSES = {
 		"description": "Cosmic horror from beyond reality.",
 		"max_health": 600,  # See GameConstants.BOSS_HP_SCALING[4]
 		"starting_stamina": 4,  # See GameConstants.BOSS_ENERGY_SCALING[4]
+		"cards_per_turn": 1,
 		"deck": {
 			"void_slam": 5,
 			"cosmic_beam": 4,
@@ -298,11 +374,12 @@ const BOSSES = {
 
 ## Map boss index to boss ID
 const BOSS_ORDER = [
-	"corrupted_treant",
-	"flame_warlord",
-	"lich_summoner",
-	"storm_dragon",
-	"void_titan"
+	"giant_moose",      # Boss 1 - The Giant Moose
+	"corrupted_treant", # Boss 2
+	"flame_warlord",    # Boss 3
+	"lich_summoner",    # Boss 4
+	"storm_dragon",     # Boss 5
+	"void_titan"        # Boss 6
 ]
 
 ## Get boss ID from index

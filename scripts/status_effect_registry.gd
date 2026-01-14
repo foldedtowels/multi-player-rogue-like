@@ -76,6 +76,15 @@ const EFFECTS: Dictionary = {
 		"per_stack": false,  # Flat -1 stamina, amount just tracks duration
 		"apply_at": "turn_start"
 	},
+	"hinder": {
+		"display_name": "Hinder",
+		"short_name": "Hnd",
+		"type": EffectType.DEBUFF,
+		"decay": DecayType.PER_TURN,
+		"decay_amount": 1,
+		"attack_modifier": -1,  # -1 damage per stack
+		"per_stack": true
+	},
 
 	# ============================================
 	# SINGLE-TURN BUFFS (reset at end of turn)
@@ -114,12 +123,20 @@ const EFFECTS: Dictionary = {
 		"decay": DecayType.END_OF_TURN,
 		"blocks_card_play": true
 	},
+	"scared": {
+		"display_name": "Scared",
+		"short_name": "Scar",
+		"type": EffectType.DEBUFF,
+		"decay": DecayType.END_OF_TURN,
+		"blocks_attacks": true  # Only blocks attack cards, not all cards
+	},
 	"decay": {
 		"display_name": "Decay",
 		"short_name": "Dcy",
 		"type": EffectType.DEBUFF,
-		"decay": DecayType.END_OF_TURN,
-		"blocks_healing": true
+		"decay": DecayType.NONE,  # Permanent for entire fight - cannot be removed
+		"blocks_healing": false,  # No longer blocks, just reduces by 5 per stack
+		"permanent": true  # Flag to prevent removal by cards
 	}
 }
 

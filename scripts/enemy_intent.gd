@@ -15,6 +15,7 @@ enum IntentType {
 # Core intent data
 var intent_type: IntentType = IntentType.ATTACK
 var damage_amount: int = 0
+var damage_per_target: Dictionary = {}  # {player_index: damage_amount} for accurate per-player display
 var shield_amount: int = 0
 
 # Target information
@@ -27,6 +28,11 @@ var buffs: Dictionary = {}    # effect_name -> amount (e.g., {"strength": 2})
 
 # Which enemy this intent belongs to
 var enemy_index: int = -1
+
+# Pre-selected cards to play this turn (determined at round start)
+# Each entry: {card: Card, target_index: int, is_special: bool}
+# target_index: -2 = self, -1 = AOE, 0+ = player index
+var cards_to_play: Array = []
 
 ## Determines the primary intent type based on aggregated effects
 func calculate_intent_type() -> void:
@@ -87,15 +93,26 @@ func get_color() -> Color:
 
 ## Serialize for network transmission
 func serialize() -> Dictionary:
+	# Serialize pre-selected cards
+	var cards_data = []
+	for card_info in cards_to_play:
+		cards_data.append({
+			"card": card_info.card.serialize(),
+			"target_index": card_info.target_index,
+			"is_special": card_info.get("is_special", false)
+		})
+
 	return {
 		"intent_type": intent_type,
 		"damage_amount": damage_amount,
+		"damage_per_target": damage_per_target,
 		"shield_amount": shield_amount,
 		"targets": targets,
 		"is_aoe": is_aoe,
 		"debuffs": debuffs,
 		"buffs": buffs,
-		"enemy_index": enemy_index
+		"enemy_index": enemy_index,
+		"cards_to_play": cards_data
 	}
 
 ## Deserialize from network data
@@ -107,6 +124,11 @@ static func deserialize(data: Dictionary) -> EnemyIntent:
 	intent.is_aoe = data.get("is_aoe", false)
 	intent.debuffs = data.get("debuffs", {})
 	intent.buffs = data.get("buffs", {})
+
+	# Handle damage_per_target - keys may come as strings over network
+	var raw_damage_per_target = data.get("damage_per_target", {})
+	for key in raw_damage_per_target:
+		intent.damage_per_target[int(key)] = int(raw_damage_per_target[key])
 	intent.enemy_index = data.get("enemy_index", -1)
 
 	# Handle targets array - needs type conversion
@@ -114,6 +136,17 @@ static func deserialize(data: Dictionary) -> EnemyIntent:
 	intent.targets.clear()  # Use clear() since targets is already typed Array[int]
 	for t in raw_targets:
 		intent.targets.append(int(t))
+
+	# Deserialize pre-selected cards
+	if data.has("cards_to_play"):
+		for card_data in data.cards_to_play:
+			# Card.deserialize is a STATIC method that returns a new Card
+			var card = Card.deserialize(card_data.card)
+			intent.cards_to_play.append({
+				"card": card,
+				"target_index": card_data.target_index,
+				"is_special": card_data.get("is_special", false)
+			})
 
 	return intent
 

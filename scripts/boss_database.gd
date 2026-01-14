@@ -44,6 +44,9 @@ func create_boss_cards():
 			"RANDOM_ENEMY": card.target_type = Card.TargetType.RANDOM_ENEMY
 			"ALL_ALLIES": card.target_type = Card.TargetType.ALL_ALLIES
 			"ALL_ENEMIES": card.target_type = Card.TargetType.ALL_ENEMIES
+			"HIGHEST_HP": card.target_type = Card.TargetType.HIGHEST_HP
+			"LOWEST_HP": card.target_type = Card.TargetType.LOWEST_HP
+			"CCW_PLAYER": card.target_type = Card.TargetType.CCW_PLAYER
 
 		# Set optional properties if they exist in data
 		if data.has("damage"): card.damage = data.damage
@@ -58,6 +61,8 @@ func create_boss_cards():
 		if data.has("lifesteal"): card.lifesteal = data.lifesteal
 		if data.has("piercing"): card.piercing = data.piercing
 		if data.has("aoe_damage"): card.aoe_damage = data.aoe_damage
+		if data.has("apply_hinder"): card.apply_hinder = data.apply_hinder
+		if data.has("apply_scared"): card.apply_scared = data.apply_scared
 
 		# Add to card database
 		card_db.all_cards[card_id] = card
@@ -96,6 +101,26 @@ func create_boss_by_id(boss_id: String) -> Character:
 
 	boss.starting_deck = deck
 	boss.reset_deck()  # Initialize deck now that starting_deck is populated
+
+	# Build special deck if defined (for bosses with special_chance)
+	if data.has("special_deck"):
+		var special: Array[Card] = []
+		for card_id in data.special_deck.keys():
+			var count = data.special_deck[card_id]
+			for i in count:
+				var card = card_db.get_card(card_id)
+				if card:
+					special.append(card)
+		boss.special_deck = special
+
+	# Set special chance if defined
+	if data.has("special_chance"):
+		boss.special_chance = data.special_chance
+
+	# Set cards per turn limit if defined (-1 = unlimited)
+	if data.has("cards_per_turn"):
+		boss.main_deck_cards_per_turn = data.cards_per_turn
+
 	return boss
 
 ## Legacy function for backwards compatibility

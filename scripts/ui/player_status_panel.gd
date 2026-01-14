@@ -109,6 +109,15 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 		status_text += "Weak %d " % character.weakness
 	if character.fatigued > 0:
 		status_text += "Fatigued %d " % character.fatigued
+	if character.hinder > 0:
+		status_text += "Hinder %d " % character.hinder
+	if character.scared > 0:
+		status_text += "SCARED "
+	if character.decay > 0:
+		status_text += "Decay %d " % character.decay
+	# Check if this player is protected by another player
+	if game_manager.protected_by.has(player_index):
+		status_text += "🛡PROTECTED "
 
 	if status_text != "":
 		hp_label.text += "\n" + status_text
@@ -210,6 +219,15 @@ func _update_your_panel(character: Character):
 		status_parts.append("Weakness %d" % character.weakness)
 	if character.fatigued > 0:
 		status_parts.append("Fatigued %d" % character.fatigued)
+	if character.hinder > 0:
+		status_parts.append("Hinder %d" % character.hinder)
+	if character.scared > 0:
+		status_parts.append("SCARED")
+	if character.decay > 0:
+		status_parts.append("Decay %d" % character.decay)
+	# Check if this player is protected by another player
+	if game_manager.protected_by.has(my_index):
+		status_parts.append("🛡PROTECTED")
 
 	# Append to shield label for now (or create separate label if needed)
 	if status_parts.size() > 0:
@@ -286,16 +304,19 @@ func _get_incoming_icons(player_index: int) -> String:
 	for enemy_idx in cached_enemy_intents:
 		var intent: EnemyIntent = cached_enemy_intents[enemy_idx]
 
+		# Use per-target damage for accurate display
+		if intent.damage_per_target.has(player_index):
+			confirmed_damage += intent.damage_per_target[player_index]
+
+		# Check if this player is targeted for debuffs
 		for target_idx in intent.targets:
 			if target_idx == player_index:
-				# Specifically targeted (AOE)
-				confirmed_damage += intent.damage_amount
 				if not intent.debuffs.is_empty():
 					confirmed_debuffs = true
 				break
 			elif target_idx == -1:
 				# Random target - can't predict who gets hit
-				if intent.damage_amount > 0:
+				if intent.damage_amount > 0 and not intent.damage_per_target.has(player_index):
 					has_random_attacks = true
 				if not intent.debuffs.is_empty():
 					random_debuffs = true

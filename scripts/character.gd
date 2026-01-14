@@ -81,6 +81,7 @@ var exhaust_pile: Array[Card] = []
 # Special deck system (for minions/bosses with chance-based extra cards)
 var special_deck: Array[Card] = []
 var special_chance: float = 0.0  # Probability of playing a special card each turn
+var main_deck_cards_per_turn: int = -1  # -1 = unlimited (greedy), positive = limit per turn
 
 # Card retention system (e.g., Dig a Hole)
 # Maps card_name -> expires_after_round (the round number when retention expires)
@@ -189,14 +190,19 @@ func take_damage(amount: int, is_piercing: bool = false):
 
 	return actual_damage
 
-func heal(amount: int):
-	if decay > 0:
-		print("[CHARACTER] Cannot heal while affected by Decay")
-		return
+func heal(amount: int, decay_already_applied: bool = false):
 	if amount < 0:
 		push_warning("Negative heal attempted: " + str(amount))
 		return
-	current_health = min(current_health + amount, max_health)
+	var actual_heal = amount
+	# Decay reduces healing received by 5 per stack (unless already handled by caller)
+	if not decay_already_applied and decay > 0:
+		var decay_reduction = decay * 5
+		actual_heal = max(0, amount - decay_reduction)
+		print("[HEAL] ", character_name, " has ", decay, " decay - healing reduced: ", amount, " -> ", actual_heal)
+	var old_health = current_health
+	current_health = min(current_health + actual_heal, max_health)
+	print("[HEAL] ", character_name, " healed: ", old_health, " -> ", current_health, " (+", current_health - old_health, ")")
 
 func gain_shield(amount: int):
 	if amount < 0:
@@ -431,6 +437,16 @@ func duplicate_character() -> Character:
 
 	# Copy passive ability
 	new_char.passive_ability_id = passive_ability_id
+
+	# Copy enemy-specific properties
+	new_char.special_chance = special_chance
+	new_char.main_deck_cards_per_turn = main_deck_cards_per_turn
+
+	# Deep copy special deck
+	var special_copy: Array[Card] = []
+	for card in special_deck:
+		special_copy.append(card.duplicate())
+	new_char.special_deck = special_copy
 
 	# Deep copy the starting deck
 	var deck_copy: Array[Card] = []

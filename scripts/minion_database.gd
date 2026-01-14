@@ -34,6 +34,16 @@ func create_minion_by_id(minion_id: String) -> Character:
 	minion.starting_deck = deck
 	minion.reset_deck()
 
+	# Build special deck if present
+	if data.has("special_deck"):
+		for card_data in data.special_deck:
+			var special_card = create_card_from_data(card_data)
+			minion.special_deck.append(special_card)
+		minion.special_chance = data.get("special_chance", 0.0)
+
+	# Set cards per turn limit (-1 = unlimited)
+	minion.main_deck_cards_per_turn = data.get("cards_per_turn", -1)
+
 	return minion
 
 func create_card_from_data(data: Dictionary) -> Card:
@@ -68,6 +78,10 @@ func create_card_from_data(data: Dictionary) -> Card:
 			card.target_type = Card.TargetType.ALL_ENEMIES
 		"RANDOM_ENEMY":
 			card.target_type = Card.TargetType.RANDOM_ENEMY
+		"CCW_PLAYER":
+			card.target_type = Card.TargetType.CCW_PLAYER
+		"HIGHEST_HP":
+			card.target_type = Card.TargetType.HIGHEST_HP
 
 	card.stamina_cost = data.cost
 	card.damage = data.get("damage", 0)
@@ -79,6 +93,7 @@ func create_card_from_data(data: Dictionary) -> Card:
 	card.apply_vulnerable = data.get("vulnerable", 0)
 	card.apply_weakness = data.get("weakness", 0)
 	card.apply_armor = data.get("armor", 0)
+	card.apply_hinder = data.get("hinder", 0)
 	card.piercing = data.get("piercing", false)
 	card.lifesteal = data.get("lifesteal", false)
 

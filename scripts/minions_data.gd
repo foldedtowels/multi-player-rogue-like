@@ -2,32 +2,48 @@ extends Node
 ## Minion data definitions - 2 unique minions per boss (10 total)
 
 const MINIONS = {
-	# Boss 1 (Corrupted Treant) minions
-	"thorn_imp": {
-		"name": "Thorn Imp",
-		"max_health": 40,
+	# Boss 1 (Minion Fight 1) - Swarm of Racoons and Alex
+	"swarm_of_racoons": {
+		"name": "Swarm of Racoons",
+		"max_health": 35,
 		"starting_stamina": 2,
 		"boss_index": 0,
+		"cards_per_turn": 1,
 		"deck": [
-			{"name": "Thorn Strike", "type": "ATTACK", "cost": 1, "damage": 6, "target": "SINGLE_ENEMY"},
-			{"name": "Thorn Strike", "type": "ATTACK", "cost": 1, "damage": 6, "target": "SINGLE_ENEMY"},
-			{"name": "Poison Spit", "type": "ATTACK", "cost": 1, "damage": 3, "poison": 2, "target": "SINGLE_ENEMY"},
-			{"name": "Poison Spit", "type": "ATTACK", "cost": 1, "damage": 3, "poison": 2, "target": "SINGLE_ENEMY"},
-			{"name": "Barbed Defense", "type": "BUFF", "cost": 1, "shield": 5, "target": "SELF"},
+			{"name": "Ankle Nibble", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "Ankle Nibble", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "Ankle Nibble", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "Ankle Nibble", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "Ankle Nibble", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "Swarm!", "type": "ATTACK", "cost": 1, "damage": 3, "target": "ALL_ENEMIES"},
+			{"name": "Swarm!", "type": "ATTACK", "cost": 1, "damage": 3, "target": "ALL_ENEMIES"},
+			{"name": "Swarm!", "type": "ATTACK", "cost": 1, "damage": 3, "target": "ALL_ENEMIES"},
+			{"name": "Swarm!", "type": "ATTACK", "cost": 1, "damage": 3, "target": "ALL_ENEMIES"},
+			{"name": "Swarm!", "type": "ATTACK", "cost": 1, "damage": 3, "target": "ALL_ENEMIES"},
 		]
 	},
-	"vine_horror": {
-		"name": "Vine Horror",
-		"max_health": 60,
+	"alex": {
+		"name": "Alex",
+		"max_health": 45,
 		"starting_stamina": 2,
 		"boss_index": 0,
+		"cards_per_turn": 1,
 		"deck": [
-			{"name": "Entangle", "type": "ATTACK", "cost": 1, "damage": 5, "vulnerable": 1, "target": "SINGLE_ENEMY"},
-			{"name": "Entangle", "type": "ATTACK", "cost": 1, "damage": 5, "vulnerable": 1, "target": "SINGLE_ENEMY"},
-			{"name": "Crushing Vines", "type": "ATTACK", "cost": 2, "damage": 12, "target": "SINGLE_ENEMY"},
-			{"name": "Root Barrier", "type": "BUFF", "cost": 1, "shield": 8, "target": "SELF"},
-			{"name": "Sap Drain", "type": "ATTACK", "cost": 2, "damage": 8, "lifesteal": true, "target": "SINGLE_ENEMY"},
-		]
+			{"name": "Monkey Punch!", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "Monkey Punch!", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "Monkey Punch!", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "Monkey Punch!", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "Monkey Punch!", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "Monkey Punch!", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "Monkey Punch!", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
+			{"name": "It bit my Hand!", "type": "ATTACK", "cost": 1, "damage": 3, "hinder": 1, "target": "HIGHEST_HP"},
+			{"name": "It bit my Hand!", "type": "ATTACK", "cost": 1, "damage": 3, "hinder": 1, "target": "HIGHEST_HP"},
+			{"name": "It bit my Hand!", "type": "ATTACK", "cost": 1, "damage": 3, "hinder": 1, "target": "HIGHEST_HP"},
+		],
+		"special_deck": [
+			{"name": "Anger", "type": "BUFF", "cost": 0, "strength": 2, "target": "SELF"}
+		],
+		"special_chance": 0.5
 	},
 
 	# Boss 2 (Flame Warlord) minions
@@ -36,6 +52,7 @@ const MINIONS = {
 		"max_health": 35,
 		"starting_stamina": 2,
 		"boss_index": 1,
+		"cards_per_turn": 1,
 		"deck": [
 			{"name": "Fireball", "type": "ATTACK", "cost": 1, "damage": 7, "target": "SINGLE_ENEMY"},
 			{"name": "Fireball", "type": "ATTACK", "cost": 1, "damage": 7, "target": "SINGLE_ENEMY"},
@@ -49,6 +66,7 @@ const MINIONS = {
 		"max_health": 70,
 		"starting_stamina": 3,
 		"boss_index": 1,
+		"cards_per_turn": 1,
 		"deck": [
 			{"name": "Molten Slash", "type": "ATTACK", "cost": 1, "damage": 9, "target": "SINGLE_ENEMY"},
 			{"name": "Molten Slash", "type": "ATTACK", "cost": 1, "damage": 9, "target": "SINGLE_ENEMY"},
@@ -64,6 +82,7 @@ const MINIONS = {
 		"max_health": 45,
 		"starting_stamina": 2,
 		"boss_index": 2,
+		"cards_per_turn": 1,
 		"deck": [
 			{"name": "Bone Strike", "type": "ATTACK", "cost": 1, "damage": 8, "target": "SINGLE_ENEMY"},
 			{"name": "Bone Strike", "type": "ATTACK", "cost": 1, "damage": 8, "target": "SINGLE_ENEMY"},
@@ -77,6 +96,7 @@ const MINIONS = {
 		"max_health": 50,
 		"starting_stamina": 3,
 		"boss_index": 2,
+		"cards_per_turn": 1,
 		"deck": [
 			{"name": "Soul Drain", "type": "ATTACK", "cost": 2, "damage": 10, "lifesteal": true, "target": "SINGLE_ENEMY"},
 			{"name": "Soul Drain", "type": "ATTACK", "cost": 2, "damage": 10, "lifesteal": true, "target": "SINGLE_ENEMY"},
@@ -92,6 +112,7 @@ const MINIONS = {
 		"max_health": 55,
 		"starting_stamina": 3,
 		"boss_index": 3,
+		"cards_per_turn": 1,
 		"deck": [
 			{"name": "Lightning Bite", "type": "ATTACK", "cost": 1, "damage": 9, "target": "SINGLE_ENEMY"},
 			{"name": "Lightning Bite", "type": "ATTACK", "cost": 1, "damage": 9, "target": "SINGLE_ENEMY"},
@@ -105,6 +126,7 @@ const MINIONS = {
 		"max_health": 65,
 		"starting_stamina": 3,
 		"boss_index": 3,
+		"cards_per_turn": 1,
 		"deck": [
 			{"name": "Gale Force", "type": "ATTACK", "cost": 2, "damage": 12, "vulnerable": 1, "target": "SINGLE_ENEMY"},
 			{"name": "Gale Force", "type": "ATTACK", "cost": 2, "damage": 12, "vulnerable": 1, "target": "SINGLE_ENEMY"},
@@ -120,6 +142,7 @@ const MINIONS = {
 		"max_health": 50,
 		"starting_stamina": 3,
 		"boss_index": 4,
+		"cards_per_turn": 1,
 		"deck": [
 			{"name": "Void Strike", "type": "ATTACK", "cost": 1, "damage": 10, "target": "SINGLE_ENEMY"},
 			{"name": "Void Strike", "type": "ATTACK", "cost": 1, "damage": 10, "target": "SINGLE_ENEMY"},
@@ -133,6 +156,7 @@ const MINIONS = {
 		"max_health": 80,
 		"starting_stamina": 3,
 		"boss_index": 4,
+		"cards_per_turn": 1,
 		"deck": [
 			{"name": "Chaos Bolt", "type": "ATTACK", "cost": 2, "damage": 15, "target": "SINGLE_ENEMY"},
 			{"name": "Chaos Bolt", "type": "ATTACK", "cost": 2, "damage": 15, "target": "SINGLE_ENEMY"},

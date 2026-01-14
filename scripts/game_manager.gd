@@ -16,7 +16,7 @@ signal game_state_changed()
 signal enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int)
 signal card_v2_choice_needed(caster: Character, v1_card: Card, v2_card: Card, target: Character)
 signal card_retain_choice_needed(player_index: int, expires_after_round: int)  # Player needs to select a card to retain
-signal boss_intent_revealed(card_names: Array[String])  # Boss's next turn cards are revealed
+signal boss_intent_revealed(next_intents: Dictionary)  # enemy_index -> EnemyIntent for next turn
 signal enemy_intents_calculated(intents: Dictionary)  # Enemy intents calculated at round start
 
 enum GameState {
@@ -100,6 +100,8 @@ var boss_next_turn_cards: Array[String] = []  # Card names boss will play next t
 
 # Enemy intent system - shows what enemies will do this turn
 var enemy_intents: Dictionary = {}  # enemy_index -> EnemyIntent
+var locked_card_targets: Dictionary = {}  # enemy_idx -> Array of {target_index, is_special} - targets locked by Hunter's Instinct
+var locked_enemy_hands: Dictionary = {}  # enemy_index -> Array[Card] - hands locked by Hunter's Instinct
 
 func _ready():
 	hero_db = get_node("/root/HeroDatabase")
@@ -207,6 +209,8 @@ func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 	boss_intent_revealed_for_round = 0
 	boss_next_turn_cards.clear()
 	enemy_intents.clear()
+	locked_card_targets.clear()
+	locked_enemy_hands.clear()
 
 	# Initialize CCW targeting - random player gets the marker
 	var alive_players = players.filter(func(p): return p.is_alive())
@@ -783,13 +787,24 @@ func start_round():
 	# Clear protection from previous turn (Protector lasts one turn)
 	protected_by.clear()
 
-	# PRE-DRAW enemy cards so intent calculation uses actual hands (not simulated)
-	# Only draw cards here - status effects applied at enemy turn start
-	for enemy in enemies:
-		if enemy.is_alive():
-			enemy.draw_cards(5)  # Just draw, don't apply status effects yet
+	# PRE-DRAW enemy cards (unless we have locked hands from Hunter's Instinct)
+	if locked_enemy_hands.size() > 0:
+		# Use locked hands instead of drawing - Hunter's Instinct locked these in
+		print("[INTENT] Using locked enemy hands from Hunter's Instinct")
+		for enemy_idx in locked_enemy_hands:
+			if enemy_idx < enemies.size():
+				var enemy = enemies[enemy_idx]
+				enemy.hand.clear()
+				for card in locked_enemy_hands[enemy_idx]:
+					enemy.hand.append(card)
+		locked_enemy_hands.clear()
+	else:
+		# Normal draw - status effects applied at enemy turn start
+		for enemy in enemies:
+			if enemy.is_alive():
+				enemy.draw_cards(5)
 
-	# Calculate and broadcast enemy intents for this round (now uses actual hands)
+	# Calculate and broadcast enemy intents for this round
 	calculate_enemy_intents()
 
 	turn_phase = TurnPhase.PLAYER_TURN
@@ -1416,6 +1431,8 @@ func client_card_played(card_data: Dictionary, caster_index: int, caster_is_play
 	game_state_changed.emit()
 
 func apply_card_effects(caster: Character, card: Card, target: Character) -> Array[Character]:
+	print("[CARD] ", caster.character_name, " plays ", card.card_name, " (heal:", card.heal_amount, " decay:", card.apply_decay, ")")
+
 	# Determine targets based on target type
 	var targets: Array[Character] = []
 
@@ -1480,6 +1497,11 @@ func apply_card_effects(caster: Character, card: Card, target: Character) -> Arr
 					total_damage -= caster.weakness
 					# Apply hinder penalty (similar to weakness)
 					total_damage -= caster.hinder
+					# Bonus damage if target is wounded (below 50% HP)
+					if card.bonus_damage_if_wounded > 0:
+						var hp_percent = float(damage_target.current_health) / float(damage_target.max_health)
+						if hp_percent < 0.5:
+							total_damage += card.bonus_damage_if_wounded
 					total_damage = max(0, total_damage)  # Can't go negative
 
 				var damage_dealt = damage_target.take_damage(total_damage, card.piercing)
@@ -1514,7 +1536,20 @@ func apply_card_effects(caster: Character, card: Card, target: Character) -> Arr
 
 		# Healing - only apply to allies, not enemies
 		if card.heal_amount > 0 and is_ally:
-			t.heal(card.heal_amount)
+			var heal_value = card.heal_amount
+			# Decay reduces healing: caster's decay for giving, target's decay for receiving
+			# For self-heals (caster == target), only apply once
+			if caster.decay > 0:
+				var reduction = caster.decay * 5
+				heal_value = max(0, heal_value - reduction)
+				print("[HEAL] Caster decay reduces healing: ", card.heal_amount, " -> ", heal_value)
+			elif t.decay > 0 and t != caster:
+				# Target has decay but caster doesn't - apply target's decay
+				var reduction = t.decay * 5
+				heal_value = max(0, heal_value - reduction)
+				print("[HEAL] Target decay reduces healing: ", card.heal_amount, " -> ", heal_value)
+			print("[HEAL] ", caster.character_name, " heals ", t.character_name, " for ", heal_value, " (card: ", card.card_name, ")")
+			t.heal(heal_value, true)  # Decay already applied above
 
 		# Shield - apply to caster when attacking enemies, or to target when buffing allies
 		if card.shield_amount > 0:
@@ -1567,6 +1602,7 @@ func apply_card_effects(caster: Character, card: Card, target: Character) -> Arr
 				caster.exhausted += card.apply_exhausted
 			if card.apply_decay > 0:
 				caster.decay += card.apply_decay
+				print("[DECAY] ", caster.character_name, " gained ", card.apply_decay, " decay (total: ", caster.decay, ")")
 			if card.apply_fatigued > 0:
 				caster.fatigued += card.apply_fatigued
 
@@ -1614,47 +1650,227 @@ func apply_card_effects(caster: Character, card: Card, target: Character) -> Arr
 				caster.hand.remove_at(rand_idx)
 				caster.discard_pile.append(discarded)
 
+	# STAMINA GAIN - grant stamina to caster (processed once, not per-target)
+	if card.stamina_gain > 0:
+		caster.current_stamina += card.stamina_gain
+
 	return targets
 
-## Reveal boss's next turn cards (Hunter's Instinct)
+## Reveal enemies' next turn intents (Hunter's Instinct)
 func _reveal_boss_intent():
-	if current_boss == null:
-		print("[INTENT] No boss to reveal intent for")
-		return
+	# Calculate full intents for ALL enemies for their next turn
+	var next_turn_intents: Dictionary = {}  # enemy_index -> EnemyIntent
+	var next_turn_hands: Dictionary = {}  # enemy_index -> Array[Card]
+	var next_turn_targets: Dictionary = {}  # enemy_index -> Array of {target_index, is_special}
 
-	# Calculate what cards boss will have next turn (peek at deck)
-	boss_next_turn_cards.clear()
+	for i in range(enemies.size()):
+		var enemy = enemies[i]
+		if not enemy.is_alive():
+			continue
 
-	# The boss will draw cards at start of their turn
-	# Peek at what's in their deck (first 5 cards they'd draw)
-	var deck_peek: Array[Card] = []
-	var temp_deck = current_boss.deck.duplicate()
+		# Simulate what cards enemy would draw next turn
+		var simulated_hand = _simulate_next_turn_hand(enemy)
 
-	# If deck is too small, include discard pile (shuffle)
+		# Store the simulated hand for next round
+		next_turn_hands[i] = simulated_hand.duplicate()
+
+		# Calculate intent with that simulated hand
+		var intent = _calculate_intent_with_hand(enemy, i, simulated_hand)
+		next_turn_intents[i] = intent
+
+		# Extract just the target assignments (card order is implicit from hand)
+		var targets_for_enemy: Array = []
+		for card_info in intent.cards_to_play:
+			targets_for_enemy.append({
+				"target_index": card_info.target_index,
+				"is_special": card_info.get("is_special", false)
+			})
+		next_turn_targets[i] = targets_for_enemy
+
+		print("[INTENT PREVIEW] ", enemy.character_name, " next turn: ", intent.damage_amount, " dmg (", intent.cards_to_play.size(), " cards)")
+
+	boss_intent_revealed_for_round = round_number + 1
+
+	# Store HANDS and TARGETS for next round (NOT full intents - damage will be recalculated)
+	locked_enemy_hands = next_turn_hands.duplicate()
+	locked_card_targets = next_turn_targets.duplicate()
+
+	# Emit signal with full intent data for modal display (preview damage at current moment)
+	boss_intent_revealed.emit(next_turn_intents)
+
+## Simulate what cards an enemy would draw next turn (for Hunter's Instinct preview)
+func _simulate_next_turn_hand(enemy: Character) -> Array[Card]:
+	var hand: Array[Card] = []
+
+	# Create temporary deck combining deck + discard (current hand will be discarded)
+	var temp_deck: Array[Card] = []
+	temp_deck.append_array(enemy.deck.duplicate())
+
+	# Current hand cards will go to discard, then shuffle back
+	var temp_discard: Array[Card] = []
+	temp_discard.append_array(enemy.discard_pile.duplicate())
+	temp_discard.append_array(enemy.hand.duplicate())
+
+	# If deck is too small, shuffle discard into deck
 	if temp_deck.size() < 5:
-		var temp_discard = current_boss.discard_pile.duplicate()
 		temp_discard.shuffle()
 		temp_deck.append_array(temp_discard)
 
-	# Get first 5 (or fewer if not enough)
-	for i in range(min(5, temp_deck.size())):
-		deck_peek.append(temp_deck[i])
+	# Draw up to 5 cards
+	for j in range(min(5, temp_deck.size())):
+		hand.append(temp_deck[j])
 
-	# Store card names
-	for card in deck_peek:
-		boss_next_turn_cards.append(card.card_name)
+	return hand
 
-	boss_intent_revealed_for_round = round_number + 1
-	print("[INTENT] Revealed boss intent for round ", round_number + 1, ": ", boss_next_turn_cards)
+## Calculate intent using a specific hand (for Hunter's Instinct preview)
+func _calculate_intent_with_hand(enemy: Character, enemy_idx: int, hand: Array[Card]) -> EnemyIntent:
+	var intent = EnemyIntent.new()
+	intent.enemy_index = enemy_idx
 
-	# Emit signal for UI
-	boss_intent_revealed.emit(boss_next_turn_cards)
+	# Pre-select which cards enemy will play (respects cards_per_turn limit)
+	var simulated_stamina = enemy.max_stamina
+	var cards_played = 0
+	var max_cards = enemy.main_deck_cards_per_turn  # -1 = unlimited
+
+	for card in hand:
+		# Check card limit (stop if we've hit the max)
+		if max_cards > 0 and cards_played >= max_cards:
+			break
+
+		if card.stamina_cost > simulated_stamina:
+			continue
+
+		simulated_stamina -= card.stamina_cost
+		cards_played += 1
+
+		# Determine target for this card
+		var target_index = _determine_enemy_card_target(enemy, card)
+
+		# Store the card and its target
+		intent.cards_to_play.append({
+			"card": card,
+			"target_index": target_index,
+			"is_special": false
+		})
+
+		# Aggregate effects for intent display
+		_aggregate_card_effects(intent, card, enemy, target_index)
+
+	# Handle special deck (based on special_chance)
+	if enemy.special_deck.size() > 0 and rng.randf() < enemy.special_chance:
+		var special_card = enemy.special_deck[rng.randi() % enemy.special_deck.size()].duplicate()
+		var special_target_index = _determine_enemy_card_target(enemy, special_card)
+
+		intent.cards_to_play.append({
+			"card": special_card,
+			"target_index": special_target_index,
+			"is_special": true
+		})
+
+		_aggregate_card_effects(intent, special_card, enemy, special_target_index)
+
+	# Calculate intent type based on aggregated effects
+	intent.calculate_intent_type()
+
+	return intent
+
+## Build intent from locked hands/targets, recalculating damage with current stats
+func _build_intent_from_locked(enemy: Character, enemy_idx: int, hand: Array[Card], locked_targets: Array) -> EnemyIntent:
+	var intent = EnemyIntent.new()
+	intent.enemy_index = enemy_idx
+
+	var simulated_stamina = enemy.max_stamina
+	var card_idx = 0
+	var cards_played = 0
+	var max_cards = enemy.main_deck_cards_per_turn  # -1 = unlimited
+
+	for card in hand:
+		# Check card limit (stop if we've hit the max)
+		if max_cards > 0 and cards_played >= max_cards:
+			break
+
+		if card.stamina_cost > simulated_stamina:
+			card_idx += 1
+			continue
+
+		simulated_stamina -= card.stamina_cost
+		cards_played += 1
+
+		# Get locked target or determine dynamically (fallback)
+		var target_index = -1
+		var is_special = false
+
+		# Find the matching locked target entry for this card
+		# Non-special cards come first, special cards are at the end
+		if card_idx < locked_targets.size() and not locked_targets[card_idx].get("is_special", false):
+			target_index = locked_targets[card_idx].target_index
+			is_special = false
+		else:
+			target_index = _determine_enemy_card_target(enemy, card)
+
+		intent.cards_to_play.append({
+			"card": card,
+			"target_index": target_index,
+			"is_special": is_special
+		})
+
+		# Aggregate effects - RECALCULATES damage with CURRENT enemy stats
+		_aggregate_card_effects(intent, card, enemy, target_index)
+		card_idx += 1
+
+	# Handle special cards from locked_targets (is_special = true entries at end)
+	for target_info in locked_targets:
+		if target_info.get("is_special", false) and enemy.special_deck.size() > 0:
+			var special_card = enemy.special_deck[rng.randi() % enemy.special_deck.size()].duplicate()
+			intent.cards_to_play.append({
+				"card": special_card,
+				"target_index": target_info.target_index,
+				"is_special": true
+			})
+			_aggregate_card_effects(intent, special_card, enemy, target_info.target_index)
+
+	intent.calculate_intent_type()
+	return intent
 
 ## ENEMY INTENT SYSTEM ##
 ## Calculate what enemies will do this turn and broadcast to all clients
 
 func calculate_enemy_intents():
 	if not multiplayer.is_server(): return
+
+	# Check if we have locked targets from Hunter's Instinct
+	# Note: locked_enemy_hands was already used in start_round() to set enemy hands
+	if locked_card_targets.size() > 0:
+		enemy_intents.clear()
+
+		for enemy_idx in locked_card_targets:
+			if enemy_idx >= enemies.size():
+				continue
+			var enemy = enemies[enemy_idx]
+			if not enemy.is_alive():
+				continue
+
+			# Enemy hand was already set from locked_enemy_hands in start_round()
+			var hand: Array[Card] = []
+			for card in enemy.hand:
+				hand.append(card)
+			var targets = locked_card_targets[enemy_idx]
+
+			# Build intent with locked cards/targets but CURRENT damage calculation
+			var intent = _build_intent_from_locked(enemy, enemy_idx, hand, targets)
+			enemy_intents[enemy_idx] = intent
+
+		locked_card_targets.clear()  # Clear after use
+
+		print("[INTENT] Using locked cards/targets with recalculated damage")
+
+		# Broadcast to clients
+		var serialized_intents: Dictionary = {}
+		for idx in enemy_intents:
+			serialized_intents[idx] = enemy_intents[idx].serialize()
+		rpc("client_receive_enemy_intents", serialized_intents)
+		enemy_intents_calculated.emit(enemy_intents)
+		return
 
 	enemy_intents.clear()
 
@@ -1701,18 +1917,22 @@ func _calculate_single_enemy_intent(enemy: Character, enemy_idx: int) -> EnemyIn
 	# Use actual hand (from pre-draw at round start)
 	var hand = _simulate_enemy_hand(enemy)
 
-	print("[INTENT CALC] ", enemy.character_name, " hand: ", hand.map(func(c): return c.card_name))
-	print("[INTENT CALC]   stamina=", enemy.max_stamina)
 
-	# Pre-select which cards enemy will play (greedy AI: all affordable cards in order)
+	# Pre-select which cards enemy will play (respects cards_per_turn limit)
 	var simulated_stamina = enemy.max_stamina
+	var cards_played = 0
+	var max_cards = enemy.main_deck_cards_per_turn  # -1 = unlimited
 
 	for card in hand:
+		# Check card limit (stop if we've hit the max)
+		if max_cards > 0 and cards_played >= max_cards:
+				break
+
 		if card.stamina_cost > simulated_stamina:
-			print("[INTENT CALC]   Skip ", card.card_name, " (cost ", card.stamina_cost, " > ", simulated_stamina, ")")
 			continue
 
 		simulated_stamina -= card.stamina_cost
+		cards_played += 1
 
 		# Determine target for this card NOW (pre-selection)
 		var target_index = _determine_enemy_card_target(enemy, card)
@@ -1724,7 +1944,6 @@ func _calculate_single_enemy_intent(enemy: Character, enemy_idx: int) -> EnemyIn
 			"is_special": false
 		})
 
-		print("[INTENT CALC]   PRE-SELECT ", card.card_name, " -> target=", target_index)
 
 		# Aggregate effects for intent display
 		_aggregate_card_effects(intent, card, enemy, target_index)
@@ -1740,13 +1959,11 @@ func _calculate_single_enemy_intent(enemy: Character, enemy_idx: int) -> EnemyIn
 			"is_special": true
 		})
 
-		print("[INTENT CALC]   PRE-SELECT (SPECIAL) ", special_card.card_name, " -> target=", special_target_index)
 		_aggregate_card_effects(intent, special_card, enemy, special_target_index)
 
 	# Calculate intent type based on aggregated effects
 	intent.calculate_intent_type()
 
-	print("[INTENT CALC] ", enemy.character_name, " FINAL: ", intent.cards_to_play.size(), " cards")
 
 	return intent
 

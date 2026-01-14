@@ -848,46 +848,158 @@ func _show_card_retain_modal(player_index: int, cards: Array[Card], expires_afte
 		modal_bg.queue_free()
 	)
 
-func _on_boss_intent_revealed(card_names: Array[String]):
-	# Show a notification with the boss's next turn cards
-	var cards_text = ", ".join(card_names)
+func _on_boss_intent_revealed(next_intents: Dictionary):
+	# Show a modal with full intent details for next turn
 
-	# Create a simple notification panel
-	var notification = Panel.new()
-	notification.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	notification.custom_minimum_size = Vector2(400, 100)
-	notification.offset_top = 80
-	notification.offset_left = -200
-	notification.offset_right = 200
-	notification.offset_bottom = 180
-	add_child(notification)
+	# Create semi-transparent background
+	var modal_bg = ColorRect.new()
+	modal_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	modal_bg.color = Color(0, 0, 0, 0.6)
+	add_child(modal_bg)
+
+	# Create panel
+	var panel = Panel.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.custom_minimum_size = Vector2(500, 400)
+	panel.offset_left = -250
+	panel.offset_right = 250
+	panel.offset_top = -200
+	panel.offset_bottom = 200
+	modal_bg.add_child(panel)
 
 	var vbox = VBoxContainer.new()
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
-	vbox.offset_left = 10
-	vbox.offset_right = -10
-	vbox.offset_top = 10
-	vbox.offset_bottom = -10
-	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	notification.add_child(vbox)
+	vbox.offset_left = 20
+	vbox.offset_right = -20
+	vbox.offset_top = 20
+	vbox.offset_bottom = -20
+	panel.add_child(vbox)
 
+	# Title
 	var title = Label.new()
-	title.text = "Boss Intent Revealed!"
-	title.add_theme_font_size_override("font_size", 18)
+	title.text = "Enemy Next Turn Preview"
+	title.add_theme_font_size_override("font_size", 22)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(title)
 
-	var cards_label = Label.new()
-	cards_label.text = "Next turn: " + cards_text
-	cards_label.add_theme_font_size_override("font_size", 14)
-	cards_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	cards_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(cards_label)
+	# Spacer
+	var spacer = Control.new()
+	spacer.custom_minimum_size = Vector2(0, 10)
+	vbox.add_child(spacer)
 
-	# Auto-hide after 5 seconds
-	await get_tree().create_timer(5.0).timeout
-	if is_instance_valid(notification):
-		notification.queue_free()
+	# Scroll container for enemy intents
+	var scroll = ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(scroll)
+
+	var intent_vbox = VBoxContainer.new()
+	intent_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(intent_vbox)
+
+	# Show each enemy's intent
+	for enemy_idx in next_intents:
+		var intent: EnemyIntent = next_intents[enemy_idx]
+		if enemy_idx >= game_manager.enemies.size():
+			continue
+		var enemy = game_manager.enemies[enemy_idx]
+
+		# Enemy header
+		var enemy_label = Label.new()
+		enemy_label.text = "--- " + enemy.character_name + " ---"
+		enemy_label.add_theme_font_size_override("font_size", 18)
+		enemy_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		intent_vbox.add_child(enemy_label)
+
+		# Show each card with its specific target and effects
+		for card_info in intent.cards_to_play:
+			var card: Card = card_info.card
+			var target_index: int = card_info.target_index
+			var is_special: bool = card_info.get("is_special", false)
+
+			# Build effect description
+			var effects: Array[String] = []
+
+			# Calculate damage with enemy stats
+			if card.damage > 0:
+				var total_damage = card.damage
+				if card.card_type == Card.CardType.ATTACK:
+					total_damage += enemy.strength + enemy.damage_plus - enemy.weakness - enemy.hinder
+					total_damage = max(0, total_damage)
+				total_damage *= card.multi_hit
+				effects.append("%d dmg" % total_damage)
+
+			if card.shield_amount > 0:
+				effects.append("%d shield" % card.shield_amount)
+
+			if card.heal_amount > 0:
+				effects.append("%d heal" % card.heal_amount)
+
+			if card.apply_poison > 0:
+				effects.append("%d poison" % card.apply_poison)
+
+			if card.apply_weakness > 0:
+				effects.append("%d weakness" % card.apply_weakness)
+
+			if card.apply_strength > 0:
+				effects.append("+%d strength" % card.apply_strength)
+
+			if card.apply_vulnerable > 0:
+				effects.append("%d vulnerable" % card.apply_vulnerable)
+
+			# Determine target string
+			var target_str = ""
+			if target_index == -2:  # Self
+				target_str = "Self"
+			elif target_index == -1:  # AOE
+				target_str = "All Players"
+			elif target_index >= 0 and target_index < game_manager.players.size():
+				target_str = game_manager.players[target_index].character_name
+			else:
+				target_str = "Unknown"
+
+			# Build the card line
+			var card_label = Label.new()
+			var special_prefix = "[Special] " if is_special else ""
+			var effect_str = ", ".join(effects) if effects.size() > 0 else "no effect"
+			card_label.text = "%s%s → %s (%s)" % [special_prefix, card.card_name, target_str, effect_str]
+			card_label.add_theme_font_size_override("font_size", 14)
+			intent_vbox.add_child(card_label)
+
+		# Summary line
+		var summary_label = Label.new()
+		var summary_parts: Array[String] = []
+		if intent.damage_amount > 0:
+			summary_parts.append("Total: %d damage" % intent.damage_amount)
+		if intent.shield_amount > 0:
+			summary_parts.append("%d shield" % intent.shield_amount)
+		if summary_parts.size() > 0:
+			summary_label.text = ", ".join(summary_parts)
+			summary_label.add_theme_font_size_override("font_size", 12)
+			summary_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+			intent_vbox.add_child(summary_label)
+
+		# Spacer between enemies
+		var enemy_spacer = Control.new()
+		enemy_spacer.custom_minimum_size = Vector2(0, 15)
+		intent_vbox.add_child(enemy_spacer)
+
+	# Close button
+	var close_btn = Button.new()
+	close_btn.text = "Close"
+	close_btn.custom_minimum_size = Vector2(100, 40)
+	close_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	close_btn.pressed.connect(func(): modal_bg.queue_free())
+	vbox.add_child(close_btn)
+
+## Helper to get target names from player indices
+func _get_target_names(target_indices: Array) -> String:
+	var names = []
+	for idx in target_indices:
+		if idx >= 0 and idx < game_manager.players.size():
+			names.append(game_manager.players[idx].character_name)
+	if names.is_empty():
+		return "unknown"
+	return ", ".join(names)
 
 func _on_enemy_intents_calculated(_intents: Dictionary):
 	# Cache incoming attack data for player panels

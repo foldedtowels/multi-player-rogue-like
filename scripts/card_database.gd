@@ -589,12 +589,12 @@ func _create_all_cards():
 
 	all_cards["execution"] = create_card(
 		"Execution",
-		"Finishing blow. Deals bonus damage to wounded bosses.",
+		"Finishing blow. +4 damage if target below 50% HP.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		2, 4, 0, 0, 0
 	)
-	# TODO: Implement conditional damage (+4 if boss below 50% HP)
+	all_cards["execution"].bonus_damage_if_wounded = 4
 
 	all_cards["frenzy"] = create_card(
 		"Frenzy!",
@@ -617,12 +617,12 @@ func _create_all_cards():
 
 	all_cards["medkit"] = create_card(
 		"Medkit",
-		"Emergency healing, but applies Decay.",
+		"Heal 10 HP. Apply 1 Decay.",
 		Card.CardType.HEAL,
 		Card.TargetType.SELF,
 		2, 0, 10, 0, 0
 	)
-	all_cards["medkit"].apply_decay = 1  # Cannot heal for rest of turn
+	all_cards["medkit"].apply_decay = 1
 
 	# v2 Card System - Fighter's Spirit
 	var fighters_spirit_v1 = create_card(
@@ -660,10 +660,10 @@ func _create_all_cards():
 	# v2 Card System - Leader
 	var leader_v1 = create_card(
 		"Leader",
-		"Rally the team.",
+		"All teammates draw 1 card.",
 		Card.CardType.BUFF,
-		Card.TargetType.ALL_ALLIES,
-		0, 0, 0, 0, 2
+		Card.TargetType.OTHER_ALLIES,
+		0, 0, 0, 0, 1  # 0 cost, draw 1 for other allies
 	)
 	leader_v1.has_v2 = true
 	leader_v1.v2_card_id = "leader_v2"
@@ -671,11 +671,12 @@ func _create_all_cards():
 
 	var leader_v2 = create_card(
 		"Leader V2",
-		"Focus your own strategy.",
+		"Discard 2 random cards. Teammates draw 2.",
 		Card.CardType.BUFF,
-		Card.TargetType.SELF,
-		0, 0, 0, 0, 1
+		Card.TargetType.OTHER_ALLIES,
+		0, 0, 0, 0, 2  # 0 cost, draw 2 for other allies
 	)
+	leader_v2.caster_discards_random = 2
 	leader_v2.plays_immediately = true
 	all_cards["leader_v2"] = leader_v2
 
@@ -716,7 +717,8 @@ func _create_all_cards():
 		Card.TargetType.SELF,
 		0, 0, 0, 0, 0
 	)
-	# TODO: Implement immediate stamina gain effect
+	all_cards["energy"].stamina_gain = 1
+	all_cards["energy"].plays_immediately = true
 
 	# === NEW DEMONSTRATION CARDS (Composability Examples) ===
 
