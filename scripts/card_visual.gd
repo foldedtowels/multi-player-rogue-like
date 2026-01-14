@@ -46,7 +46,7 @@ func set_card(card: Card):
 	card_data = card
 	update_display()
 
-func set_owner(character):
+func set_card_owner(character):
 	owner_character = character
 	update_display()
 
