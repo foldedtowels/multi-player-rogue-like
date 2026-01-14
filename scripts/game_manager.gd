@@ -1709,7 +1709,8 @@ func apply_passive_ability(character: Character, ability: PassiveAbility, choice
 			"draw":
 				character.draw_cards(choice.value)
 			"shield":
-				character.gain_shield(choice.value)
+				if target:
+					target.gain_shield(choice.value)
 			"heal":
 				if target:
 					target.heal(choice.value)
