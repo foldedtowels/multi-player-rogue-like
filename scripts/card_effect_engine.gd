@@ -18,6 +18,7 @@ var rng: RandomNumberGenerator
 signal enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int)
 signal card_retain_choice_needed(player_index: int, expires_after_round: int)
 signal boss_intent_reveal_requested()
+signal enemy_damage_stats_changed()  # Emitted when weakness/hinder/strength applied to enemy
 
 # Status effect categories for registry-based application
 const DEBUFF_EFFECTS: Array[String] = ["poison", "burn", "vulnerable", "weakness", "fatigued", "hinder", "scared"]
@@ -291,6 +292,9 @@ func _apply_debuffs(caster: Character, card: Card, target: Character, is_enemy: 
 	if enemies.has(caster) and players.has(target):
 		debuff_target = get_redirected_target(target)
 
+	# Track if we applied damage-affecting debuffs to an enemy
+	var applied_damage_debuff_to_enemy = false
+
 	# Registry-based debuff application
 	for effect_name in DEBUFF_EFFECTS:
 		var amount = card.get("apply_" + effect_name)
@@ -299,6 +303,15 @@ func _apply_debuffs(caster: Character, card: Card, target: Character, is_enemy: 
 			var current = debuff_target.get(effect_name)
 			if current != null:
 				debuff_target.set(effect_name, current + amount)
+
+				# Check if player applied damage-affecting debuff to enemy
+				if players.has(caster) and enemies.has(debuff_target):
+					if effect_name in ["weakness", "hinder"]:
+						applied_damage_debuff_to_enemy = true
+
+	# Emit signal to recalculate enemy intents if damage stats changed
+	if applied_damage_debuff_to_enemy:
+		enemy_damage_stats_changed.emit()
 
 
 func _apply_buffs(caster: Character, card: Card, target: Character, is_ally: bool) -> void:

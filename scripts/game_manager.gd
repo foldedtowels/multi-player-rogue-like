@@ -131,6 +131,7 @@ func _connect_card_effect_engine_signals():
 	card_effect_engine.enemy_damaged_player.connect(_on_engine_enemy_damaged_player)
 	card_effect_engine.card_retain_choice_needed.connect(_on_engine_card_retain_choice_needed)
 	card_effect_engine.boss_intent_reveal_requested.connect(_reveal_boss_intent)
+	card_effect_engine.enemy_damage_stats_changed.connect(_on_enemy_damage_stats_changed)
 
 
 func _on_engine_enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int):
@@ -141,6 +142,11 @@ func _on_engine_enemy_damaged_player(enemy_name: String, card_name: String, dama
 
 func _on_engine_card_retain_choice_needed(player_index: int, expires_after_round: int):
 	card_retain_choice_needed.emit(player_index, expires_after_round)
+
+
+func _on_enemy_damage_stats_changed():
+	# Recalculate enemy intents when damage-affecting stats change
+	recalculate_enemy_intents()
 
 
 func _connect_enemy_ai_signals():
@@ -1613,6 +1619,38 @@ func client_receive_enemy_intents(serialized: Dictionary):
 func client_enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_idx: int):
 	# Client receives enemy damage event - emit signal for floating text display
 	enemy_damaged_player.emit(enemy_name, card_name, damage, target_idx)
+
+## Recalculate enemy intents when damage-affecting stats change
+## Called when weakness, hinder, strength, or damage_plus changes on an enemy
+func recalculate_enemy_intents():
+	if not multiplayer.is_server(): return
+
+	# Only recalculate during player turn (when players can apply debuffs)
+	if turn_phase != TurnPhase.PLAYER_TURN:
+		return
+
+	# Skip if no enemies alive
+	var alive_enemies = enemies.filter(func(e): return e.is_alive())
+	if alive_enemies.is_empty():
+		return
+
+	# Update EnemyAI references
+	enemy_ai.players = players
+	enemy_ai.enemies = enemies
+	enemy_ai.ccw_target_index = ccw_target_index
+
+	# Recalculate all intents with current enemy stats
+	# Uses same hands (already drawn) but recalculates damage with updated buffs/debuffs
+	enemy_intents = enemy_ai.calculate_all_intents()
+
+	# Serialize and broadcast to all clients
+	var serialized_intents: Dictionary = {}
+	for idx in enemy_intents:
+		serialized_intents[idx] = enemy_intents[idx].serialize()
+
+	rpc("client_receive_enemy_intents", serialized_intents)
+	enemy_intents_calculated.emit(enemy_intents)
+	print("[INTENT] Recalculated intents after buff/debuff change")
 
 ## END ENEMY INTENT SYSTEM ##
 
