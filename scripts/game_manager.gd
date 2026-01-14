@@ -103,11 +103,36 @@ var enemy_intents: Dictionary = {}  # enemy_index -> EnemyIntent
 var locked_card_targets: Dictionary = {}  # enemy_idx -> Array of {target_index, is_special} - targets locked by Hunter's Instinct
 var locked_enemy_hands: Dictionary = {}  # enemy_index -> Array[Card] - hands locked by Hunter's Instinct
 
+# Card effect engine - handles all card effect application
+var card_effect_engine: CardEffectEngine
+
 func _ready():
 	hero_db = get_node("/root/HeroDatabase")
 	boss_db = get_node("/root/BossDatabase")
 	minion_db = get_node("/root/MinionDatabase")
 	card_db = get_node("/root/CardDatabase")
+
+	# Initialize card effect engine
+	card_effect_engine = CardEffectEngine.new()
+	card_effect_engine.card_db = card_db
+	card_effect_engine.rng = rng
+	_connect_card_effect_engine_signals()
+
+
+func _connect_card_effect_engine_signals():
+	card_effect_engine.enemy_damaged_player.connect(_on_engine_enemy_damaged_player)
+	card_effect_engine.card_retain_choice_needed.connect(_on_engine_card_retain_choice_needed)
+	card_effect_engine.boss_intent_reveal_requested.connect(_reveal_boss_intent)
+
+
+func _on_engine_enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int):
+	enemy_damaged_player.emit(enemy_name, card_name, damage, target_player_index)
+	if multiplayer.is_server():
+		rpc("client_enemy_damaged_player", enemy_name, card_name, damage, target_player_index)
+
+
+func _on_engine_card_retain_choice_needed(player_index: int, expires_after_round: int):
+	card_retain_choice_needed.emit(player_index, expires_after_round)
 
 func start_new_game():
 	players.clear()
@@ -830,46 +855,16 @@ func client_player_turn_started():
 
 ## Process delayed effects from previous turn (e.g., Jumping Strike)
 func _process_delayed_effects():
-	if delayed_effects.is_empty():
-		return
+	# Delegate to CardEffectEngine
+	card_effect_engine.players = players
+	card_effect_engine.enemies = enemies
+	card_effect_engine.delayed_effects = delayed_effects
 
-	for effect in delayed_effects:
-		var caster_idx = effect.caster_idx
-		var target_idx = effect.target_idx
-		var damage = effect.damage
-		var condition = effect.condition
-		var source_card = effect.source_card
-		var piercing = effect.get("piercing", false)
+	var affected = card_effect_engine.process_delayed_effects()
 
-		# Validate indices
-		if caster_idx < 0 or caster_idx >= players.size():
-			continue
-		if target_idx < 0 or target_idx >= enemies.size():
-			continue
-
-		var caster = players[caster_idx]
-		var target = enemies[target_idx]
-
-		# Check if both are still alive
-		if not caster.is_alive():
-			continue
-		if not target.is_alive():
-			continue
-
-		# Check condition
-		var condition_met = true
-		match condition:
-			"no_damage_taken":
-				condition_met = caster.damage_taken_this_turn == 0
-			"":
-				condition_met = true
-
-		if condition_met:
-			var damage_dealt = target.take_damage(damage, piercing)
-			broadcast_character_state(target)
-
-	# Clear processed effects
-	delayed_effects.clear()
+	# Broadcast state for affected characters
+	for target in affected:
+		broadcast_character_state(target)
 
 ## Apply card retention - called when player selects a card to retain
 func apply_card_retention(player_index: int, card_name: String, expires_after_round: int):
@@ -1170,16 +1165,10 @@ func select_enemy_target(enemy: Character, card: Card, turn_target: Character = 
 ## Get the actual target after protection redirect
 ## If target is a player protected by another player, redirect to protector
 func _get_redirected_target(target: Character) -> Character:
-	if not players.has(target):
-		return target  # Only players can be protected
-	var target_idx = players.find(target)
-	if protected_by.has(target_idx):
-		var protector_idx = protected_by[target_idx]
-		if protector_idx >= 0 and protector_idx < players.size():
-			var protector = players[protector_idx]
-			if protector.is_alive() and protector != target:
-				return protector
-	return target
+	# Delegate to CardEffectEngine
+	card_effect_engine.players = players
+	card_effect_engine.protected_by = protected_by
+	return card_effect_engine.get_redirected_target(target)
 
 func end_boss_turn():
 	# Apply boss end-of-turn effects (status decay, etc.)
@@ -1431,6 +1420,19 @@ func client_card_played(card_data: Dictionary, caster_index: int, caster_is_play
 	game_state_changed.emit()
 
 func apply_card_effects(caster: Character, card: Card, target: Character) -> Array[Character]:
+	# Delegate to CardEffectEngine - update its references first
+	card_effect_engine.players = players
+	card_effect_engine.enemies = enemies
+	card_effect_engine.protected_by = protected_by
+	card_effect_engine.delayed_effects = delayed_effects
+	card_effect_engine.round_number = round_number
+
+	return card_effect_engine.apply_effects(caster, card, target)
+
+
+## LEGACY: Original apply_card_effects implementation (kept for reference during migration)
+## This function is no longer used - all effect application goes through CardEffectEngine
+func _legacy_apply_card_effects(caster: Character, card: Card, target: Character) -> Array[Character]:
 	print("[CARD] ", caster.character_name, " plays ", card.card_name, " (heal:", card.heal_amount, " decay:", card.apply_decay, ")")
 
 	# Determine targets based on target type

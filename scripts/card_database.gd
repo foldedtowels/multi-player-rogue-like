@@ -39,8 +39,46 @@ extends Node
 
 var all_cards = {}
 
+## Path to CSV file for card definitions (set to "" to disable CSV loading)
+var csv_path: String = "res://csvs/cards.csv"
+
+## If true, print detailed loading info
+var verbose_loading: bool = true
+
 func _ready():
 	_create_all_cards()
+	_load_cards_from_csv()
+
+
+## Load cards from CSV file (overrides/adds to hardcoded cards)
+func _load_cards_from_csv() -> void:
+	if csv_path == "":
+		return
+
+	if not FileAccess.file_exists(csv_path):
+		if verbose_loading:
+			print("[CardDatabase] No CSV file at: " + csv_path + " (using hardcoded cards only)")
+		return
+
+	var csv_cards = CSVCardLoader.load_cards_from_csv(csv_path)
+	var override_count = 0
+	var new_count = 0
+
+	for card_id in csv_cards:
+		if all_cards.has(card_id):
+			override_count += 1
+		else:
+			new_count += 1
+		all_cards[card_id] = csv_cards[card_id]
+
+	if verbose_loading:
+		print("[CardDatabase] CSV loaded: " + str(override_count) + " overrides, " + str(new_count) + " new cards")
+
+
+## Export all current cards to CSV (useful for creating initial CSV from hardcoded cards)
+## Call this from the debugger or a test script: CardDatabase.export_all_cards_to_csv()
+func export_all_cards_to_csv(output_path: String = "res://csvs/cards.csv") -> bool:
+	return CSVCardLoader.export_cards_to_csv(all_cards, output_path)
 
 func _create_all_cards():
 	# === FLAME WIELDER CARDS (Red - Burn/Aggro) ===
