@@ -106,6 +106,9 @@ var locked_enemy_hands: Dictionary = {}  # enemy_index -> Array[Card] - hands lo
 # Card effect engine - handles all card effect application
 var card_effect_engine: CardEffectEngine
 
+# Enemy AI - handles intent calculation and target selection
+var enemy_ai: EnemyAI
+
 func _ready():
 	hero_db = get_node("/root/HeroDatabase")
 	boss_db = get_node("/root/BossDatabase")
@@ -117,6 +120,11 @@ func _ready():
 	card_effect_engine.card_db = card_db
 	card_effect_engine.rng = rng
 	_connect_card_effect_engine_signals()
+
+	# Initialize enemy AI
+	enemy_ai = EnemyAI.new()
+	enemy_ai.rng = rng
+	_connect_enemy_ai_signals()
 
 
 func _connect_card_effect_engine_signals():
@@ -133,6 +141,14 @@ func _on_engine_enemy_damaged_player(enemy_name: String, card_name: String, dama
 
 func _on_engine_card_retain_choice_needed(player_index: int, expires_after_round: int):
 	card_retain_choice_needed.emit(player_index, expires_after_round)
+
+
+func _connect_enemy_ai_signals():
+	enemy_ai.boss_intent_revealed.connect(_on_ai_boss_intent_revealed)
+
+
+func _on_ai_boss_intent_revealed(next_turn_intents: Dictionary):
+	boss_intent_revealed.emit(next_turn_intents)
 
 func start_new_game():
 	players.clear()
@@ -154,54 +170,6 @@ func select_heroes(hero_indices: Array):
 	# NOTE: Encounter initialization now happens in calling scene (character_selection.gd)
 	# using initialize_combat_encounter() for consistent modular setup
 
-## DEPRECATED: Use initialize_combat_encounter() instead
-## This function is kept for compatibility but should not be used in new code
-func start_boss_encounter():
-	push_warning("[DEPRECATED] start_boss_encounter() is deprecated. Use initialize_combat_encounter() instead.")
-	current_boss = boss_db.get_boss(boss_index)
-	if current_boss == null:
-		# All bosses defeated!
-		current_state = GameState.VICTORY
-		game_state_changed.emit()
-		return
-
-	# Reset player debuffs between bosses
-	for player in players:
-		player.reset_debuffs()
-
-	current_state = GameState.COMBAT
-	round_number = 1
-	current_player_index = 0
-
-	# Setup enemies array - FIRST spawn minions for this boss
-	enemies.clear()
-	var minions = minion_db.get_minions_for_boss(boss_index)
-
-	if minions.size() > 0:
-		# Start with minion combat phase
-		combat_phase = CombatPhase.MINION_COMBAT
-		for minion in minions:
-			enemies.append(minion)
-	else:
-		# No minions, go straight to boss
-		combat_phase = CombatPhase.BOSS_PHASE_1
-		current_boss.character_role = Character.CharacterRole.BOSS
-		enemies.append(current_boss)
-
-	# Characters are already initialized via their constructors
-	# Don't call _init() manually - it's automatically called by Character.new()
-
-	# Initialize deterministic RNG for multiplayer
-	if multiplayer.is_server():
-		game_seed = randi()
-		rpc("sync_game_seed", game_seed)
-	rng.seed = game_seed
-
-	# Assign network ownership
-	assign_characters_to_network_peers()
-
-	# Don't start turn here - let combat scene do it after _ready()
-
 @rpc("any_peer", "call_local", "reliable")
 func sync_game_seed(seed: int):
 	game_seed = seed
@@ -209,7 +177,6 @@ func sync_game_seed(seed: int):
 
 ## UNIFIED ENCOUNTER INITIALIZATION ##
 ## This function provides modular, consistent initialization for ALL combat encounters
-## Use this instead of start_boss_encounter() + reset_players_between_encounters()
 @rpc("any_peer", "call_local", "reliable")
 func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 	"""
@@ -560,51 +527,6 @@ func transition_to_buff_phase():
 	else:
 		get_tree().change_scene_to_file("res://scenes/buff_selection.tscn")
 
-## DEPRECATED: Use initialize_combat_encounter() instead
-## Reset players between combat encounters (KEEPS earned cards in deck!)
-## This function is kept for compatibility but should not be used in new code
-func reset_players_between_encounters():
-	push_warning("[DEPRECATED] reset_players_between_encounters() is deprecated. Use initialize_combat_encounter() instead.")
-
-	# Clear all combat state dictionaries
-	queued_cards.clear()
-	players_done_acting.clear()
-	last_played_cards.clear()
-	card_previews.clear()
-
-	# DEBUG: Confirm cleared
-
-	# Reset each player's temporary state (but keep their deck!)
-	for i in range(players.size()):
-		var player = players[i]
-
-		# CRITICAL: Return all cards to deck before shuffling (don't lose them!)
-		# Add cards from hand back to deck
-		for card in player.hand:
-			player.deck.append(card)
-		player.hand.clear()
-
-		# Add cards from discard back to deck
-		for card in player.discard_pile:
-			player.deck.append(card)
-		player.discard_pile.clear()
-
-		# Exhaust pile cards are intentionally removed (don't add back to deck)
-		player.exhaust_pile.clear()
-
-		# Shuffle deck (now includes ALL non-exhausted cards)
-		player.deck.shuffle()
-
-		# Clear temporary combat buffs
-		player.shield = 0
-
-		# Reset energy to max
-		player.current_stamina = player.max_stamina
-
-		# Clear ALL buffs/debuffs between encounters
-		player.clear_all_effects()
-
-
 ## Reset players to starting deck for a NEW RUN (LOSES earned cards!)
 ## Only use this when starting a brand new run, not between encounters
 func reset_players_for_new_run():
@@ -637,38 +559,6 @@ func reset_players_for_new_run():
 		# Clear debuffs
 		player.reset_debuffs()
 
-## DEPRECATED: Use initialize_combat_encounter() instead
-## This function is kept for compatibility but should not be used in new code
-func start_boss_phase_1():
-	push_warning("[DEPRECATED] start_boss_phase_1() is deprecated. Use initialize_combat_encounter() instead.")
-	# Clear minions, add boss
-	enemies.clear()
-	current_boss.character_role = Character.CharacterRole.BOSS
-	enemies.append(current_boss)
-	combat_phase = CombatPhase.BOSS_PHASE_1
-
-	# Reset combat state
-	round_number = 1
-	current_player_index = 0
-
-	# CRITICAL: Reset player state between encounters (keeps earned cards!)
-	reset_players_between_encounters()
-
-	# Broadcast updated state to all clients before scene change
-	if multiplayer.is_server():
-		for i in range(players.size()):
-			broadcast_character_state(players[i])
-			send_hand_to_owner(players[i])  # CRITICAL: Sync cleared hands!
-
-		# Sync boss enemy to all clients
-		sync_boss_enemy()
-
-	# Restart combat (this will reload the combat scene)
-	if multiplayer.is_server():
-		NetworkManager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
-	else:
-		get_tree().change_scene_to_file("res://scenes/combat.tscn")
-
 func sync_boss_enemy():
 	# Server syncs the boss enemy to all clients
 	if not multiplayer.is_server(): return
@@ -689,7 +579,7 @@ func client_receive_boss_enemy(boss_state: Dictionary):
 	# Emit state change so UI updates
 	game_state_changed.emit()
 
-## Sync minion enemies to all clients (called after start_boss_encounter loads minions)
+## Sync minion enemies to all clients (called after initialize_combat_encounter loads minions)
 func sync_minion_enemies():
 	# Server syncs the minion enemies to all clients
 	if not multiplayer.is_server(): return
@@ -1660,179 +1550,24 @@ func _legacy_apply_card_effects(caster: Character, card: Card, target: Character
 
 ## Reveal enemies' next turn intents (Hunter's Instinct)
 func _reveal_boss_intent():
-	# Calculate full intents for ALL enemies for their next turn
-	var next_turn_intents: Dictionary = {}  # enemy_index -> EnemyIntent
-	var next_turn_hands: Dictionary = {}  # enemy_index -> Array[Card]
-	var next_turn_targets: Dictionary = {}  # enemy_index -> Array of {target_index, is_special}
+	# Delegate to EnemyAI module
+	enemy_ai.players = players
+	enemy_ai.enemies = enemies
+	enemy_ai.ccw_target_index = ccw_target_index
 
-	for i in range(enemies.size()):
-		var enemy = enemies[i]
-		if not enemy.is_alive():
-			continue
-
-		# Simulate what cards enemy would draw next turn
-		var simulated_hand = _simulate_next_turn_hand(enemy)
-
-		# Store the simulated hand for next round
-		next_turn_hands[i] = simulated_hand.duplicate()
-
-		# Calculate intent with that simulated hand
-		var intent = _calculate_intent_with_hand(enemy, i, simulated_hand)
-		next_turn_intents[i] = intent
-
-		# Extract just the target assignments (card order is implicit from hand)
-		var targets_for_enemy: Array = []
-		for card_info in intent.cards_to_play:
-			targets_for_enemy.append({
-				"target_index": card_info.target_index,
-				"is_special": card_info.get("is_special", false)
-			})
-		next_turn_targets[i] = targets_for_enemy
-
-		print("[INTENT PREVIEW] ", enemy.character_name, " next turn: ", intent.damage_amount, " dmg (", intent.cards_to_play.size(), " cards)")
+	var result = enemy_ai.reveal_next_turn_intents()
 
 	boss_intent_revealed_for_round = round_number + 1
 
 	# Store HANDS and TARGETS for next round (NOT full intents - damage will be recalculated)
-	locked_enemy_hands = next_turn_hands.duplicate()
-	locked_card_targets = next_turn_targets.duplicate()
+	locked_enemy_hands = result.hands.duplicate()
+	locked_card_targets = result.targets.duplicate()
 
-	# Emit signal with full intent data for modal display (preview damage at current moment)
-	boss_intent_revealed.emit(next_turn_intents)
-
-## Simulate what cards an enemy would draw next turn (for Hunter's Instinct preview)
-func _simulate_next_turn_hand(enemy: Character) -> Array[Card]:
-	var hand: Array[Card] = []
-
-	# Create temporary deck combining deck + discard (current hand will be discarded)
-	var temp_deck: Array[Card] = []
-	temp_deck.append_array(enemy.deck.duplicate())
-
-	# Current hand cards will go to discard, then shuffle back
-	var temp_discard: Array[Card] = []
-	temp_discard.append_array(enemy.discard_pile.duplicate())
-	temp_discard.append_array(enemy.hand.duplicate())
-
-	# If deck is too small, shuffle discard into deck
-	if temp_deck.size() < 5:
-		temp_discard.shuffle()
-		temp_deck.append_array(temp_discard)
-
-	# Draw up to 5 cards
-	for j in range(min(5, temp_deck.size())):
-		hand.append(temp_deck[j])
-
-	return hand
-
-## Calculate intent using a specific hand (for Hunter's Instinct preview)
-func _calculate_intent_with_hand(enemy: Character, enemy_idx: int, hand: Array[Card]) -> EnemyIntent:
-	var intent = EnemyIntent.new()
-	intent.enemy_index = enemy_idx
-
-	# Pre-select which cards enemy will play (respects cards_per_turn limit)
-	var simulated_stamina = enemy.max_stamina
-	var cards_played = 0
-	var max_cards = enemy.main_deck_cards_per_turn  # -1 = unlimited
-
-	for card in hand:
-		# Check card limit (stop if we've hit the max)
-		if max_cards > 0 and cards_played >= max_cards:
-			break
-
-		if card.stamina_cost > simulated_stamina:
-			continue
-
-		simulated_stamina -= card.stamina_cost
-		cards_played += 1
-
-		# Determine target for this card
-		var target_index = _determine_enemy_card_target(enemy, card)
-
-		# Store the card and its target
-		intent.cards_to_play.append({
-			"card": card,
-			"target_index": target_index,
-			"is_special": false
-		})
-
-		# Aggregate effects for intent display
-		_aggregate_card_effects(intent, card, enemy, target_index)
-
-	# Handle special deck (based on special_chance)
-	if enemy.special_deck.size() > 0 and rng.randf() < enemy.special_chance:
-		var special_card = enemy.special_deck[rng.randi() % enemy.special_deck.size()].duplicate()
-		var special_target_index = _determine_enemy_card_target(enemy, special_card)
-
-		intent.cards_to_play.append({
-			"card": special_card,
-			"target_index": special_target_index,
-			"is_special": true
-		})
-
-		_aggregate_card_effects(intent, special_card, enemy, special_target_index)
-
-	# Calculate intent type based on aggregated effects
-	intent.calculate_intent_type()
-
-	return intent
-
-## Build intent from locked hands/targets, recalculating damage with current stats
-func _build_intent_from_locked(enemy: Character, enemy_idx: int, hand: Array[Card], locked_targets: Array) -> EnemyIntent:
-	var intent = EnemyIntent.new()
-	intent.enemy_index = enemy_idx
-
-	var simulated_stamina = enemy.max_stamina
-	var card_idx = 0
-	var cards_played = 0
-	var max_cards = enemy.main_deck_cards_per_turn  # -1 = unlimited
-
-	for card in hand:
-		# Check card limit (stop if we've hit the max)
-		if max_cards > 0 and cards_played >= max_cards:
-			break
-
-		if card.stamina_cost > simulated_stamina:
-			card_idx += 1
-			continue
-
-		simulated_stamina -= card.stamina_cost
-		cards_played += 1
-
-		# Get locked target or determine dynamically (fallback)
-		var target_index = -1
-		var is_special = false
-
-		# Find the matching locked target entry for this card
-		# Non-special cards come first, special cards are at the end
-		if card_idx < locked_targets.size() and not locked_targets[card_idx].get("is_special", false):
-			target_index = locked_targets[card_idx].target_index
-			is_special = false
-		else:
-			target_index = _determine_enemy_card_target(enemy, card)
-
-		intent.cards_to_play.append({
-			"card": card,
-			"target_index": target_index,
-			"is_special": is_special
-		})
-
-		# Aggregate effects - RECALCULATES damage with CURRENT enemy stats
-		_aggregate_card_effects(intent, card, enemy, target_index)
-		card_idx += 1
-
-	# Handle special cards from locked_targets (is_special = true entries at end)
-	for target_info in locked_targets:
-		if target_info.get("is_special", false) and enemy.special_deck.size() > 0:
-			var special_card = enemy.special_deck[rng.randi() % enemy.special_deck.size()].duplicate()
-			intent.cards_to_play.append({
-				"card": special_card,
-				"target_index": target_info.target_index,
-				"is_special": true
-			})
-			_aggregate_card_effects(intent, special_card, enemy, target_info.target_index)
-
-	intent.calculate_intent_type()
-	return intent
+	# Log for debugging
+	for i in result.intents:
+		var intent = result.intents[i]
+		if i < enemies.size():
+			print("[INTENT PREVIEW] ", enemies[i].character_name, " next turn: ", intent.damage_amount, " dmg (", intent.cards_to_play.size(), " cards)")
 
 ## ENEMY INTENT SYSTEM ##
 ## Calculate what enemies will do this turn and broadcast to all clients
@@ -1840,49 +1575,18 @@ func _build_intent_from_locked(enemy: Character, enemy_idx: int, hand: Array[Car
 func calculate_enemy_intents():
 	if not multiplayer.is_server(): return
 
+	# Update EnemyAI references
+	enemy_ai.players = players
+	enemy_ai.enemies = enemies
+	enemy_ai.ccw_target_index = ccw_target_index
+
 	# Check if we have locked targets from Hunter's Instinct
-	# Note: locked_enemy_hands was already used in start_round() to set enemy hands
 	if locked_card_targets.size() > 0:
-		enemy_intents.clear()
-
-		for enemy_idx in locked_card_targets:
-			if enemy_idx >= enemies.size():
-				continue
-			var enemy = enemies[enemy_idx]
-			if not enemy.is_alive():
-				continue
-
-			# Enemy hand was already set from locked_enemy_hands in start_round()
-			var hand: Array[Card] = []
-			for card in enemy.hand:
-				hand.append(card)
-			var targets = locked_card_targets[enemy_idx]
-
-			# Build intent with locked cards/targets but CURRENT damage calculation
-			var intent = _build_intent_from_locked(enemy, enemy_idx, hand, targets)
-			enemy_intents[enemy_idx] = intent
-
-		locked_card_targets.clear()  # Clear after use
-
+		enemy_intents = enemy_ai.calculate_intents_from_locked(locked_enemy_hands, locked_card_targets)
+		locked_card_targets.clear()
 		print("[INTENT] Using locked cards/targets with recalculated damage")
-
-		# Broadcast to clients
-		var serialized_intents: Dictionary = {}
-		for idx in enemy_intents:
-			serialized_intents[idx] = enemy_intents[idx].serialize()
-		rpc("client_receive_enemy_intents", serialized_intents)
-		enemy_intents_calculated.emit(enemy_intents)
-		return
-
-	enemy_intents.clear()
-
-	for i in range(enemies.size()):
-		var enemy = enemies[i]
-		if not enemy.is_alive():
-			continue
-
-		var intent = _calculate_single_enemy_intent(enemy, i)
-		enemy_intents[i] = intent
+	else:
+		enemy_intents = enemy_ai.calculate_all_intents()
 
 	# Serialize and broadcast to all clients
 	var serialized_intents: Dictionary = {}
@@ -1890,8 +1594,6 @@ func calculate_enemy_intents():
 		serialized_intents[idx] = enemy_intents[idx].serialize()
 
 	rpc("client_receive_enemy_intents", serialized_intents)
-
-	# Emit signal for local UI update
 	enemy_intents_calculated.emit(enemy_intents)
 
 @rpc("any_peer", "call_local", "reliable")
@@ -1911,194 +1613,6 @@ func client_receive_enemy_intents(serialized: Dictionary):
 func client_enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_idx: int):
 	# Client receives enemy damage event - emit signal for floating text display
 	enemy_damaged_player.emit(enemy_name, card_name, damage, target_idx)
-
-func _calculate_single_enemy_intent(enemy: Character, enemy_idx: int) -> EnemyIntent:
-	var intent = EnemyIntent.new()
-	intent.enemy_index = enemy_idx
-
-	# Use actual hand (from pre-draw at round start)
-	var hand = _simulate_enemy_hand(enemy)
-
-
-	# Pre-select which cards enemy will play (respects cards_per_turn limit)
-	var simulated_stamina = enemy.max_stamina
-	var cards_played = 0
-	var max_cards = enemy.main_deck_cards_per_turn  # -1 = unlimited
-
-	for card in hand:
-		# Check card limit (stop if we've hit the max)
-		if max_cards > 0 and cards_played >= max_cards:
-				break
-
-		if card.stamina_cost > simulated_stamina:
-			continue
-
-		simulated_stamina -= card.stamina_cost
-		cards_played += 1
-
-		# Determine target for this card NOW (pre-selection)
-		var target_index = _determine_enemy_card_target(enemy, card)
-
-		# Store the card and its target for later execution
-		intent.cards_to_play.append({
-			"card": card,
-			"target_index": target_index,
-			"is_special": false
-		})
-
-
-		# Aggregate effects for intent display
-		_aggregate_card_effects(intent, card, enemy, target_index)
-
-	# Handle special deck (based on special_chance)
-	if enemy.special_deck.size() > 0 and rng.randf() < enemy.special_chance:
-		var special_card = enemy.special_deck[rng.randi() % enemy.special_deck.size()].duplicate()
-		var special_target_index = _determine_enemy_card_target(enemy, special_card)
-
-		intent.cards_to_play.append({
-			"card": special_card,
-			"target_index": special_target_index,
-			"is_special": true
-		})
-
-		_aggregate_card_effects(intent, special_card, enemy, special_target_index)
-
-	# Calculate intent type based on aggregated effects
-	intent.calculate_intent_type()
-
-
-	return intent
-
-## Determine target index for enemy card (pre-selection at round start)
-## Returns: -2 = self, -1 = AOE, 0+ = player index
-func _determine_enemy_card_target(enemy: Character, card: Card) -> int:
-	match card.target_type:
-		Card.TargetType.SELF:
-			return -2  # Special marker for self-target
-		Card.TargetType.ALL_ENEMIES:
-			return -1  # Special marker for AOE (handled by play_card)
-		Card.TargetType.CCW_PLAYER:
-			var alive = players.filter(func(p): return p.is_alive())
-			if ccw_target_index >= 0 and ccw_target_index < alive.size():
-				return players.find(alive[ccw_target_index])
-			return 0
-		Card.TargetType.HIGHEST_HP:
-			var alive = players.filter(func(p): return p.is_alive())
-			if alive.size() > 0:
-				alive.sort_custom(func(a, b): return a.current_health > b.current_health)
-				return players.find(alive[0])
-			return 0
-		Card.TargetType.LOWEST_HP:
-			var alive = players.filter(func(p): return p.is_alive())
-			if alive.size() > 0:
-				alive.sort_custom(func(a, b): return a.current_health < b.current_health)
-				return players.find(alive[0])
-			return 0
-		Card.TargetType.SINGLE_ENEMY, Card.TargetType.RANDOM_ENEMY:
-			# Pick random alive player
-			var alive = players.filter(func(p): return p.is_alive())
-			if alive.size() > 0:
-				var target = alive[rng.randi() % alive.size()]
-				return players.find(target)
-			return 0
-		_:
-			return 0  # Default to first player
-
-func _simulate_enemy_hand(enemy: Character) -> Array[Card]:
-	# Use actual hand if enemy already has cards (from pre-draw at round start)
-	if enemy.hand.size() > 0:
-		return enemy.hand.duplicate()
-
-	# Fallback: simulate drawing if no hand (shouldn't happen with pre-draw)
-	var hand: Array[Card] = []
-
-	# Create temporary copy of deck + discard
-	var temp_deck = enemy.deck.duplicate()
-
-	# If deck is too small, shuffle in discard
-	if temp_deck.size() < 5:
-		var temp_discard = enemy.discard_pile.duplicate()
-		temp_discard.shuffle()
-		temp_deck.append_array(temp_discard)
-
-	# Draw up to 5 cards
-	for j in range(min(5, temp_deck.size())):
-		hand.append(temp_deck[j])
-
-	return hand
-
-func _aggregate_card_effects(intent: EnemyIntent, card: Card, enemy: Character, target_index: int = -1):
-	# Track targets based on pre-selected target_index
-	if target_index == -2:
-		# Self-target - don't add to player targets
-		pass
-	elif target_index == -1:
-		# AOE - targets all players
-		intent.is_aoe = true
-		for i in range(players.size()):
-			if players[i].is_alive() and i not in intent.targets:
-				intent.targets.append(i)
-	elif target_index >= 0:
-		# Specific player target
-		if target_index not in intent.targets:
-			intent.targets.append(target_index)
-
-	# Calculate damage (including strength bonus)
-	if card.damage > 0:
-		var total_damage = card.damage
-		if card.card_type == Card.CardType.ATTACK:
-			total_damage += enemy.strength
-			total_damage += enemy.damage_plus
-			total_damage -= enemy.weakness
-			total_damage -= enemy.hinder
-			total_damage = max(0, total_damage)
-
-		# Apply multi-hit
-		total_damage *= card.multi_hit
-		intent.damage_amount += total_damage
-
-		# Track per-target damage for accurate UI display
-		if target_index == -2:
-			# Self-target - no damage to players
-			pass
-		elif target_index == -1:
-			# AOE - add damage to all alive players
-			for i in range(players.size()):
-				if players[i].is_alive():
-					if not intent.damage_per_target.has(i):
-						intent.damage_per_target[i] = 0
-					intent.damage_per_target[i] += total_damage
-		elif target_index >= 0:
-			# Single target - add damage to that player
-			if not intent.damage_per_target.has(target_index):
-				intent.damage_per_target[target_index] = 0
-			intent.damage_per_target[target_index] += total_damage
-
-	# Shield
-	if card.shield_amount > 0:
-		intent.shield_amount += card.shield_amount
-
-	# Debuffs applied to targets (poison, burn, weakness, vulnerable, fatigued)
-	if card.apply_poison > 0:
-		intent.debuffs["poison"] = intent.debuffs.get("poison", 0) + card.apply_poison
-	if card.apply_burn > 0:
-		intent.debuffs["burn"] = intent.debuffs.get("burn", 0) + card.apply_burn
-	if card.apply_weakness > 0:
-		intent.debuffs["weakness"] = intent.debuffs.get("weakness", 0) + card.apply_weakness
-	if card.apply_vulnerable > 0:
-		intent.debuffs["vulnerable"] = intent.debuffs.get("vulnerable", 0) + card.apply_vulnerable
-	if card.apply_fatigued > 0:
-		intent.debuffs["fatigued"] = intent.debuffs.get("fatigued", 0) + card.apply_fatigued
-	if card.apply_hinder > 0:
-		intent.debuffs["hinder"] = intent.debuffs.get("hinder", 0) + card.apply_hinder
-	if card.apply_scared > 0:
-		intent.debuffs["scared"] = intent.debuffs.get("scared", 0) + card.apply_scared
-
-	# Buffs (self-applied by enemy)
-	if card.apply_strength > 0:
-		intent.buffs["strength"] = intent.buffs.get("strength", 0) + card.apply_strength
-	if card.apply_armor > 0:
-		intent.buffs["armor"] = intent.buffs.get("armor", 0) + card.apply_armor
 
 ## END ENEMY INTENT SYSTEM ##
 
