@@ -68,6 +68,14 @@ var scared: int:
 	get: return get_effect_amount("scared")
 	set(value): set_effect_amount("scared", value)
 
+# Kevin's Alchemy status effects
+var wet: int:
+	get: return get_effect_amount("wet")
+	set(value): set_effect_amount("wet", value)
+var ring_of_fire: int:
+	get: return get_effect_amount("ring_of_fire")
+	set(value): set_effect_amount("ring_of_fire", value)
+
 # Passive ability system
 var passive_ability_id: String = ""
 var passive_ability_used_this_turn: bool = false
@@ -86,6 +94,10 @@ var main_deck_cards_per_turn: int = -1  # -1 = unlimited (greedy), positive = li
 # Card retention system (e.g., Dig a Hole)
 # Maps card_name -> expires_after_round (the round number when retention expires)
 var retained_cards: Dictionary = {}
+
+# Satchel system (Kevin's Alchemy)
+# Static pool of Alc cards - no shuffling/cycling, cards return here after use
+var satchel: Array[Card] = []
 
 # Character role
 enum CharacterRole { PLAYER, MINION, BOSS }
@@ -133,12 +145,32 @@ func draw_cards(amount: int):
 		var drawn = draw_card()
 
 func discard_card(card: Card):
-	hand.erase(card)
-	discard_pile.append(card)
+	# Find card by name since it might be a different instance
+	var card_to_remove: Card = null
+	for c in hand:
+		if c.card_name == card.card_name:
+			card_to_remove = c
+			break
+
+	if card_to_remove:
+		hand.erase(card_to_remove)
+		discard_pile.append(card_to_remove)
+	else:
+		push_warning("[DISCARD] Card not found in hand: " + card.card_name)
 
 func exhaust_card(card: Card):
-	hand.erase(card)
-	exhaust_pile.append(card)
+	# Find card by name since it might be a different instance
+	var card_to_remove: Card = null
+	for c in hand:
+		if c.card_name == card.card_name:
+			card_to_remove = c
+			break
+
+	if card_to_remove:
+		hand.erase(card_to_remove)
+		exhaust_pile.append(card_to_remove)
+	else:
+		push_warning("[EXHAUST] Card not found in hand: " + card.card_name)
 
 func play_card(card: Card):
 	if card.can_afford(current_stamina):
@@ -154,7 +186,12 @@ func play_card(card: Card):
 
 		if card_to_remove:
 			hand.erase(card_to_remove)
-			discard_pile.append(card_to_remove)
+			# Alc cards return to satchel instead of discard pile
+			if card_to_remove.is_alc:
+				satchel.append(card_to_remove)
+				print("[CHARACTER] ", character_name, " returned Alc '", card_to_remove.card_name, "' to satchel")
+			else:
+				discard_pile.append(card_to_remove)
 		else:
 			# Card not in hand - might already have been removed or is invalid
 			print("[CHARACTER] Warning: Tried to play card '", card.card_name, "' but it's not in hand")
@@ -241,13 +278,20 @@ func end_turn(current_round: int = 0):
 	for card_name in expired_retentions:
 		retained_cards.erase(card_name)
 
-	# Discard hand, but skip retained cards
+	# Discard hand, but skip retained cards and return Alcs to satchel
 	var cards_to_discard: Array[Card] = []
+	var alcs_to_return: Array[Card] = []
 	for card in hand:
 		if retained_cards.has(card.card_name):
 			print("[RETAIN] ", character_name, " keeps ", card.card_name, " in hand (retained until round ", retained_cards[card.card_name], ")")
+		elif card.is_alc:
+			alcs_to_return.append(card)
 		else:
 			cards_to_discard.append(card)
+
+	# Return Alc cards to satchel
+	for card in alcs_to_return:
+		return_to_satchel(card)
 
 	for card in cards_to_discard:
 		discard_card(card)
@@ -335,6 +379,25 @@ func process_turn_end_effects():
 	for effect_name in effects_to_remove:
 		status_effects.erase(effect_name)
 
+## Decay END_OF_ENEMY_TURN effects (called after all enemies have attacked)
+func decay_end_of_enemy_turn_effects():
+	var effects_to_remove: Array[String] = []
+
+	for effect_name in status_effects.keys():
+		var amount = status_effects.get(effect_name, 0)
+		if amount <= 0:
+			continue
+
+		var effect_data = StatusEffectRegistry.get_effect_data(effect_name)
+		var decay_type = effect_data.get("decay", StatusEffectRegistry.DecayType.NONE)
+
+		if decay_type == StatusEffectRegistry.DecayType.END_OF_ENEMY_TURN:
+			effects_to_remove.append(effect_name)
+			print("[STATUS] ", character_name, " ", effect_data.get("display_name", effect_name), " expired after enemy turn")
+
+	for effect_name in effects_to_remove:
+		status_effects.erase(effect_name)
+
 func is_alive() -> bool:
 	return current_health > 0
 
@@ -353,6 +416,14 @@ func set_effect_amount(effect_name: String, value: int):
 		status_effects.erase(effect_name)
 	else:
 		status_effects[effect_name] = value
+
+## Get total debuff stacks on this character (for bonus damage calculations)
+func get_total_debuff_stacks() -> int:
+	var total = 0
+	for effect_name in status_effects.keys():
+		if StatusEffectRegistry.is_debuff(effect_name):
+			total += status_effects[effect_name]
+	return total
 
 ## Apply (add) an amount of status effect, handling immediate grants
 func apply_effect(effect_name: String, amount: int):
@@ -411,6 +482,40 @@ func clear_all_retentions():
 	retained_cards.clear()
 
 
+# ============================================
+# SATCHEL METHODS (Kevin's Alchemy)
+# ============================================
+
+## Add a card to the satchel
+func add_to_satchel(card: Card):
+	satchel.append(card)
+	print("[SATCHEL] ", character_name, " added ", card.card_name, " to satchel")
+
+## Remove a card from the satchel (when brewing)
+func remove_from_satchel(card: Card):
+	# Find by name since it might be a different instance
+	for i in range(satchel.size()):
+		if satchel[i].card_name == card.card_name:
+			satchel.remove_at(i)
+			print("[SATCHEL] ", character_name, " removed ", card.card_name, " from satchel")
+			return
+	push_warning("[SATCHEL] Card not found in satchel: " + card.card_name)
+
+## Return an Alc card to the satchel (after being played or at end of turn)
+func return_to_satchel(card: Card):
+	hand.erase(card)
+	satchel.append(card)
+	print("[SATCHEL] ", character_name, " returned ", card.card_name, " to satchel")
+
+## Get all Alc cards currently in the satchel
+func get_satchel_cards() -> Array[Card]:
+	return satchel
+
+## Check if satchel has any cards
+func has_satchel_cards() -> bool:
+	return satchel.size() > 0
+
+
 func reset_debuffs():
 	# Reset all debuffs between bosses (keep buffs like strength/armor)
 	poison = 0
@@ -420,6 +525,7 @@ func reset_debuffs():
 	exhausted = 0
 	decay = 0
 	hinder = 0
+	wet = 0
 
 func add_card_to_deck(card: Card):
 	deck.append(card)
@@ -447,6 +553,12 @@ func duplicate_character() -> Character:
 	for card in special_deck:
 		special_copy.append(card.duplicate())
 	new_char.special_deck = special_copy
+
+	# Deep copy satchel (Kevin's Alchemy)
+	var satchel_copy: Array[Card] = []
+	for card in satchel:
+		satchel_copy.append(card.duplicate())
+	new_char.satchel = satchel_copy
 
 	# Deep copy the starting deck
 	var deck_copy: Array[Card] = []
@@ -485,8 +597,15 @@ func get_state_dict() -> Dictionary:
 		"decay": decay,
 		"passive_ability_id": passive_ability_id,
 		"passive_ability_used_this_turn": passive_ability_used_this_turn,
-		"retained_cards": retained_cards.duplicate()
+		"retained_cards": retained_cards.duplicate(),
+		"satchel": _serialize_satchel()
 	}
+
+func _serialize_satchel() -> Array[Dictionary]:
+	var satchel_data: Array[Dictionary] = []
+	for card in satchel:
+		satchel_data.append(card.serialize())
+	return satchel_data
 
 func apply_state_dict(state: Dictionary):
 	hero_id = state.get("hero_id", "")  # Load hero template ID
@@ -520,6 +639,12 @@ func apply_state_dict(state: Dictionary):
 	passive_ability_id = state.get("passive_ability_id", "")
 	passive_ability_used_this_turn = state.get("passive_ability_used_this_turn", false)
 	retained_cards = state.get("retained_cards", {}).duplicate()
+	_deserialize_satchel(state.get("satchel", []))
+
+func _deserialize_satchel(satchel_data: Array):
+	satchel.clear()
+	for card_dict in satchel_data:
+		satchel.append(Card.deserialize(card_dict))
 
 func get_hand_dict() -> Array[Dictionary]:
 	var hand_data: Array[Dictionary] = []

@@ -29,6 +29,13 @@ const TARGET_TYPE_MAP: Dictionary = {
 	"LOWEST_HP": Card.TargetType.LOWEST_HP
 }
 
+const ELEMENT_TYPE_MAP: Dictionary = {
+	"NONE": Card.ElementType.NONE,
+	"FIRE": Card.ElementType.FIRE,
+	"WATER": Card.ElementType.WATER,
+	"EARTH": Card.ElementType.EARTH
+}
+
 ## Load all cards from a CSV file
 ## Returns: Dictionary[card_id: String, Card]
 static func load_cards_from_csv(csv_path: String) -> Dictionary:
@@ -103,6 +110,7 @@ static func _parse_card_row(row: Array, columns: Dictionary, row_num: int) -> Ca
 	# Base stats
 	card.damage = _get_int(row, columns, "damage")
 	card.heal_amount = _get_int(row, columns, "heal_amount")
+	card.heal_per_wet_removed = _get_int(row, columns, "heal_per_wet_removed")
 	card.shield_amount = _get_int(row, columns, "shield_amount")
 	card.draw_cards = _get_int(row, columns, "draw_cards")
 	card.is_upgraded = _get_bool(row, columns, "is_upgraded")
@@ -143,6 +151,7 @@ static func _parse_card_row(row: Array, columns: Dictionary, row_num: int) -> Ca
 	card.reveals_boss_intent = _get_bool(row, columns, "reveals_boss_intent")
 	card.caster_discards_random = _get_int(row, columns, "caster_discards_random")
 	card.bonus_damage_if_wounded = _get_int(row, columns, "bonus_damage_if_wounded")
+	card.bonus_damage_per_debuff = _get_int(row, columns, "bonus_damage_per_debuff")
 	card.stamina_gain = _get_int(row, columns, "stamina_gain")
 	card.scry_amount = _get_int(row, columns, "scry_amount")
 
@@ -159,6 +168,48 @@ static func _parse_card_row(row: Array, columns: Dictionary, row_num: int) -> Ca
 	# V2 system
 	card.has_v2 = _get_bool(row, columns, "has_v2")
 	card.v2_card_id = _get_string(row, columns, "v2_card_id")
+
+	# Element/Alchemy system (Kevin)
+	var element_str = _get_string(row, columns, "element").to_upper()
+	if ELEMENT_TYPE_MAP.has(element_str):
+		card.element = ELEMENT_TYPE_MAP[element_str]
+	else:
+		card.element = Card.ElementType.NONE
+
+	# Ingredient list (pipe-separated list of element names: "fire|water")
+	var ingredient_str = _get_string(row, columns, "ingredient_list")
+	if ingredient_str != "":
+		var ing_arr: Array[String] = []
+		for elem in ingredient_str.split("|"):
+			var trimmed = elem.strip_edges().to_lower()
+			if trimmed != "":
+				ing_arr.append(trimmed)
+		card.ingredient_list = ing_arr
+
+	card.is_alc = _get_bool(row, columns, "is_alc")
+
+	# Wet mechanic (Kevin)
+	card.apply_wet = _get_int(row, columns, "apply_wet")
+	card.bonus_damage_per_wet = _get_int(row, columns, "bonus_damage_per_wet")
+	card.remove_all_wet = _get_bool(row, columns, "remove_all_wet")
+
+	# Ring Of Fire (Kevin)
+	card.apply_ring_of_fire = _get_int(row, columns, "apply_ring_of_fire")
+
+	# Spell discard mechanics (Kevin)
+	card.discard_spell_requirement = _get_int(row, columns, "discard_spell_requirement")
+	card.discard_all_spells = _get_bool(row, columns, "discard_all_spells")
+	card.damage_per_spell_discarded = _get_int(row, columns, "damage_per_spell_discarded")
+
+	# Spell search/tutor (Kevin)
+	card.choose_spell_from_deck = _get_int(row, columns, "choose_spell_from_deck")
+
+	# All players effects (Kevin)
+	card.all_players_shield = _get_int(row, columns, "all_players_shield")
+
+	# Target effects (Kevin)
+	card.target_stamina_gain = _get_int(row, columns, "target_stamina_gain")
+	card.remove_target_debuffs = _get_int(row, columns, "remove_target_debuffs")
 
 	return card
 
@@ -215,8 +266,14 @@ static func export_cards_to_csv(cards: Dictionary, csv_path: String) -> bool:
 		"piercing", "lifesteal", "multi_hit", "aoe_damage", "plays_immediately",
 		"is_delayed_damage", "delay_condition", "delayed_damage_amount",
 		"grants_card_retain", "swaps_enemy_target", "reveals_boss_intent",
-		"caster_discards_random", "bonus_damage_if_wounded", "stamina_gain", "scry_amount",
-		"generate_cards", "has_v2", "v2_card_id"
+		"caster_discards_random", "bonus_damage_if_wounded", "bonus_damage_per_debuff", "stamina_gain", "scry_amount",
+		"generate_cards", "has_v2", "v2_card_id",
+		"element", "ingredient_list", "is_alc",
+		"apply_wet", "bonus_damage_per_wet", "remove_all_wet",
+		"apply_ring_of_fire",
+		"discard_spell_requirement", "discard_all_spells", "damage_per_spell_discarded",
+		"choose_spell_from_deck", "all_players_shield",
+		"target_stamina_gain", "remove_target_debuffs"
 	]
 	file.store_csv_line(PackedStringArray(headers))
 
@@ -247,8 +304,18 @@ static func _card_to_csv_row(card_id: String, card: Card) -> Array:
 			target_type_str = key
 			break
 
+	# Get element as string
+	var element_str = ""
+	for key in ELEMENT_TYPE_MAP:
+		if ELEMENT_TYPE_MAP[key] == card.element:
+			element_str = key
+			break
+
 	# Convert generate_cards array to pipe-separated string
 	var generate_cards_str = "|".join(card.generate_cards) if card.generate_cards.size() > 0 else ""
+
+	# Convert ingredient_list array to pipe-separated string
+	var ingredient_list_str = "|".join(card.ingredient_list) if card.ingredient_list.size() > 0 else ""
 
 	return [
 		card_id,
@@ -289,9 +356,24 @@ static func _card_to_csv_row(card_id: String, card: Card) -> Array:
 		"true" if card.reveals_boss_intent else "false",
 		str(card.caster_discards_random),
 		str(card.bonus_damage_if_wounded),
+		str(card.bonus_damage_per_debuff),
 		str(card.stamina_gain),
 		str(card.scry_amount),
 		generate_cards_str,
 		"true" if card.has_v2 else "false",
-		card.v2_card_id
+		card.v2_card_id,
+		element_str,
+		ingredient_list_str,
+		"true" if card.is_alc else "false",
+		str(card.apply_wet),
+		str(card.bonus_damage_per_wet),
+		"true" if card.remove_all_wet else "false",
+		str(card.apply_ring_of_fire),
+		str(card.discard_spell_requirement),
+		"true" if card.discard_all_spells else "false",
+		str(card.damage_per_spell_discarded),
+		str(card.choose_spell_from_deck),
+		str(card.all_players_shield),
+		str(card.target_stamina_gain),
+		str(card.remove_target_debuffs)
 	]

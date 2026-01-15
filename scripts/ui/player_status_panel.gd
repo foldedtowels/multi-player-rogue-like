@@ -98,6 +98,8 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 		status_text += "Invig %d " % character.invigorated
 	if character.damage_plus > 0:
 		status_text += "Dmg+ %d " % character.damage_plus
+	if character.ring_of_fire > 0:
+		status_text += "RoF %d " % character.ring_of_fire
 	# Debuffs (red)
 	if character.poison > 0:
 		status_text += "Poison %d " % character.poison
@@ -208,6 +210,8 @@ func _update_your_panel(character: Character):
 		status_parts.append("Invigorated %d" % character.invigorated)
 	if character.damage_plus > 0:
 		status_parts.append("Damage+ %d" % character.damage_plus)
+	if character.ring_of_fire > 0:
+		status_parts.append("Ring of Fire %d" % character.ring_of_fire)
 	# Debuffs
 	if character.poison > 0:
 		status_parts.append("Poison %d" % character.poison)

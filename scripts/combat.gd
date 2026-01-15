@@ -37,6 +37,9 @@ var enemy_panel_cache: Dictionary = {}  # Cache enemy panels to avoid destroy/re
 # Passive Ability
 @onready var passive_button: Button = $BottomArea/YourCharacterPanel/HBoxContainer/PassiveButton
 @onready var passive_ability_modal = $PassiveAbilityModal
+@onready var satchel_brew_modal = $SatchelBrewModal
+@onready var spell_search_modal = $SpellSearchModal
+@onready var spell_discard_modal = $SpellDiscardModal
 
 # Card V2 Choice
 @onready var card_v2_choice_modal = $CardV2ChoiceModal
@@ -80,10 +83,12 @@ func _ready():
 	game_manager.game_state_changed.connect(_on_game_state_changed)
 	game_manager.combat_ended.connect(_on_combat_ended)
 	game_manager.enemy_damaged_player.connect(_on_enemy_damaged_player)
+	game_manager.ring_of_fire_reflected.connect(_on_ring_of_fire_reflected)
 	game_manager.card_v2_choice_needed.connect(_on_card_v2_choice_needed)
 	game_manager.card_retain_choice_needed.connect(_on_card_retain_choice_needed)
 	game_manager.boss_intent_revealed.connect(_on_boss_intent_revealed)
 	game_manager.enemy_intents_calculated.connect(_on_enemy_intents_calculated)
+	game_manager.spell_search_requested.connect(_on_spell_search_requested)
 
 	# Connect button signals
 	ready_button.pressed.connect(_on_ready_pressed)
@@ -329,6 +334,10 @@ func update_enemy_display(display: Panel, enemy: Character):
 		status_text += "Weak %d " % enemy.weakness
 	if enemy.fatigued > 0:
 		status_text += "Fatigued %d " % enemy.fatigued
+	if enemy.wet > 0:
+		status_text += "Wet %d " % enemy.wet
+	if enemy.hinder > 0:
+		status_text += "Hinder %d " % enemy.hinder
 	status_label.text = status_text
 
 	# Display enemy intent
@@ -493,6 +502,15 @@ func _on_enemy_damaged_player(enemy_name: String, card_name: String, damage: int
 		add_child(floating_text)
 		floating_text.show_damage(card_name, damage, panel_position)
 
+func _on_ring_of_fire_reflected(enemy_index: int, player_name: String, damage: int):
+	# Spawn floating damage text above the enemy that took reflection damage
+	if enemy_panel_cache.has(enemy_index):
+		var enemy_panel = enemy_panel_cache[enemy_index]
+		var panel_position = enemy_panel.global_position + Vector2(enemy_panel.size.x / 2, -20)
+		var floating_text = FloatingDamageText.new()
+		add_child(floating_text)
+		floating_text.show_damage("Ring of Fire", damage, panel_position)
+
 func _get_player_panel_position(player_index: int) -> Vector2:
 	# Determine which panel corresponds to this player index
 	var my_index = game_manager.local_player_index
@@ -577,8 +595,10 @@ func _on_card_dropped_on_player_panel(card_data_dict: Dictionary, panel: Panel):
 		print("[COMBAT] Not enough stamina to play card")
 		return
 
-	# Play the card
-	game_manager.play_card(my_character, card, target_character)
+	# Play the card (with discard check if needed)
+	var played = await _play_card_with_discard_check(my_character, card, target_character)
+	if not played:
+		return
 
 	# Clear preview since card was played
 	game_manager.rpc("clear_card_preview", my_index)
@@ -611,8 +631,10 @@ func _on_card_dropped_on_enemy_panel(card_data_dict: Dictionary, enemy: Characte
 		print("[COMBAT] Not enough stamina to play card")
 		return
 
-	# Play the card
-	game_manager.play_card(my_character, card, enemy)
+	# Play the card (with discard check if needed)
+	var played = await _play_card_with_discard_check(my_character, card, enemy)
+	if not played:
+		return
 
 	# Clear preview since card was played
 	game_manager.rpc("clear_card_preview", my_index)
@@ -628,11 +650,13 @@ func _on_card_dropped_on_character_face(card_data_dict: Dictionary):
 
 	var my_character = game_manager.players[my_index]
 
-	# Validate target type - only SELF cards allowed
-	var valid_target = (card.target_type == Card.TargetType.SELF)
+	# Validate target type - SELF or ally-targeting cards allowed on self
+	var valid_target = (card.target_type == Card.TargetType.SELF or
+						card.target_type == Card.TargetType.SINGLE_ALLY or
+						card.target_type == Card.TargetType.ALL_ALLIES)
 
 	if not valid_target:
-		print("[COMBAT] Invalid target for character face - only SELF cards allowed: ", card.card_name)
+		print("[COMBAT] Invalid target for character face - must be SELF or ally-targeting: ", card.card_name)
 		return
 
 	# Validate stamina
@@ -640,13 +664,37 @@ func _on_card_dropped_on_character_face(card_data_dict: Dictionary):
 		print("[COMBAT] Not enough stamina to play card")
 		return
 
-	# Play the card on self
-	game_manager.play_card(my_character, card, my_character)
+	# Play the card on self (with discard check if needed)
+	var played = await _play_card_with_discard_check(my_character, card, my_character)
+	if not played:
+		return
 
 	# Clear preview since card was played
 	game_manager.rpc("clear_card_preview", my_index)
 
 	mark_display_dirty()
+
+## Helper to play a card, showing discard modal if needed
+## Returns true if card was played, false if cancelled
+func _play_card_with_discard_check(caster: Character, card: Card, target: Character) -> bool:
+	# Check if card requires spell discard selection
+	if card.discard_spell_requirement > 0:
+		var has_enough = spell_discard_modal.show_discard(caster, card.discard_spell_requirement, card.card_name)
+		if not has_enough:
+			print("[COMBAT] Not enough spells to discard for: ", card.card_name)
+			return false
+
+		# Wait for player to select spells
+		var discarded = await spell_discard_modal.discard_completed
+
+		# Discard the selected spells
+		for spell in discarded:
+			caster.discard_card(spell)
+			print("[COMBAT] Pre-discarded spell: ", spell.card_name)
+
+	# Now play the card
+	game_manager.play_card(caster, card, target)
+	return true
 
 func _on_character_clicked(event: InputEvent, character: Character):
 	if event is InputEventMouseButton and event.pressed:
@@ -697,26 +745,113 @@ func _on_passive_pressed():
 		print("[COMBAT] Not enough stamina for passive ability")
 		return
 
-	# For ON_DEMAND CHOICE type abilities, show the modal
+	# For ON_DEMAND CHOICE type abilities, show the appropriate modal
 	if ability.trigger_type == PassiveAbility.TriggerType.ON_DEMAND and ability.effect_type == PassiveAbility.EffectType.CHOICE:
-		passive_ability_modal.show_choice(my_character, game_manager.enemies, game_manager.players)
-		var choice_result = await passive_ability_modal.choice_made
+		# Kevin's Alchemist's Brew - use satchel brew modal
+		if ability.ability_id == "kevin_alchemist_brew":
+			# Check if Kevin has any Alcs in satchel
+			if not my_character.has_satchel_cards():
+				print("[COMBAT] No Alc cards in satchel to brew")
+				return
 
-		# choice_result = [choice_index: int, target: Character]
-		var choice_index = choice_result[0]
-		var target = choice_result[1]
+			print("[DEBUG BREW] Showing satchel_brew_modal")
+			satchel_brew_modal.show_brew(my_character)
 
-		# Send to server for processing
-		if multiplayer.is_server():
-			game_manager.apply_passive_ability(my_character, ability, choice_index, target)
+			# Wait for brew completion or cancellation
+			print("[DEBUG BREW] Awaiting _wait_for_brew_result...")
+			var result = await _wait_for_brew_result()
+			print("[DEBUG BREW] Await returned, result: ", result)
+			if result == null:
+				# Cancelled
+				print("[DEBUG BREW] Result is null, cancelled")
+				return
+
+			var alc_card: Card = result[0]
+			var discarded_spells: Array[Card] = result[1]
+			print("[DEBUG BREW] Calling _process_alc_brew...")
+
+			# Process the brew locally and sync
+			_process_alc_brew(my_character, my_index, alc_card, discarded_spells)
+			mark_display_dirty()
+			print("[DEBUG BREW] Brew flow complete!")
 		else:
-			game_manager.rpc_id(1, "server_apply_passive_ability", my_index, ability.ability_id, choice_index, game_manager.get_character_network_id(target))
+			# Standard choice ability (Fabio)
+			passive_ability_modal.show_choice(my_character, game_manager.enemies, game_manager.players)
+			var choice_result = await passive_ability_modal.choice_made
 
-		mark_display_dirty()
+			# choice_result = [choice_index: int, target: Character]
+			var choice_index = choice_result[0]
+			var target = choice_result[1]
+
+			# Send to server for processing
+			if multiplayer.is_server():
+				game_manager.apply_passive_ability(my_character, ability, choice_index, target)
+			else:
+				game_manager.rpc_id(1, "server_apply_passive_ability", my_index, ability.ability_id, choice_index, game_manager.get_character_network_id(target))
+
+			mark_display_dirty()
 
 	# Other trigger types or effects would be handled differently
 	else:
 		print("[COMBAT] Passive ability trigger type not yet supported: ", ability.trigger_type)
+
+## Wait for brew result (either brew_completed or brew_cancelled)
+## Uses direct signal await instead of polling loop (more reliable in Godot 4)
+func _wait_for_brew_result():
+	print("[DEBUG BREW] _wait_for_brew_result - awaiting signal directly")
+
+	# Await the brew_completed signal directly - returns array of signal args
+	var args = await satchel_brew_modal.brew_completed
+
+	print("[DEBUG BREW] Signal received!")
+	print("[DEBUG BREW] args: ", args)
+
+	# args is an array: [alc_card, discarded_spells]
+	var alc_card = args[0]
+	var discarded_spells = args[1]
+
+	print("[DEBUG BREW] alc_card: ", alc_card.card_name if alc_card else "NULL")
+	print("[DEBUG BREW] discarded_spells count: ", discarded_spells.size())
+
+	return [alc_card, discarded_spells]
+
+## Process an Alc brew (discard spells, add Alc to hand, mark passive used)
+func _process_alc_brew(character: Character, player_index: int, alc_card: Card, discarded_spells: Array[Card]):
+	print("[DEBUG BREW] _process_alc_brew called!")
+	print("[DEBUG BREW] character: ", character.character_name)
+	print("[DEBUG BREW] alc_card: ", alc_card.card_name)
+	print("[DEBUG BREW] discarded_spells: ", discarded_spells.size())
+	print("[DEBUG BREW] hand size before: ", character.hand.size())
+	print("[DEBUG BREW] satchel size before: ", character.satchel.size())
+	print("[COMBAT] ", character.character_name, " brewing ", alc_card.card_name)
+
+	# Discard the spell cards used as ingredients
+	for spell in discarded_spells:
+		character.discard_card(spell)
+		print("[COMBAT] Discarded spell ingredient: ", spell.card_name)
+
+	# Remove the Alc from satchel and add to hand
+	character.remove_from_satchel(alc_card)
+	character.hand.append(alc_card)
+	print("[COMBAT] Added ", alc_card.card_name, " to hand from satchel")
+
+	# Mark passive as used
+	character.passive_ability_used_this_turn = true
+	print("[DEBUG BREW] hand size after: ", character.hand.size())
+	print("[DEBUG BREW] satchel size after: ", character.satchel.size())
+	print("[DEBUG BREW] _process_alc_brew completed!")
+
+	# Sync state to server if multiplayer
+	if not multiplayer.is_server():
+		# Send brew info to server
+		var spell_names: Array[String] = []
+		for spell in discarded_spells:
+			spell_names.append(spell.card_name)
+		game_manager.rpc_id(1, "server_process_alc_brew", player_index, alc_card.card_name, spell_names)
+	else:
+		# Host: broadcast state update
+		game_manager.broadcast_character_state(character)
+		game_manager.send_hand_to_owner(character)
 
 func _on_passive_awaiting_target(choice_index: int, valid_targets: Array[Character]):
 	# Update turn label to instruct player
@@ -847,6 +982,36 @@ func _show_card_retain_modal(player_index: int, cards: Array[Card], expires_afte
 	cancel_btn.pressed.connect(func():
 		modal_bg.queue_free()
 	)
+
+
+func _on_spell_search_requested(player: Character, count: int, card_name: String):
+	# Only show modal for the local player
+	var player_index = game_manager.players.find(player)
+	if player_index != game_manager.local_player_index:
+		return
+
+	# Show the spell search modal
+	var has_spells = spell_search_modal.show_search(player, count, card_name)
+	if not has_spells:
+		print("[SPELL SEARCH] No spells in deck to search")
+		return
+
+	# Wait for search result
+	var selected_spells: Array[Card] = await spell_search_modal.search_completed
+
+	# Send to server for multiplayer sync
+	if multiplayer.is_server():
+		# Local server can move cards directly
+		game_manager.move_spells_to_hand(player, selected_spells)
+	else:
+		# Send spell names to server
+		var spell_names: Array = []
+		for spell in selected_spells:
+			spell_names.append(spell.card_name)
+		game_manager.server_spell_search_completed.rpc_id(1, player_index, spell_names)
+
+	update_all_displays()
+
 
 func _on_boss_intent_revealed(next_intents: Dictionary):
 	# Show a modal with full intent details for next turn

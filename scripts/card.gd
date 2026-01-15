@@ -25,6 +25,13 @@ enum TargetType {
 	LOWEST_HP       # Targets the player with lowest current HP
 }
 
+enum ElementType {
+	NONE,
+	FIRE,
+	WATER,
+	EARTH
+}
+
 @export var card_name: String
 @export var description: String
 @export var card_type: CardType
@@ -32,6 +39,7 @@ enum TargetType {
 @export var stamina_cost: int
 @export var damage: int = 0
 @export var heal_amount: int = 0
+@export var heal_per_wet_removed: int = 0  # Bonus heal per Wet stack on enemies
 @export var shield_amount: int = 0
 @export var draw_cards: int = 0
 @export var is_upgraded: bool = false
@@ -89,9 +97,40 @@ var v2_card: Card = null  # Local reference (not serialized over network)
 
 # Conditional damage
 @export var bonus_damage_if_wounded: int = 0  # Extra damage if target below 50% HP
+@export var bonus_damage_per_debuff: int = 0  # Extra damage per debuff stack on target
 
 # Stamina effects
 @export var stamina_gain: int = 0  # Stamina granted to caster when played
+
+# Element/Alchemy system (Kevin)
+@export var element: ElementType = ElementType.NONE  # Element for Spell cards
+@export var ingredient_list: Array[String] = []  # Required elements to brew (for Alc cards)
+@export var is_alc: bool = false  # If true, this is an Alc card (goes to Satchel, returns after play)
+
+# Wet mechanic (Kevin)
+@export var apply_wet: int = 0  # Apply X stacks of Wet to target
+@export var bonus_damage_per_wet: int = 0  # Extra damage per Wet stack on target
+@export var remove_all_wet: bool = false  # Remove all Wet from target
+
+# Ring Of Fire (Kevin)
+@export var apply_ring_of_fire: int = 0  # Apply Ring of Fire buff (reflects damage)
+
+# Spell discard mechanics (Kevin)
+@export var discard_spell_requirement: int = 0  # Must discard X spells to play this card
+@export var discard_all_spells: bool = false  # Discard all spell cards in hand
+@export var damage_per_spell_discarded: int = 0  # Bonus damage per spell discarded
+
+# Spell search/tutor (Kevin)
+@export var choose_spell_from_deck: int = 0  # Search deck for X spells, add to hand
+
+# All players effects (Kevin)
+@export var all_players_shield: int = 0  # Grant X shield to all players
+
+# Target stamina grant (Kevin)
+@export var target_stamina_gain: int = 0  # Grant X stamina to target
+
+# Target debuff removal (Kevin)
+@export var remove_target_debuffs: int = 0  # Remove X debuffs from target
 
 # Runtime-only unique ID for queued card instances (invisible to player, not saved to disk)
 # Used to distinguish between identical cards in the queue (e.g., two Fire Strike cards)
@@ -173,6 +212,7 @@ func serialize() -> Dictionary:
 		"stamina_cost": stamina_cost,
 		"damage": damage,
 		"heal_amount": heal_amount,
+		"heal_per_wet_removed": heal_per_wet_removed,
 		"shield_amount": shield_amount,
 		"draw_cards": draw_cards,
 		"is_upgraded": is_upgraded,
@@ -208,7 +248,22 @@ func serialize() -> Dictionary:
 		"reveals_boss_intent": reveals_boss_intent,
 		"caster_discards_random": caster_discards_random,
 		"bonus_damage_if_wounded": bonus_damage_if_wounded,
-		"stamina_gain": stamina_gain
+		"bonus_damage_per_debuff": bonus_damage_per_debuff,
+		"stamina_gain": stamina_gain,
+		"element": element,
+		"ingredient_list": ingredient_list,
+		"is_alc": is_alc,
+		"apply_wet": apply_wet,
+		"bonus_damage_per_wet": bonus_damage_per_wet,
+		"remove_all_wet": remove_all_wet,
+		"apply_ring_of_fire": apply_ring_of_fire,
+		"discard_spell_requirement": discard_spell_requirement,
+		"discard_all_spells": discard_all_spells,
+		"damage_per_spell_discarded": damage_per_spell_discarded,
+		"choose_spell_from_deck": choose_spell_from_deck,
+		"all_players_shield": all_players_shield,
+		"target_stamina_gain": target_stamina_gain,
+		"remove_target_debuffs": remove_target_debuffs
 	}
 
 static func deserialize(data: Dictionary) -> Card:
@@ -220,6 +275,7 @@ static func deserialize(data: Dictionary) -> Card:
 	card.stamina_cost = data.get("stamina_cost", data.get("energy_cost", 0))  # Support old saves with energy_cost
 	card.damage = data.damage
 	card.heal_amount = data.heal_amount
+	card.heal_per_wet_removed = data.get("heal_per_wet_removed", 0)
 	card.shield_amount = data.shield_amount
 	card.draw_cards = data.draw_cards
 	card.is_upgraded = data.is_upgraded
@@ -255,5 +311,20 @@ static func deserialize(data: Dictionary) -> Card:
 	card.reveals_boss_intent = data.get("reveals_boss_intent", false)
 	card.caster_discards_random = data.get("caster_discards_random", 0)
 	card.bonus_damage_if_wounded = data.get("bonus_damage_if_wounded", 0)
+	card.bonus_damage_per_debuff = data.get("bonus_damage_per_debuff", 0)
 	card.stamina_gain = data.get("stamina_gain", 0)
+	card.element = data.get("element", ElementType.NONE) as ElementType
+	card.ingredient_list = data.get("ingredient_list", [])
+	card.is_alc = data.get("is_alc", false)
+	card.apply_wet = data.get("apply_wet", 0)
+	card.bonus_damage_per_wet = data.get("bonus_damage_per_wet", 0)
+	card.remove_all_wet = data.get("remove_all_wet", false)
+	card.apply_ring_of_fire = data.get("apply_ring_of_fire", 0)
+	card.discard_spell_requirement = data.get("discard_spell_requirement", 0)
+	card.discard_all_spells = data.get("discard_all_spells", false)
+	card.damage_per_spell_discarded = data.get("damage_per_spell_discarded", 0)
+	card.choose_spell_from_deck = data.get("choose_spell_from_deck", 0)
+	card.all_players_shield = data.get("all_players_shield", 0)
+	card.target_stamina_gain = data.get("target_stamina_gain", 0)
+	card.remove_target_debuffs = data.get("remove_target_debuffs", 0)
 	return card

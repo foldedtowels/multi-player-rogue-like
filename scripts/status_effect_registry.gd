@@ -5,7 +5,7 @@ extends Node
 ## Used by Character, GameManager, and UI to handle effects consistently.
 
 enum EffectType { BUFF, DEBUFF, DOT }  # DOT = Damage Over Time
-enum DecayType { NONE, PER_TURN, END_OF_TURN, AFTER_TURN_START }  # AFTER_TURN_START = removed after applying at next turn start
+enum DecayType { NONE, PER_TURN, END_OF_TURN, AFTER_TURN_START, END_OF_ENEMY_TURN }  # END_OF_ENEMY_TURN = removed after enemies finish attacking
 
 const EFFECTS: Dictionary = {
 	# ============================================
@@ -79,8 +79,7 @@ const EFFECTS: Dictionary = {
 		"display_name": "Hinder",
 		"short_name": "Hnd",
 		"type": EffectType.DEBUFF,
-		"decay": DecayType.PER_TURN,
-		"decay_amount": 1,
+		"decay": DecayType.END_OF_TURN,  # Completely removed at end of turn
 		"attack_modifier": -1,  # -1 damage per stack
 		"per_stack": true
 	},
@@ -136,6 +135,24 @@ const EFFECTS: Dictionary = {
 		"decay": DecayType.NONE,  # Permanent for entire fight - cannot be removed
 		"blocks_healing": false,  # No longer blocks, just reduces by 5 per stack
 		"permanent": true  # Flag to prevent removal by cards
+	},
+
+	# ============================================
+	# KEVIN'S ALCHEMY EFFECTS
+	# ============================================
+	"wet": {
+		"display_name": "Wet",
+		"short_name": "Wet",
+		"type": EffectType.DEBUFF,
+		"decay": DecayType.NONE,  # Doesn't decay naturally - must be removed by cards
+		"stackable": true  # Can accumulate stacks for bonus damage mechanics
+	},
+	"ring_of_fire": {
+		"display_name": "Ring of Fire",
+		"short_name": "RoF",
+		"type": EffectType.BUFF,
+		"decay": DecayType.END_OF_ENEMY_TURN,  # Persists through enemy attacks, then removed
+		"reflect_damage": 3  # Deal 3 damage back to attacker when hit
 	}
 }
 

@@ -16,13 +16,15 @@ var rng: RandomNumberGenerator
 
 # Signals forwarded through GameManager
 signal enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int)
+signal ring_of_fire_reflected(enemy_index: int, player_name: String, damage: int)  # For floating text on enemy
 signal card_retain_choice_needed(player_index: int, expires_after_round: int)
 signal boss_intent_reveal_requested()
 signal enemy_damage_stats_changed()  # Emitted when weakness/hinder/strength applied to enemy
+signal spell_search_requested(player: Character, count: int, card_name: String)  # For Reformulate-style cards
 
 # Status effect categories for registry-based application
-const DEBUFF_EFFECTS: Array[String] = ["poison", "burn", "vulnerable", "weakness", "fatigued", "hinder", "scared"]
-const BUFF_EFFECTS: Array[String] = ["strength", "armor", "rested", "invigorated", "damage_plus"]
+const DEBUFF_EFFECTS: Array[String] = ["poison", "burn", "vulnerable", "weakness", "fatigued", "hinder", "scared", "wet"]
+const BUFF_EFFECTS: Array[String] = ["strength", "armor", "rested", "invigorated", "damage_plus", "ring_of_fire"]
 const SELF_DEBUFF_EFFECTS: Array[String] = ["exhausted", "decay", "fatigued"]
 
 
@@ -46,6 +48,15 @@ static func calculate_damage(card: Card, caster: Character, target: Character = 
 			if hp_percent < 0.5:
 				total_damage += card.bonus_damage_if_wounded
 
+		# Bonus damage per debuff stack on target
+		if card.bonus_damage_per_debuff > 0 and target != null:
+			var debuff_stacks = target.get_total_debuff_stacks()
+			total_damage += card.bonus_damage_per_debuff * debuff_stacks
+
+		# Bonus damage per Wet stack on target (Kevin's Alchemy)
+		if card.bonus_damage_per_wet > 0 and target != null:
+			total_damage += card.bonus_damage_per_wet * target.wet
+
 		total_damage = max(0, total_damage)
 
 	return total_damage
@@ -60,6 +71,9 @@ static func calculate_total_damage(card: Card, caster: Character, target: Charac
 ## Returns array of affected characters for state broadcasting
 func apply_effects(caster: Character, card: Card, target: Character) -> Array[Character]:
 	print("[CARD] ", caster.character_name, " plays ", card.card_name, " (heal:", card.heal_amount, " decay:", card.apply_decay, ")")
+
+	# Handle spell discard mechanics BEFORE damage calculation (for Accumulation-style cards)
+	var spells_discarded_count = _process_spell_discards(caster, card)
 
 	# Resolve targets based on card target type
 	var targets = _resolve_targets(caster, card, target)
@@ -77,7 +91,7 @@ func apply_effects(caster: Character, card: Card, target: Character) -> Array[Ch
 		var is_enemy = _is_enemy(caster, t)
 
 		# Apply effect categories
-		_apply_damage(caster, card, t, is_enemy)
+		_apply_damage(caster, card, t, is_enemy, spells_discarded_count)
 		_apply_delayed_damage(caster, card, t, is_enemy)
 		_apply_healing(caster, card, t, is_ally)
 		_apply_shield(caster, card, t, is_ally, is_enemy)
@@ -89,10 +103,20 @@ func apply_effects(caster: Character, card: Card, target: Character) -> Array[Ch
 		_apply_card_retention(caster, card, t)
 		_apply_enemy_target_swap(caster, card, t, is_ally)
 		_apply_boss_intent_reveal(caster, card, t)
+		_apply_target_stamina_gain(card, t, is_ally)
+		_apply_remove_target_debuffs(card, t, is_ally)
+
+		# Remove all wet from enemies and track affected for sync
+		var wet_removed_enemies = _apply_remove_all_wet(card, t, is_enemy)
+		for wet_enemy in wet_removed_enemies:
+			if not affected.has(wet_enemy):
+				affected.append(wet_enemy)
 
 	# Apply caster-only effects (processed once, not per-target)
 	_apply_caster_discard(caster, card)
 	_apply_stamina_gain(caster, card)
+	_apply_all_players_shield(caster, card)
+	_apply_spell_search(caster, card)
 
 	return affected
 
@@ -209,8 +233,9 @@ func process_delayed_effects() -> Array[Character]:
 # EFFECT APPLICATION METHODS
 # =============================================================================
 
-func _apply_damage(caster: Character, card: Card, target: Character, is_enemy: bool) -> void:
-	if card.damage <= 0 or not is_enemy:
+func _apply_damage(caster: Character, card: Card, target: Character, is_enemy: bool, spells_discarded: int = 0) -> void:
+	# Allow cards with damage_per_spell_discarded even if base damage is 0 (Accumulation)
+	if (card.damage <= 0 and card.damage_per_spell_discarded <= 0) or not is_enemy:
 		return
 
 	# Protection redirect: enemy attacking protected player
@@ -220,7 +245,26 @@ func _apply_damage(caster: Character, card: Card, target: Character, is_enemy: b
 
 	for i in card.multi_hit:
 		var total_damage = CardEffectEngine.calculate_damage(card, caster, damage_target)
+
+		# Add bonus damage per spell discarded (Accumulation mechanic)
+		if card.damage_per_spell_discarded > 0 and spells_discarded > 0:
+			var spell_bonus = spells_discarded * card.damage_per_spell_discarded
+			total_damage += spell_bonus
+			print("[SPELL DISCARD] Bonus damage from ", spells_discarded, " spells: +", spell_bonus)
 		var damage_dealt = damage_target.take_damage(total_damage, card.piercing)
+
+		# Ring Of Fire reflection: if target has ring_of_fire buff, deal damage back to attacker
+		# Triggers on any attack hit, regardless of whether damage penetrated shield
+		if total_damage > 0 and damage_target.ring_of_fire > 0:
+			var effect_data = StatusEffectRegistry.get_effect_data("ring_of_fire")
+			var reflect_amount = effect_data.get("reflect_damage", 3)
+			caster.take_damage(reflect_amount, true)  # Piercing damage
+			print("[RING OF FIRE] ", damage_target.character_name, " reflected ", reflect_amount, " damage back to ", caster.character_name)
+
+			# Signal for floating text if enemy was hit by reflection
+			if enemies.has(caster):
+				var enemy_index = enemies.find(caster)
+				ring_of_fire_reflected.emit(enemy_index, damage_target.character_name, reflect_amount)
 
 		# Signal if enemy damaged a player
 		if enemies.has(caster) and players.has(damage_target):
@@ -252,10 +296,24 @@ func _apply_delayed_damage(caster: Character, card: Card, target: Character, is_
 
 
 func _apply_healing(caster: Character, card: Card, target: Character, is_ally: bool) -> void:
-	if card.heal_amount <= 0 or not is_ally:
+	if not is_ally:
 		return
 
 	var heal_value = card.heal_amount
+
+	# Bonus healing from Wet stacks on enemies (before they get removed)
+	if card.heal_per_wet_removed > 0:
+		var total_wet = 0
+		for enemy in enemies:
+			total_wet += enemy.wet
+		if total_wet > 0:
+			var wet_bonus = card.heal_per_wet_removed * total_wet
+			heal_value += wet_bonus
+			print("[HEAL] Bonus from ", total_wet, " Wet stacks: +", wet_bonus)
+
+	# No healing to apply
+	if heal_value <= 0:
+		return
 
 	# Decay reduces healing
 	if caster.decay > 0:
@@ -405,3 +463,107 @@ func _apply_caster_discard(caster: Character, card: Card) -> void:
 func _apply_stamina_gain(caster: Character, card: Card) -> void:
 	if card.stamina_gain > 0:
 		caster.current_stamina += card.stamina_gain
+
+
+func _apply_all_players_shield(caster: Character, card: Card) -> void:
+	if card.all_players_shield <= 0:
+		return
+
+	# Only apply if caster is a player
+	if not players.has(caster):
+		return
+
+	for player in players:
+		if player.is_alive():
+			player.gain_shield(card.all_players_shield)
+			print("[SHIELD] All players shield: ", player.character_name, " gains ", card.all_players_shield, " shield")
+
+
+func _apply_target_stamina_gain(card: Card, target: Character, is_ally: bool) -> void:
+	if card.target_stamina_gain <= 0 or not is_ally:
+		return
+
+	target.current_stamina += card.target_stamina_gain
+	print("[STAMINA] ", target.character_name, " gains ", card.target_stamina_gain, " stamina from card effect")
+
+
+func _apply_remove_target_debuffs(card: Card, target: Character, is_ally: bool) -> void:
+	if card.remove_target_debuffs <= 0 or not is_ally:
+		return
+
+	var removed_count = 0
+	var debuffs_to_check = ["poison", "burn", "vulnerable", "weakness", "fatigued", "hinder", "scared", "wet"]
+
+	for debuff in debuffs_to_check:
+		if removed_count >= card.remove_target_debuffs:
+			break
+
+		var current_value = target.get(debuff)
+		if current_value != null and current_value > 0:
+			# Check if this is a permanent debuff (like decay)
+			var effect_data = StatusEffectRegistry.get_effect_data(debuff)
+			if effect_data.get("permanent", false):
+				continue  # Skip permanent debuffs
+
+			target.set(debuff, 0)
+			removed_count += 1
+			print("[DEBUFF] Removed ", debuff, " from ", target.character_name)
+
+
+func _apply_remove_all_wet(card: Card, target: Character, is_enemy: bool) -> Array[Character]:
+	var wet_removed_from: Array[Character] = []
+	if not card.remove_all_wet:
+		return wet_removed_from
+
+	# Remove wet from ALL enemies (not just target)
+	for enemy in enemies:
+		if enemy.wet > 0:
+			print("[WET] Removed all ", enemy.wet, " Wet stacks from ", enemy.character_name)
+			enemy.wet = 0
+			wet_removed_from.append(enemy)
+
+	return wet_removed_from
+
+
+## Process spell discard mechanics (for cards like Accumulation)
+## Returns number of spells discarded (for damage_per_spell_discarded calculation)
+func _process_spell_discards(caster: Character, card: Card) -> int:
+	var spells_discarded = 0
+
+	# discard_spell_requirement: Spells were already discarded by UI before card was queued
+	# Just return the count for damage calculation
+	if card.discard_spell_requirement > 0:
+		spells_discarded = card.discard_spell_requirement
+		print("[SPELL DISCARD] Using pre-discarded count: ", spells_discarded)
+
+	# discard_all_spells: Automatically discard all Spell cards in hand
+	if card.discard_all_spells:
+		var spells_to_discard: Array[Card] = []
+		for hand_card in caster.hand:
+			if hand_card.card_type == Card.CardType.SPELL:
+				spells_to_discard.append(hand_card)
+
+		for spell in spells_to_discard:
+			caster.hand.erase(spell)
+			caster.discard_pile.append(spell)
+			spells_discarded += 1
+			print("[SPELL DISCARD] ", caster.character_name, " discarded spell: ", spell.card_name)
+
+		if spells_discarded > 0:
+			print("[SPELL DISCARD] Total spells discarded: ", spells_discarded)
+
+	return spells_discarded
+
+
+func _apply_spell_search(caster: Character, card: Card) -> void:
+	if card.choose_spell_from_deck <= 0:
+		return
+
+	# Only trigger for players
+	if not players.has(caster):
+		return
+
+	# Emit signal for UI to handle the search modal
+	# The actual card transfer happens when the modal completes
+	spell_search_requested.emit(caster, card.choose_spell_from_deck, card.card_name)
+	print("[SPELL SEARCH] ", caster.character_name, " can search deck for ", card.choose_spell_from_deck, " spell(s)")

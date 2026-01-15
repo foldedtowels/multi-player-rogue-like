@@ -14,8 +14,10 @@ signal card_played(character: Character, card: Card, target: Character)
 signal combat_ended(victory: bool)
 signal game_state_changed()
 signal enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int)
+signal ring_of_fire_reflected(enemy_index: int, player_name: String, damage: int)  # For floating text when enemy takes reflection damage
 signal card_v2_choice_needed(caster: Character, v1_card: Card, v2_card: Card, target: Character)
 signal card_retain_choice_needed(player_index: int, expires_after_round: int)  # Player needs to select a card to retain
+signal spell_search_requested(player: Character, count: int, card_name: String)  # Spell tutor effect
 signal boss_intent_revealed(next_intents: Dictionary)  # enemy_index -> EnemyIntent for next turn
 signal enemy_intents_calculated(intents: Dictionary)  # Enemy intents calculated at round start
 
@@ -129,15 +131,23 @@ func _ready():
 
 func _connect_card_effect_engine_signals():
 	card_effect_engine.enemy_damaged_player.connect(_on_engine_enemy_damaged_player)
+	card_effect_engine.ring_of_fire_reflected.connect(_on_engine_ring_of_fire_reflected)
 	card_effect_engine.card_retain_choice_needed.connect(_on_engine_card_retain_choice_needed)
 	card_effect_engine.boss_intent_reveal_requested.connect(_reveal_boss_intent)
 	card_effect_engine.enemy_damage_stats_changed.connect(_on_enemy_damage_stats_changed)
+	card_effect_engine.spell_search_requested.connect(_on_engine_spell_search_requested)
 
 
 func _on_engine_enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int):
 	enemy_damaged_player.emit(enemy_name, card_name, damage, target_player_index)
 	if multiplayer.is_server():
 		rpc("client_enemy_damaged_player", enemy_name, card_name, damage, target_player_index)
+
+
+func _on_engine_ring_of_fire_reflected(enemy_index: int, player_name: String, damage: int):
+	ring_of_fire_reflected.emit(enemy_index, player_name, damage)
+	if multiplayer.is_server():
+		rpc("client_ring_of_fire_reflected", enemy_index, player_name, damage)
 
 
 func _on_engine_card_retain_choice_needed(player_index: int, expires_after_round: int):
@@ -147,6 +157,10 @@ func _on_engine_card_retain_choice_needed(player_index: int, expires_after_round
 func _on_enemy_damage_stats_changed():
 	# Recalculate enemy intents when damage-affecting stats change
 	recalculate_enemy_intents()
+
+
+func _on_engine_spell_search_requested(player: Character, count: int, card_name: String):
+	spell_search_requested.emit(player, count, card_name)
 
 
 func _connect_enemy_ai_signals():
@@ -938,7 +952,9 @@ func start_enemy_turn_phase():
 
 	turn_phase = TurnPhase.ENEMY_TURN
 
-	# End all player turns
+	# End all player turns BEFORE enemies attack
+	# This removes END_OF_TURN effects (damage_plus, invigorated, exhausted, scared, hinder)
+	# but NOT END_OF_ENEMY_TURN effects (ring_of_fire) which persist through enemy attacks
 	for i in range(players.size()):
 		var player = players[i]
 		if player.is_alive():
@@ -956,6 +972,12 @@ func start_enemy_turn_phase():
 	# If combat transitioned (minions->boss) or ended, don't continue
 	if combat_ended:
 		return
+
+	# NOW decay END_OF_ENEMY_TURN effects (like Ring of Fire) after enemies have attacked
+	for player in players:
+		if player.is_alive():
+			player.decay_end_of_enemy_turn_effects()
+			broadcast_character_state(player)
 
 	# After enemies done, check victory/defeat
 	await get_tree().create_timer(0.5).timeout
@@ -1400,6 +1422,10 @@ func _legacy_apply_card_effects(caster: Character, card: Card, target: Character
 						var hp_percent = float(damage_target.current_health) / float(damage_target.max_health)
 						if hp_percent < 0.5:
 							total_damage += card.bonus_damage_if_wounded
+					# Bonus damage per debuff stack on target
+					if card.bonus_damage_per_debuff > 0:
+						var debuff_stacks = damage_target.get_total_debuff_stacks()
+						total_damage += card.bonus_damage_per_debuff * debuff_stacks
 					total_damage = max(0, total_damage)  # Can't go negative
 
 				var damage_dealt = damage_target.take_damage(total_damage, card.piercing)
@@ -1620,6 +1646,11 @@ func client_enemy_damaged_player(enemy_name: String, card_name: String, damage: 
 	# Client receives enemy damage event - emit signal for floating text display
 	enemy_damaged_player.emit(enemy_name, card_name, damage, target_idx)
 
+@rpc("authority", "call_remote", "reliable")
+func client_ring_of_fire_reflected(enemy_index: int, player_name: String, damage: int):
+	# Client receives Ring of Fire reflection event - emit signal for floating text display
+	ring_of_fire_reflected.emit(enemy_index, player_name, damage)
+
 ## Recalculate enemy intents when damage-affecting stats change
 ## Called when weakness, hinder, strength, or damage_plus changes on an enemy
 func recalculate_enemy_intents():
@@ -1753,13 +1784,98 @@ func apply_passive_ability(character: Character, ability: PassiveAbility, choice
 				if target:
 					target.heal(choice.value)
 
-	# Sync character states
+	# Broadcast state update
 	broadcast_character_state(character)
 	if target and target != character:
 		broadcast_character_state(target)
 
-	# Sync hand if drew cards
-	if character.network_owner_id != -1:
-		send_hand_to_owner(character)
+## Server RPC to process Kevin's Alc brewing (for multiplayer sync)
+@rpc("any_peer", "call_remote", "reliable")
+func server_process_alc_brew(player_index: int, alc_card_name: String, spell_names: Array):
+	if not multiplayer.is_server():
+		return
 
+	# Validate player
+	if player_index < 0 or player_index >= players.size():
+		return
+
+	var character = players[player_index]
+
+	# Find the alc card in satchel by name
+	var alc_card: Card = null
+	for card in character.satchel:
+		if card.card_name == alc_card_name:
+			alc_card = card
+			break
+
+	if not alc_card:
+		print("[GameManager] Alc card not found in satchel: ", alc_card_name)
+		return
+
+	# Find and discard the spell cards by name
+	for spell_name in spell_names:
+		for card in character.hand:
+			if card.card_name == spell_name:
+				character.discard_card(card)
+				print("[GameManager] Server discarded spell: ", spell_name)
+				break
+
+	# Move Alc from satchel to hand
+	character.remove_from_satchel(alc_card)
+	character.hand.append(alc_card)
+	print("[GameManager] Server moved ", alc_card_name, " from satchel to hand")
+
+	# Mark passive as used
+	character.passive_ability_used_this_turn = true
+
+	# Broadcast updated state
+	broadcast_character_state(character)
+	send_hand_to_owner(character)
 	game_state_changed.emit()
+
+
+## Move selected spell cards from deck to hand (for Reformulate-style effects)
+## Called from combat.gd after spell search modal completes
+func move_spells_to_hand(player: Character, selected_spells: Array[Card]):
+	for spell in selected_spells:
+		# Remove from deck (find by name since instances may differ)
+		for i in range(player.deck.size()):
+			if player.deck[i].card_name == spell.card_name:
+				var card = player.deck[i]
+				player.deck.remove_at(i)
+				# Add to hand if not full
+				if player.hand.size() < GameConstants.MAX_HAND_SIZE:
+					player.hand.append(card)
+					print("[SPELL SEARCH] Moved ", card.card_name, " from deck to hand")
+				else:
+					print("[SPELL SEARCH] Hand full, cannot add ", card.card_name)
+				break
+
+	# Shuffle deck after searching
+	player.deck.shuffle()
+
+	# Broadcast updated state
+	broadcast_character_state(player)
+	send_hand_to_owner(player)
+
+
+## Server RPC for spell search (multiplayer sync)
+@rpc("any_peer", "call_remote", "reliable")
+func server_spell_search_completed(player_index: int, spell_names: Array):
+	if not multiplayer.is_server():
+		return
+
+	if player_index < 0 or player_index >= players.size():
+		return
+
+	var player = players[player_index]
+
+	# Find the spells in deck by name
+	var spells_to_move: Array[Card] = []
+	for spell_name in spell_names:
+		for card in player.deck:
+			if card.card_name == spell_name:
+				spells_to_move.append(card)
+				break
+
+	move_spells_to_hand(player, spells_to_move)
