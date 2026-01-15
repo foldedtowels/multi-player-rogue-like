@@ -17,7 +17,7 @@ func _define_all_abilities():
 	var fabio_passive = PassiveAbility.new()
 	fabio_passive.ability_id = "fabio_warrior_choice"
 	fabio_passive.ability_name = "Warrior's Choice"
-	fabio_passive.description = "Once per turn, choose: Deal 2 damage to boss, Draw 1 card, or Give 3 shield to an ally"
+	fabio_passive.description = "Once per turn, choose: Deal 2 damage to enemy, Draw 1 card, or Give 3 shield to yourself or ally"
 	fabio_passive.trigger_type = PassiveAbility.TriggerType.ON_DEMAND
 	fabio_passive.effect_type = PassiveAbility.EffectType.CHOICE
 	fabio_passive.uses_per_turn = 1
@@ -25,7 +25,7 @@ func _define_all_abilities():
 	fabio_passive.choices = [
 		{"name": "Deal 2 Damage", "effect": "damage", "value": 2, "target": "boss"},
 		{"name": "Draw 1 Card", "effect": "draw", "value": 1, "target": "self"},
-		{"name": "Give 3 Shield", "effect": "shield", "value": 3, "target": "ally"}
+		{"name": "Shield (Self/Ally)", "effect": "shield", "value": 3, "target": "ally"}
 	] as Array[Dictionary]
 	defined_abilities["fabio_warrior_choice"] = fabio_passive
 

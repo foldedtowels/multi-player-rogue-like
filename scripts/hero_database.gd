@@ -43,6 +43,18 @@ func create_hero(hero_id: String) -> Character:
 	hero.reset_deck()  # Initialize deck now that starting_deck is populated
 	print("[HeroDatabase] After reset_deck, ", hero.character_name, " deck has ", hero.deck.size(), " cards")
 
+	# Build satchel for Kevin-style heroes (Alc cards)
+	if data.has("satchel"):
+		var satchel: Array[Card] = []
+		for card_id in data.satchel:
+			var card = card_db.get_card(card_id)
+			if card:
+				satchel.append(card)
+			else:
+				push_warning("[HeroDatabase] Failed to add card to satchel: " + card_id)
+		hero.satchel = satchel
+		print("[HeroDatabase] ", hero.character_name, " satchel built with ", satchel.size(), " Alc cards")
+
 	return hero
 
 ## Legacy function for backwards compatibility

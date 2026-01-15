@@ -68,7 +68,8 @@ func _ready():
 	player_status_panel = PlayerStatusPanel.new()
 	add_child(player_status_panel)
 	player_status_panel.setup(game_manager, left_player_panel, right_player_panel, your_character_panel)
-	player_status_panel.panel_clicked.connect(_on_character_clicked)
+	# NOTE: Removed player_status_panel.panel_clicked connection - using direct panel_clicked signals instead
+	# to avoid double-firing (was causing 6 shield instead of 3)
 
 	# Add animated background
 	create_animated_background()
@@ -129,10 +130,32 @@ func _setup_drop_zones():
 	var right_vbox = right_player_panel.get_node("VBoxContainer")
 	right_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
+	# Make all non-button children pass clicks through to parent panel
+	# This allows passive ability target selection to receive clicks
+	for child in your_hbox.get_children():
+		if not child is Button:
+			child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in left_vbox.get_children():
+		if not child is Button:
+			child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in right_vbox.get_children():
+		if not child is Button:
+			child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
 	# Connect drop signals
 	left_player_panel.card_dropped.connect(_on_card_dropped_on_player_panel.bind(left_player_panel))
 	right_player_panel.card_dropped.connect(_on_card_dropped_on_player_panel.bind(right_player_panel))
 	your_character_panel.card_dropped.connect(_on_card_dropped_on_player_panel.bind(your_character_panel))
+
+	# Connect panel_clicked for passive ability targeting (must be after set_script)
+	# Using panel_clicked signal instead of gui_input because drag-and-drop intercepts mouse button events
+	# NOTE: Always connect unconditionally - local_player_index may be -1 during _ready()
+	# The handler looks up the character dynamically
+	your_character_panel.panel_clicked.connect(_on_panel_clicked_for_passive)
+
+	# Also connect left/right player panels for ally targeting
+	left_player_panel.panel_clicked.connect(_on_ally_panel_clicked.bind("left"))
+	right_player_panel.panel_clicked.connect(_on_ally_panel_clicked.bind("right"))
 
 	# Create character face for self-targeting
 	_create_character_face()
@@ -183,8 +206,9 @@ func _create_character_face():
 	style.border_width_bottom = 3
 	character_face_panel.add_theme_stylebox_override("panel", style)
 
-	# Make face panel accept drops
+	# Make face panel accept drops AND clicks for passive targeting
 	character_face_panel.set_script(preload("res://scripts/ui/drop_target_panel.gd"))
+	character_face_panel.panel_clicked.connect(_on_panel_clicked_for_passive)
 	character_face_panel.card_dropped.connect(_on_card_dropped_on_character_face)
 
 func create_animated_background():
@@ -289,11 +313,12 @@ func _create_enemy_panel(enemy: Character, index: int) -> Panel:
 	intent_container.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_child(intent_container)
 
-	# Connect click handler
-	enemy_panel.gui_input.connect(_on_character_clicked.bind(enemy))
-
-	# Make enemy panel accept card drops
+	# Make enemy panel accept card drops (must be before connecting signals)
 	enemy_panel.set_script(preload("res://scripts/ui/drop_target_panel.gd"))
+
+	# Connect click handler using panel_clicked signal (not gui_input)
+	# This is needed because drag-and-drop intercepts mouse button events from gui_input
+	enemy_panel.panel_clicked.connect(_on_enemy_panel_clicked.bind(enemy))
 	enemy_panel.card_dropped.connect(_on_card_dropped_on_enemy_panel.bind(enemy))
 
 	return enemy_panel
@@ -463,6 +488,9 @@ func update_button_states():
 			ready_button.visible = false
 			pass_button.visible = false
 			ready_status_label.text = "Enemies Acting..."
+
+	# Always update passive button state
+	update_passive_button_visibility()
 
 func _on_player_turn_started(player_index: int):
 	# Legacy signal - still emitted by old boss AI code
@@ -696,14 +724,64 @@ func _play_card_with_discard_check(caster: Character, card: Card, target: Charac
 	game_manager.play_card(caster, card, target)
 	return true
 
+## Handle click on player panel (from panel_clicked signal)
+## Used for passive ability target selection
+## NOTE: Character is looked up dynamically because local_player_index may not be set during _ready()
+func _on_panel_clicked_for_passive(event: InputEventMouseButton):
+	var my_index = game_manager.local_player_index
+	if my_index < 0 or my_index >= game_manager.players.size():
+		return
+	var character = game_manager.players[my_index]
+
+	if passive_ability_modal.awaiting_target_selection:
+		passive_ability_modal.on_target_selected(character)
+		return
+
+	# Also handle card hand display targeting
+	if card_hand_display.on_character_clicked(character):
+		mark_display_dirty()
+
+## Handle click on ally panel (left or right player)
+func _on_ally_panel_clicked(event: InputEventMouseButton, position: String):
+	var my_index = game_manager.local_player_index
+	var other_indices = []
+	for i in range(game_manager.players.size()):
+		if i != my_index:
+			other_indices.append(i)
+
+	var target: Character = null
+	if position == "left" and other_indices.size() > 0:
+		target = game_manager.players[other_indices[0]]
+	elif position == "right" and other_indices.size() > 1:
+		target = game_manager.players[other_indices[1]]
+
+	if target == null:
+		return
+
+	if passive_ability_modal.awaiting_target_selection:
+		passive_ability_modal.on_target_selected(target)
+		return
+
+	# Also handle card hand display targeting
+	if card_hand_display.on_character_clicked(target):
+		mark_display_dirty()
+
+## Handle click on enemy panel (from panel_clicked signal)
+func _on_enemy_panel_clicked(event: InputEventMouseButton, enemy: Character):
+	if passive_ability_modal.awaiting_target_selection:
+		passive_ability_modal.on_target_selected(enemy)
+		return
+
+	# Also handle card hand display targeting
+	if card_hand_display.on_character_clicked(enemy):
+		mark_display_dirty()
+
+## Handle click from PlayerStatusPanel component (legacy signal)
 func _on_character_clicked(event: InputEvent, character: Character):
 	if event is InputEventMouseButton and event.pressed:
-		# Check if passive ability modal is awaiting target
 		if passive_ability_modal.awaiting_target_selection:
 			passive_ability_modal.on_target_selected(character)
 			return
-
-		# Try to handle target selection via card hand display
 		if card_hand_display.on_character_clicked(character):
 			mark_display_dirty()
 
@@ -754,26 +832,20 @@ func _on_passive_pressed():
 				print("[COMBAT] No Alc cards in satchel to brew")
 				return
 
-			print("[DEBUG BREW] Showing satchel_brew_modal")
 			satchel_brew_modal.show_brew(my_character)
 
 			# Wait for brew completion or cancellation
-			print("[DEBUG BREW] Awaiting _wait_for_brew_result...")
 			var result = await _wait_for_brew_result()
-			print("[DEBUG BREW] Await returned, result: ", result)
 			if result == null:
 				# Cancelled
-				print("[DEBUG BREW] Result is null, cancelled")
 				return
 
 			var alc_card: Card = result[0]
 			var discarded_spells: Array[Card] = result[1]
-			print("[DEBUG BREW] Calling _process_alc_brew...")
 
 			# Process the brew locally and sync
 			_process_alc_brew(my_character, my_index, alc_card, discarded_spells)
 			mark_display_dirty()
-			print("[DEBUG BREW] Brew flow complete!")
 		else:
 			# Standard choice ability (Fabio)
 			passive_ability_modal.show_choice(my_character, game_manager.enemies, game_manager.players)
@@ -798,48 +870,29 @@ func _on_passive_pressed():
 ## Wait for brew result (either brew_completed or brew_cancelled)
 ## Uses direct signal await instead of polling loop (more reliable in Godot 4)
 func _wait_for_brew_result():
-	print("[DEBUG BREW] _wait_for_brew_result - awaiting signal directly")
-
 	# Await the brew_completed signal directly - returns array of signal args
 	var args = await satchel_brew_modal.brew_completed
-
-	print("[DEBUG BREW] Signal received!")
-	print("[DEBUG BREW] args: ", args)
 
 	# args is an array: [alc_card, discarded_spells]
 	var alc_card = args[0]
 	var discarded_spells = args[1]
 
-	print("[DEBUG BREW] alc_card: ", alc_card.card_name if alc_card else "NULL")
-	print("[DEBUG BREW] discarded_spells count: ", discarded_spells.size())
-
 	return [alc_card, discarded_spells]
 
 ## Process an Alc brew (discard spells, add Alc to hand, mark passive used)
 func _process_alc_brew(character: Character, player_index: int, alc_card: Card, discarded_spells: Array[Card]):
-	print("[DEBUG BREW] _process_alc_brew called!")
-	print("[DEBUG BREW] character: ", character.character_name)
-	print("[DEBUG BREW] alc_card: ", alc_card.card_name)
-	print("[DEBUG BREW] discarded_spells: ", discarded_spells.size())
-	print("[DEBUG BREW] hand size before: ", character.hand.size())
-	print("[DEBUG BREW] satchel size before: ", character.satchel.size())
 	print("[COMBAT] ", character.character_name, " brewing ", alc_card.card_name)
 
 	# Discard the spell cards used as ingredients
 	for spell in discarded_spells:
 		character.discard_card(spell)
-		print("[COMBAT] Discarded spell ingredient: ", spell.card_name)
 
 	# Remove the Alc from satchel and add to hand
 	character.remove_from_satchel(alc_card)
 	character.hand.append(alc_card)
-	print("[COMBAT] Added ", alc_card.card_name, " to hand from satchel")
 
 	# Mark passive as used
 	character.passive_ability_used_this_turn = true
-	print("[DEBUG BREW] hand size after: ", character.hand.size())
-	print("[DEBUG BREW] satchel size after: ", character.satchel.size())
-	print("[DEBUG BREW] _process_alc_brew completed!")
 
 	# Sync state to server if multiplayer
 	if not multiplayer.is_server():
@@ -1179,9 +1232,9 @@ func _create_enemy_intent_debug_panel():
 	enemy_intent_debug_panel = Panel.new()
 	enemy_intent_debug_panel.name = "EnemyIntentDebugPanel"
 
-	# Position: top-left corner, below top bar
+	# Position: between left ally panel and enemy (in purple content area)
 	enemy_intent_debug_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	enemy_intent_debug_panel.position = Vector2(10, 70)
+	enemy_intent_debug_panel.position = Vector2(230, 120)  # Right of ally panels, in content area
 	enemy_intent_debug_panel.custom_minimum_size = Vector2(400, 200)
 	enemy_intent_debug_panel.size = Vector2(400, 200)
 

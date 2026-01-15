@@ -151,6 +151,23 @@ func _on_engine_ring_of_fire_reflected(enemy_index: int, player_name: String, da
 
 
 func _on_engine_card_retain_choice_needed(player_index: int, expires_after_round: int):
+	# Only runs on server - need to notify the correct client
+	if player_index < 0 or player_index >= players.size():
+		return
+
+	var player = players[player_index]
+	var peer_id = player.network_owner_id
+	if peer_id == -1 or peer_id == multiplayer.get_unique_id():
+		# Local player (host or single player) - emit signal directly
+		card_retain_choice_needed.emit(player_index, expires_after_round)
+	else:
+		# Remote player - send RPC to show modal on their client
+		rpc_id(peer_id, "client_show_card_retain_modal", player_index, expires_after_round)
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_show_card_retain_modal(player_index: int, expires_after_round: int):
+	# Called on non-host client to show card retain modal
 	card_retain_choice_needed.emit(player_index, expires_after_round)
 
 
@@ -160,7 +177,53 @@ func _on_enemy_damage_stats_changed():
 
 
 func _on_engine_spell_search_requested(player: Character, count: int, card_name: String):
+	# Only runs on server - need to notify the correct client
+	var player_index = players.find(player)
+	if player_index == -1:
+		return
+
+	var peer_id = player.network_owner_id
+	if peer_id == -1 or peer_id == multiplayer.get_unique_id():
+		# Local player (host or single player) - emit signal directly
+		spell_search_requested.emit(player, count, card_name)
+	else:
+		# Remote player - send RPC to show modal on their client
+		rpc_id(peer_id, "client_show_spell_search_modal", player_index, count, card_name)
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_show_spell_search_modal(player_index: int, count: int, card_name: String):
+	# Called on non-host client to show spell search modal
+	if player_index < 0 or player_index >= players.size():
+		return
+	var player = players[player_index]
 	spell_search_requested.emit(player, count, card_name)
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_show_card_v2_choice_modal(caster_index: int, v1_data: Dictionary, v2_data: Dictionary, target_index: int, target_is_player: bool):
+	# Called on non-host client to show card v2 choice modal
+	if caster_index < 0 or caster_index >= players.size():
+		return
+	var caster = players[caster_index]
+	var v1_card = Card.deserialize(v1_data)
+	var v2_card = Card.deserialize(v2_data)
+	var target: Character = null
+	if target_is_player:
+		if target_index >= 0 and target_index < players.size():
+			target = players[target_index]
+	else:
+		if target_index >= 0 and target_index < enemies.size():
+			target = enemies[target_index]
+	card_v2_choice_needed.emit(caster, v1_card, v2_card, target)
+
+
+## Helper to get character index for network sync
+func _get_character_index(character: Character) -> int:
+	var idx = players.find(character)
+	if idx != -1:
+		return idx
+	return enemies.find(character)
 
 
 func _connect_enemy_ai_signals():
@@ -746,6 +809,12 @@ func start_round():
 	queued_cards.clear()
 	players_done_acting.clear()
 
+	# Debug: Show exhausted status at turn start
+	for i in range(players.size()):
+		var p = players[i]
+		if p.exhausted > 0:
+			print("[EXHAUST] Turn start: ", p.character_name, " exhausted=", p.exhausted)
+
 	# All alive players start their turn (draw cards, gain stamina)
 	for i in range(players.size()):
 		var player = players[i]
@@ -1113,8 +1182,17 @@ func play_card(caster: Character, card: Card, target: Character):
 		if v2 == null and card.v2_card_id != "":
 			v2 = card_db.get_card(card.v2_card_id)
 		if v2 != null:
-			# Signal to combat.gd to show modal with both versions
-			card_v2_choice_needed.emit(caster, card, v2, target)
+			# Need to show modal on correct client (may be remote peer)
+			var caster_index = players.find(caster)
+			var target_index = _get_character_index(target)
+			var target_is_player = players.has(target)
+			var peer_id = caster.network_owner_id
+			if peer_id == -1 or peer_id == multiplayer.get_unique_id():
+				# Local player - emit signal directly
+				card_v2_choice_needed.emit(caster, card, v2, target)
+			else:
+				# Remote player - send RPC to show modal on their client
+				rpc_id(peer_id, "client_show_card_v2_choice_modal", caster_index, card.serialize(), v2.serialize(), target_index, target_is_player)
 			return
 
 	# Server validates and processes
@@ -1194,6 +1272,7 @@ func _server_play_card_v2(caster: Character, original_card: Card, chosen_card: C
 
 	# Check if caster is exhausted (cannot play cards)
 	if caster.exhausted > 0:
+		print("[EXHAUST] BLOCKED card play for ", caster.character_name, " - exhausted=", caster.exhausted)
 		return
 
 	# Check if caster is scared (cannot play attack cards) - use chosen card type
@@ -1267,6 +1346,7 @@ func server_play_card(card_data: Dictionary, caster_index: int, caster_is_player
 func _server_play_card(caster: Character, card: Card, target: Character):
 	# Check if caster is exhausted (cannot play cards)
 	if caster.exhausted > 0:
+		print("[EXHAUST] BLOCKED card play for ", caster.character_name, " - exhausted=", caster.exhausted)
 		return
 
 	# Check if caster is scared (cannot play attack cards)
@@ -1520,16 +1600,6 @@ func _legacy_apply_card_effects(caster: Character, card: Card, target: Character
 			if card.apply_damage_plus > 0:
 				t.damage_plus += card.apply_damage_plus
 
-		# SELF DEBUFFS - apply to caster when effect targets self
-		if t == caster:
-			if card.apply_exhausted > 0:
-				caster.exhausted += card.apply_exhausted
-			if card.apply_decay > 0:
-				caster.decay += card.apply_decay
-				print("[DECAY] ", caster.character_name, " gained ", card.apply_decay, " decay (total: ", caster.decay, ")")
-			if card.apply_fatigued > 0:
-				caster.fatigued += card.apply_fatigued
-
 		# Card draw - draw cards for the target (t), not necessarily the caster
 		if card.draw_cards > 0:
 			t.draw_cards(card.draw_cards)
@@ -1551,7 +1621,8 @@ func _legacy_apply_card_effects(caster: Character, card: Card, target: Character
 			if caster_idx >= 0:
 				# Retention expires at end of NEXT round (current_round + 1)
 				var expires_after = round_number + 1
-				card_retain_choice_needed.emit(caster_idx, expires_after)
+				# Use helper that handles multiplayer RPC correctly
+				_on_engine_card_retain_choice_needed(caster_idx, expires_after)
 
 		# ENEMY TARGET SWAP - redirect enemy attacks from target to caster (Protector)
 		if card.swaps_enemy_target and is_ally and t != caster:
@@ -1563,6 +1634,16 @@ func _legacy_apply_card_effects(caster: Character, card: Card, target: Character
 		# BOSS INTENT REVEAL - reveal what the boss will play next turn
 		if card.reveals_boss_intent and t == caster:
 			_reveal_boss_intent()
+
+	# SELF DEBUFFS - always apply to caster (once, after target loop)
+	if card.apply_exhausted > 0:
+		caster.exhausted += card.apply_exhausted
+		print("[EXHAUST] Applied ", card.apply_exhausted, " to ", caster.character_name, " (total: ", caster.exhausted, ")")
+	if card.apply_decay > 0:
+		caster.decay += card.apply_decay
+		print("[DECAY] ", caster.character_name, " gained ", card.apply_decay, " decay (total: ", caster.decay, ")")
+	if card.apply_fatigued > 0:
+		caster.fatigued += card.apply_fatigued
 
 	# CASTER DISCARD - discard random cards from caster's hand (processed once, not per-target)
 	if card.caster_discards_random > 0 and caster.hand.size() > 0:

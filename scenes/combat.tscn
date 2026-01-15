@@ -1,9 +1,12 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/combat.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/ui/passive_ability_modal.tscn" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/ui/card_v2_choice_modal.tscn" id="3"]
 [ext_resource type="PackedScene" path="res://scenes/ui/deck_view_modal.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/ui/satchel_brew_modal.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://scenes/ui/spell_search_modal.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://scenes/ui/spell_discard_modal.tscn" id="7"]
 
 [node name="Combat" type="Control"]
 layout_mode = 3
@@ -327,5 +330,14 @@ visible = false
 visible = false
 
 [node name="DeckViewModal" parent="." instance=ExtResource("4")]
+visible = false
+
+[node name="SatchelBrewModal" parent="." instance=ExtResource("5")]
+visible = false
+
+[node name="SpellSearchModal" parent="." instance=ExtResource("6")]
+visible = false
+
+[node name="SpellDiscardModal" parent="." instance=ExtResource("7")]
 visible = false
 

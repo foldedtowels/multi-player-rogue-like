@@ -53,7 +53,9 @@ func _display_hand_cards():
 		var can_afford = (card.stamina_cost <= current_stamina)
 		# Check if scared (blocks attack cards only)
 		var is_scared_blocked = (my_character.scared > 0 and card.card_type == Card.CardType.ATTACK)
-		card_visual.set_playable(can_afford and not is_scared_blocked)
+		# Check if exhausted (blocks all cards)
+		var is_exhausted = my_character.exhausted > 0
+		card_visual.set_playable(can_afford and not is_scared_blocked and not is_exhausted)
 
 		# Connect click signals
 		if not card_visual.card_clicked.is_connected(_on_hand_card_clicked):

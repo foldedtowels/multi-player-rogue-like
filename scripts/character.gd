@@ -364,6 +364,8 @@ func process_turn_end_effects():
 				if not effect_data.get("deals_damage", false):
 					var decay_amount = effect_data.get("decay_amount", 1)
 					var new_amount = amount - decay_amount
+					if effect_name == "exhausted":
+						print("[EXHAUST] Decay: ", character_name, " ", amount, " -> ", new_amount)
 					if new_amount <= 0:
 						effects_to_remove.append(effect_name)
 					else:

@@ -117,6 +117,8 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 		status_text += "SCARED "
 	if character.decay > 0:
 		status_text += "Decay %d " % character.decay
+	if character.exhausted > 0:
+		status_text += "Exh %d " % character.exhausted
 	# Check if this player is protected by another player
 	if game_manager.protected_by.has(player_index):
 		status_text += "🛡PROTECTED "
@@ -161,6 +163,7 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 		playing_card_container.add_child(small_card_visual)
 
 		small_card_visual.set_card(preview_card)
+		small_card_visual.set_card_owner(character)  # For card background color
 		small_card_visual.set_playable(false)  # Not playable, just for display
 		small_card_visual.scale = Vector2(0.67, 0.67)  # Scale to 100x140 from 150x220
 	# Priority 2: Show last played card (if no preview)
@@ -170,6 +173,7 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 		playing_card_container.add_child(small_card_visual)
 
 		small_card_visual.set_card(last_card)
+		small_card_visual.set_card_owner(character)  # For card background color
 		small_card_visual.set_playable(false)  # Not playable, just for display
 		small_card_visual.scale = Vector2(0.67, 0.67)  # Scale to 100x140 from 150x220
 
@@ -229,6 +233,8 @@ func _update_your_panel(character: Character):
 		status_parts.append("SCARED")
 	if character.decay > 0:
 		status_parts.append("Decay %d" % character.decay)
+	if character.exhausted > 0:
+		status_parts.append("Exhausted %d" % character.exhausted)
 	# Check if this player is protected by another player
 	if game_manager.protected_by.has(my_index):
 		status_parts.append("🛡PROTECTED")

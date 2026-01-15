@@ -642,16 +642,16 @@ func _create_all_cards():
 		2, 8, 0, 0, 0
 	)
 	all_cards["frenzy"].aoe_damage = true
-	all_cards["frenzy"].apply_exhausted = 1  # Cannot play more cards this turn
+	all_cards["frenzy"].apply_exhausted = 2  # Exhausted lasts until end of next turn
 
 	all_cards["weak_point"] = create_card(
 		"Weak Point!",
-		"Expose enemy vulnerabilities.",
-		Card.CardType.DEBUFF,
+		"Strike at weak points. +2 damage per debuff on target.",
+		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
-		1, 0, 0, 0, 0
+		1, 2, 0, 0, 0
 	)
-	all_cards["weak_point"].apply_vulnerable = 2
+	all_cards["weak_point"].bonus_damage_per_debuff = 2
 
 	all_cards["medkit"] = create_card(
 		"Medkit",
@@ -665,12 +665,12 @@ func _create_all_cards():
 	# v2 Card System - Fighter's Spirit
 	var fighters_spirit_v1 = create_card(
 		"Fighter's Spirit",
-		"Channel your inner strength.",
+		"Remove one debuff from yourself.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		1, 0, 0, 0, 0
 	)
-	fighters_spirit_v1.apply_strength = 1
+	fighters_spirit_v1.remove_target_debuffs = 1
 	fighters_spirit_v1.has_v2 = true
 	fighters_spirit_v1.v2_card_id = "fighters_spirit_v2"
 

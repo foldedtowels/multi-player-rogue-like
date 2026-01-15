@@ -41,7 +41,7 @@ func _ready():
 func show_choice(char: Character, enemies: Array[Character], allies: Array[Character]):
 	character = char
 	enemy_targets = enemies.filter(func(e): return e.is_alive())
-	ally_targets = allies
+	ally_targets = allies.filter(func(a): return a.is_alive())
 
 	# Set title
 	title_label.text = "Warrior's Choice"

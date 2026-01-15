@@ -84,7 +84,7 @@ custom_minimum_size = Vector2(220, 50)
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_font_sizes/font_size = 16
-text = "Give 3 Shield to Ally"
+text = "Give 3 Shield (Self/Ally)"
 
 [node name="CancelButton" type="Button" parent="ModalPanel/VBoxContainer"]
 custom_minimum_size = Vector2(150, 40)

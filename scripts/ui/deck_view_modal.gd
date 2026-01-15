@@ -124,10 +124,10 @@ func show_deck(player: Character):
 	_clear_grid(exhaust_grid)
 
 	# Populate grids
-	_populate_grid(deck_grid, player.deck, "Draw Pile (%d)")
-	_populate_grid(hand_grid, player.hand, "Hand (%d)")
-	_populate_grid(discard_grid, player.discard_pile, "Discard (%d)")
-	_populate_grid(exhaust_grid, player.exhaust_pile, "Exhausted (%d)")
+	_populate_grid(deck_grid, player.deck, "Draw Pile (%d)", player)
+	_populate_grid(hand_grid, player.hand, "Hand (%d)", player)
+	_populate_grid(discard_grid, player.discard_pile, "Discard (%d)", player)
+	_populate_grid(exhaust_grid, player.exhaust_pile, "Exhausted (%d)", player)
 
 	# Update tab names with counts
 	tab_container.set_tab_title(0, "Draw Pile (%d)" % player.deck.size())
@@ -141,7 +141,7 @@ func _clear_grid(grid: GridContainer):
 	for child in grid.get_children():
 		child.queue_free()
 
-func _populate_grid(grid: GridContainer, cards: Array, _tab_format: String):
+func _populate_grid(grid: GridContainer, cards: Array, _tab_format: String, owner: Character = null):
 	if cards.is_empty():
 		var empty_label = Label.new()
 		empty_label.text = "No cards"
@@ -158,6 +158,8 @@ func _populate_grid(grid: GridContainer, cards: Array, _tab_format: String):
 
 		# Set card data after adding to tree
 		card_visual.set_card(card)
+		if owner:
+			card_visual.set_card_owner(owner)  # For card background color
 		card_visual.set_playable(true)  # Show colors properly
 
 		# Disable interaction (view only)

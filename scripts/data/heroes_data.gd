@@ -159,6 +159,7 @@ const HEROES = {
 		"starting_stamina": 2,
 		"passive_ability_id": "fabio_warrior_choice",
 		"deck": [
+			# === BASE DECK (keep these) ===
 			"slash",
 			"big_smack",
 			"duel_purpose",
@@ -168,11 +169,8 @@ const HEROES = {
 			"protector",
 			"protective_footwear",
 			"hunters_instinct",
-			"medkit"
-		],
-		# Reward deck: cards offered after defeating bosses (50% heal OR one of these)
-		"reward_deck": [
-			# Attack cards (Fabio Special)
+			"medkit",
+			# === REWARD CARDS (move back to reward_deck after testing) ===
 			"dual_wield",
 			"circular_strike",
 			"cursed_dagger",
@@ -180,12 +178,57 @@ const HEROES = {
 			"execution",
 			"frenzy",
 			"weak_point",
-			# Skill cards (Fabio Reward)
 			"energy",
-			"medkit",
 			"fighters_spirit",
 			"sacrifice",
 			"leader"
+		],
+		# Reward deck: TEMPORARILY EMPTY FOR TESTING - cards moved to base deck above
+		"reward_deck": [
+			# Move these back after testing:
+			# "dual_wield", "circular_strike", "cursed_dagger", "jumping_strike",
+			# "execution", "frenzy", "weak_point", "energy", "medkit",
+			# "fighters_spirit", "sacrifice", "leader"
+		]
+	},
+
+	"kevin": {
+		"name": "Kevin, The Alchemist",
+		"description": "Elemental mage who brews powerful spell combinations from his satchel.",
+		"max_health": 40,
+		"starting_stamina": 2,
+		"passive_ability_id": "kevin_alchemist_brew",
+		# Base deck: Spells and basic cards only (NO reward cards)
+		"deck": [
+			"spell_fire_smash",
+			"spell_water_ball",
+			"spell_earthquake",
+			"spell_fiery_flash",
+			"poke",
+			"meditate",
+			"rest",
+			"fetal_position",
+			"spell_ice_shield",
+			"spell_encapsulation"
+		],
+		# Satchel: Alc cards brewed with passive ability (static pool, not shuffled)
+		"satchel": [
+			"alc_lightning_storm",
+			"alc_accumulation",
+			"alc_giant_shield"
+		],
+		# Reward deck: cards offered after defeating bosses
+		"reward_deck": [
+			"spell_future_vision",
+			"spell_mortar_pestle",
+			"spell_enflame",
+			"spell_restore",
+			"spell_ring_of_fire",
+			"reformulate",
+			"accretion",
+			# Special cards also in rewards
+			"spell_tsunami",
+			"repurpose"
 		]
 	}
 }

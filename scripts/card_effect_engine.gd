@@ -97,7 +97,6 @@ func apply_effects(caster: Character, card: Card, target: Character) -> Array[Ch
 		_apply_shield(caster, card, t, is_ally, is_enemy)
 		_apply_debuffs(caster, card, t, is_enemy)
 		_apply_buffs(caster, card, t, is_ally)
-		_apply_self_debuffs(caster, card, t)
 		_apply_card_draw(card, t)
 		_apply_card_generation(caster, card, t)
 		_apply_card_retention(caster, card, t)
@@ -113,6 +112,7 @@ func apply_effects(caster: Character, card: Card, target: Character) -> Array[Ch
 				affected.append(wet_enemy)
 
 	# Apply caster-only effects (processed once, not per-target)
+	_apply_self_debuffs(caster, card)
 	_apply_caster_discard(caster, card)
 	_apply_stamina_gain(caster, card)
 	_apply_all_players_shield(caster, card)
@@ -389,18 +389,17 @@ func _apply_buffs(caster: Character, card: Card, target: Character, is_ally: boo
 					target.damage_plus += amount * 2
 
 
-func _apply_self_debuffs(caster: Character, card: Card, target: Character) -> void:
-	if target != caster:
-		return
-
-	# Self-targeted debuffs
+func _apply_self_debuffs(caster: Character, card: Card) -> void:
+	# Self-debuffs always apply to caster regardless of card target
 	for effect_name in SELF_DEBUFF_EFFECTS:
 		var amount = card.get("apply_" + effect_name)
 		if amount != null and amount > 0:
 			var current = caster.get(effect_name)
 			if current != null:
 				caster.set(effect_name, current + amount)
-				if effect_name == "decay":
+				if effect_name == "exhausted":
+					print("[EXHAUST] Applied ", amount, " to ", caster.character_name, " (total: ", caster.exhausted, ")")
+				elif effect_name == "decay":
 					print("[DECAY] ", caster.character_name, " gained ", amount, " decay (total: ", caster.decay, ")")
 
 

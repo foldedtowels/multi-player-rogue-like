@@ -118,7 +118,8 @@ const EFFECTS: Dictionary = {
 		"display_name": "Exhausted",
 		"short_name": "Exh",
 		"type": EffectType.DEBUFF,
-		"decay": DecayType.END_OF_TURN,
+		"decay": DecayType.PER_TURN,
+		"decay_amount": 1,
 		"blocks_card_play": true
 	},
 	"scared": {
