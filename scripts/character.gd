@@ -5,6 +5,7 @@ class_name Character
 @export var description: String
 @export var max_health: int = 100
 @export var starting_stamina: int = 3
+@export var starting_aura: int = 0  # Enrique's second resource (0 for non-Enrique heroes)
 @export var starting_deck: Array[Card] = []
 
 # Hero template ID (e.g., "fabio", "flame_wielder") - used for reward deck lookups
@@ -14,6 +15,8 @@ var hero_id: String = ""
 var current_health: int
 var current_stamina: int
 var max_stamina: int
+var current_aura: int = 0  # Enrique's second resource (runtime)
+var max_aura: int = 0  # Max aura capacity
 var shield: int = 0
 var damage_taken_this_turn: int = 0  # Tracks damage taken this turn (for Jumping Strike condition)
 
@@ -76,6 +79,14 @@ var ring_of_fire: int:
 	get: return get_effect_amount("ring_of_fire")
 	set(value): set_effect_amount("ring_of_fire", value)
 
+# Enrique's status effects
+var played_twice: int:
+	get: return get_effect_amount("played_twice")
+	set(value): set_effect_amount("played_twice", value)
+var invincible: int:
+	get: return get_effect_amount("invincible")
+	set(value): set_effect_amount("invincible", value)
+
 # Passive ability system
 var passive_ability_id: String = ""
 var passive_ability_used_this_turn: bool = false
@@ -111,6 +122,8 @@ func _init():
 	current_health = max_health
 	max_stamina = starting_stamina
 	current_stamina = max_stamina
+	max_aura = starting_aura
+	current_aura = 0  # Aura starts at 0, gained at start of turn via passive
 	# Don't call reset_deck() here - starting_deck isn't populated yet!
 	# HeroDatabase/BossDatabase will call reset_deck() after setting starting_deck
 
@@ -173,8 +186,18 @@ func exhaust_card(card: Card):
 		push_warning("[EXHAUST] Card not found in hand: " + card.card_name)
 
 func play_card(card: Card):
-	if card.can_afford(current_stamina):
+	if card.can_afford(current_stamina, current_aura):
 		current_stamina -= card.stamina_cost
+
+		# Deduct aura cost
+		if card.aura_cost_all:
+			# "All aura" cards spend everything
+			var aura_spent = current_aura
+			current_aura = 0
+			print("[AURA] ", character_name, " spent ALL aura (", aura_spent, ") for ", card.card_name)
+		elif card.aura_cost > 0:
+			current_aura -= card.aura_cost
+			print("[AURA] ", character_name, " spent ", card.aura_cost, " aura for ", card.card_name, " (now ", current_aura, "/", max_aura, ")")
 
 		# CRITICAL FIX: Find and remove card by name, not by reference
 		# When card is deserialized from RPC, it's a new instance and hand.erase() won't find it
@@ -203,6 +226,11 @@ func take_damage(amount: int, is_piercing: bool = false):
 	# Validate input
 	if amount < 0:
 		push_warning("Negative damage attempted: " + str(amount))
+		return 0
+
+	# Invincible prevents all damage
+	if invincible > 0:
+		print("[INVINCIBLE] ", character_name, " took no damage (Invincible)")
 		return 0
 
 	var actual_damage = amount
@@ -252,6 +280,11 @@ func gain_shield(amount: int):
 func start_turn():
 	current_stamina = max_stamina
 
+	# Apply Enrique's passive aura gain (gain 1 aura at start of turn)
+	if passive_ability_id == "enrique_aura_generation" and max_aura > 0:
+		current_aura += 1
+		print("[AURA] ", character_name, " gained 1 Aura from passive (now ", current_aura, ")")
+
 	# Reset shield at start of turn (not end) - shield lasts until your next turn
 	shield = 0
 
@@ -267,6 +300,11 @@ func start_turn():
 func add_stamina(amount: int):
 	current_stamina += amount
 	current_stamina = clamp(current_stamina, 0, max_stamina + 5)  # Allow slight overflow
+
+func add_aura(amount: int):
+	current_aura += amount
+	current_aura = max(current_aura, 0)  # Just prevent negative
+	print("[AURA] ", character_name, " gained ", amount, " Aura (now ", current_aura, ")")
 
 func end_turn(current_round: int = 0):
 	# Check for expired card retentions
@@ -543,6 +581,11 @@ func duplicate_character() -> Character:
 	new_char.max_stamina = starting_stamina
 	new_char.current_stamina = starting_stamina
 
+	# Copy aura properties (Enrique's second resource)
+	new_char.starting_aura = starting_aura
+	new_char.max_aura = starting_aura
+	new_char.current_aura = 0  # Aura starts at 0, gained from passive
+
 	# Copy passive ability
 	new_char.passive_ability_id = passive_ability_id
 
@@ -580,6 +623,8 @@ func get_state_dict() -> Dictionary:
 		"max_health": max_health,
 		"current_stamina": current_stamina,
 		"max_stamina": max_stamina,
+		"current_aura": current_aura,
+		"max_aura": max_aura,
 		"shield": shield,
 		"damage_taken_this_turn": damage_taken_this_turn,
 		# NEW: Send all effects as single dictionary
@@ -616,6 +661,8 @@ func apply_state_dict(state: Dictionary):
 	max_health = state.max_health
 	current_stamina = state.current_stamina
 	max_stamina = state.max_stamina
+	current_aura = state.get("current_aura", 0)
+	max_aura = state.get("max_aura", 0)
 	shield = state.shield
 	damage_taken_this_turn = state.get("damage_taken_this_turn", 0)
 

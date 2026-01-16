@@ -132,6 +132,22 @@ var v2_card: Card = null  # Local reference (not serialized over network)
 # Target debuff removal (Kevin)
 @export var remove_target_debuffs: int = 0  # Remove X debuffs from target
 
+# Enrique's Aura system
+@export var aura_cost: int = 0  # Aura cost to play this card
+@export var aura_cost_all: bool = false  # If true, costs ALL aura (spends everything)
+@export var aura_gain: int = 0  # Aura granted to caster when played
+@export var damage_per_aura_spent: int = 0  # Bonus damage per aura spent (for "all aura" cards like Expulsion)
+
+# Enrique's buff effects
+@export var grants_played_twice: bool = false  # Grant target "played twice" buff (Divine Reflection)
+@export var grants_invincible: bool = false  # Grant target "invincible" buff (Divine Barrier)
+
+# D6 damage (Prayer Beads)
+@export var damage_is_d6: bool = false  # If true, damage is random 1-6 (replaces base damage)
+
+# All players draw cards (Guy with Beard)
+@export var all_players_draw: int = 0  # All players draw X cards
+
 # Runtime-only unique ID for queued card instances (invisible to player, not saved to disk)
 # Used to distinguish between identical cards in the queue (e.g., two Fire Strike cards)
 var queue_instance_id: int = 0
@@ -139,15 +155,25 @@ var queue_instance_id: int = 0
 func get_full_description(caster = null) -> String:
 	var desc = description + "\n\n"
 
-	# DAMAGE - calculate effective damage with buffs/debuffs
-	if damage > 0:
-		var effective_damage = damage
-		if caster and card_type == CardType.ATTACK:
-			effective_damage += caster.strength + caster.damage_plus
-			effective_damage -= caster.weakness + caster.hinder
-			effective_damage = max(0, effective_damage)
+	# Show Aura cost prominently if card requires aura
+	if aura_cost_all:
+		desc += "[Costs ALL Aura]\n"
+	elif aura_cost > 0:
+		desc += "[Aura Cost: %d]\n" % aura_cost
 
-		desc += "Deal %d damage" % effective_damage
+	# DAMAGE - calculate effective damage with buffs/debuffs
+	if damage > 0 or damage_is_d6 or damage_per_aura_spent > 0:
+		var effective_damage = damage
+		if damage_is_d6:
+			desc += "Deal D6 (1-6) damage"
+		elif damage_per_aura_spent > 0:
+			desc += "Deal %d damage per Aura spent" % damage_per_aura_spent
+		else:
+			if caster and card_type == CardType.ATTACK:
+				effective_damage += caster.strength + caster.damage_plus
+				effective_damage -= caster.weakness + caster.hinder
+				effective_damage = max(0, effective_damage)
+			desc += "Deal %d damage" % effective_damage
 		if multi_hit > 1:
 			desc += " %d times" % multi_hit
 		if piercing:
@@ -197,10 +223,42 @@ func get_full_description(caster = null) -> String:
 	if apply_decay > 0:
 		desc += "Apply %d Decay\n" % apply_decay
 
+	# Enrique's aura and buff effects
+	if aura_gain > 0:
+		desc += "Gain %d Aura\n" % aura_gain
+
+	if grants_played_twice:
+		desc += "Target's next card plays twice\n"
+
+	if grants_invincible:
+		desc += "Grant Invincible (immune to damage)\n"
+
+	if all_players_draw > 0:
+		desc += "All players draw %d card(s)\n" % all_players_draw
+
+	if target_stamina_gain > 0:
+		desc += "Give target %d Stamina\n" % target_stamina_gain
+
+	if remove_target_debuffs > 0:
+		desc += "Remove %d debuff(s) from target\n" % remove_target_debuffs
+
 	return desc
 
-func can_afford(current_stamina: int) -> bool:
-	return current_stamina >= stamina_cost
+func can_afford(current_stamina: int, current_aura: int = 0) -> bool:
+	# Check stamina
+	if current_stamina < stamina_cost:
+		return false
+
+	# Check aura
+	if aura_cost_all:
+		# "All aura" cards require at least 1 aura
+		if current_aura < 1:
+			return false
+	elif aura_cost > 0:
+		if current_aura < aura_cost:
+			return false
+
+	return true
 
 # Network serialization
 func serialize() -> Dictionary:
@@ -263,7 +321,15 @@ func serialize() -> Dictionary:
 		"choose_spell_from_deck": choose_spell_from_deck,
 		"all_players_shield": all_players_shield,
 		"target_stamina_gain": target_stamina_gain,
-		"remove_target_debuffs": remove_target_debuffs
+		"remove_target_debuffs": remove_target_debuffs,
+		"aura_cost": aura_cost,
+		"aura_cost_all": aura_cost_all,
+		"aura_gain": aura_gain,
+		"damage_per_aura_spent": damage_per_aura_spent,
+		"grants_played_twice": grants_played_twice,
+		"grants_invincible": grants_invincible,
+		"damage_is_d6": damage_is_d6,
+		"all_players_draw": all_players_draw
 	}
 
 static func deserialize(data: Dictionary) -> Card:
@@ -327,4 +393,12 @@ static func deserialize(data: Dictionary) -> Card:
 	card.all_players_shield = data.get("all_players_shield", 0)
 	card.target_stamina_gain = data.get("target_stamina_gain", 0)
 	card.remove_target_debuffs = data.get("remove_target_debuffs", 0)
+	card.aura_cost = data.get("aura_cost", 0)
+	card.aura_cost_all = data.get("aura_cost_all", false)
+	card.aura_gain = data.get("aura_gain", 0)
+	card.damage_per_aura_spent = data.get("damage_per_aura_spent", 0)
+	card.grants_played_twice = data.get("grants_played_twice", false)
+	card.grants_invincible = data.get("grants_invincible", false)
+	card.damage_is_d6 = data.get("damage_is_d6", false)
+	card.all_players_draw = data.get("all_players_draw", 0)
 	return card

@@ -27,6 +27,8 @@ func create_hero(hero_id: String) -> Character:
 	hero.description = data.description
 	hero.max_health = data.max_health
 	hero.starting_stamina = data.starting_stamina
+	hero.starting_aura = data.get("starting_aura", 0)  # Enrique's second resource (0 for non-aura heroes)
+	hero.max_aura = hero.starting_aura  # Max aura equals starting aura
 	hero.passive_ability_id = data.get("passive_ability_id", "")  # Optional field for Phase 1+ heroes
 
 	# Build deck from card IDs
@@ -58,28 +60,8 @@ func create_hero(hero_id: String) -> Character:
 	return hero
 
 ## Legacy function for backwards compatibility
-func create_flame_wielder() -> Character:
-	return create_hero("flame_wielder")
-
-## Legacy function for backwards compatibility
 func create_life_weaver() -> Character:
 	return create_hero("life_weaver")
-
-## Legacy function for backwards compatibility
-func create_shadow_assassin() -> Character:
-	return create_hero("shadow_assassin")
-
-## Legacy function for backwards compatibility
-func create_storm_caller() -> Character:
-	return create_hero("storm_caller")
-
-## Legacy function for backwards compatibility
-func create_beast_tamer() -> Character:
-	return create_hero("beast_tamer")
-
-## Legacy function for backwards compatibility
-func create_chrono_mage() -> Character:
-	return create_hero("chrono_mage")
 
 ## Get all available heroes
 ## @returns: Array of all hero characters with decks initialized

@@ -211,6 +211,22 @@ static func _parse_card_row(row: Array, columns: Dictionary, row_num: int) -> Ca
 	card.target_stamina_gain = _get_int(row, columns, "target_stamina_gain")
 	card.remove_target_debuffs = _get_int(row, columns, "remove_target_debuffs")
 
+	# Enrique's Aura system
+	card.aura_cost = _get_int(row, columns, "aura_cost")
+	card.aura_cost_all = _get_bool(row, columns, "aura_cost_all")
+	card.aura_gain = _get_int(row, columns, "aura_gain")
+	card.damage_per_aura_spent = _get_int(row, columns, "damage_per_aura_spent")
+
+	# Enrique's buff effects
+	card.grants_played_twice = _get_bool(row, columns, "grants_played_twice")
+	card.grants_invincible = _get_bool(row, columns, "grants_invincible")
+
+	# D6 damage (Prayer Beads)
+	card.damage_is_d6 = _get_bool(row, columns, "damage_is_d6")
+
+	# All players draw cards (Guy with Beard)
+	card.all_players_draw = _get_int(row, columns, "all_players_draw")
+
 	return card
 
 
@@ -273,7 +289,9 @@ static func export_cards_to_csv(cards: Dictionary, csv_path: String) -> bool:
 		"apply_ring_of_fire",
 		"discard_spell_requirement", "discard_all_spells", "damage_per_spell_discarded",
 		"choose_spell_from_deck", "all_players_shield",
-		"target_stamina_gain", "remove_target_debuffs"
+		"target_stamina_gain", "remove_target_debuffs", "heal_per_wet_removed",
+		"aura_cost", "aura_cost_all", "aura_gain", "damage_per_aura_spent",
+		"grants_played_twice", "grants_invincible", "damage_is_d6", "all_players_draw"
 	]
 	file.store_csv_line(PackedStringArray(headers))
 
@@ -375,5 +393,14 @@ static func _card_to_csv_row(card_id: String, card: Card) -> Array:
 		str(card.choose_spell_from_deck),
 		str(card.all_players_shield),
 		str(card.target_stamina_gain),
-		str(card.remove_target_debuffs)
+		str(card.remove_target_debuffs),
+		str(card.heal_per_wet_removed),
+		str(card.aura_cost),
+		"true" if card.aura_cost_all else "false",
+		str(card.aura_gain),
+		str(card.damage_per_aura_spent),
+		"true" if card.grants_played_twice else "false",
+		"true" if card.grants_invincible else "false",
+		"true" if card.damage_is_d6 else "false",
+		str(card.all_players_draw)
 	]

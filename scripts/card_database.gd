@@ -81,76 +81,7 @@ func export_all_cards_to_csv(output_path: String = "res://csvs/cards.csv") -> bo
 	return CSVCardLoader.export_cards_to_csv(all_cards, output_path)
 
 func _create_all_cards():
-	# === FLAME WIELDER CARDS (Red - Burn/Aggro) ===
-	all_cards["lightning_bolt"] = create_card(
-		"Lightning Bolt",
-		"The classic red spell. Fast and deadly.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		1, 12, 0, 0, 0
-	)
-
-	all_cards["shock"] = create_card(
-		"Shock",
-		"A quick jolt of energy.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		1, 8, 0, 0, 0
-	)
-
-	all_cards["fireball"] = create_card(
-		"Fireball",
-		"Explosive power that hits everything.",
-		Card.CardType.ATTACK,
-		Card.TargetType.ALL_ENEMIES,
-		3, 15, 0, 0, 0
-	)
-	all_cards["fireball"].aoe_damage = true
-
-	all_cards["flame_slash"] = create_card(
-		"Flame Slash",
-		"Searing blade of fire.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		1, 10, 0, 0, 0
-	)
-
-	all_cards["burning_hands"] = create_card(
-		"Burning Hands",
-		"Touch of flame that keeps burning.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		2, 8, 0, 0, 0
-	)
-	all_cards["burning_hands"].apply_burn = 5
-
-	all_cards["volcanic_strike"] = create_card(
-		"Volcanic Strike",
-		"Mighty blow that pierces defenses.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		2, 16, 0, 0, 0
-	)
-	all_cards["volcanic_strike"].piercing = true
-
-	all_cards["flame_barrier"] = create_card(
-		"Flame Barrier",
-		"Protective wall of fire.",
-		Card.CardType.BUFF,
-		Card.TargetType.SELF,
-		1, 0, 0, 8, 0
-	)
-
-	all_cards["ignite"] = create_card(
-		"Ignite",
-		"Set the world ablaze.",
-		Card.CardType.DEBUFF,
-		Card.TargetType.ALL_ENEMIES,
-		2, 0, 0, 0, 0
-	)
-	all_cards["ignite"].apply_burn = 3
-
-	# === LIFE WEAVER CARDS (White/Green - Healing/Buffs) ===
+	# === LIFE WEAVER CARDS (Selene - Healing/Buffs) ===
 	all_cards["healing_salve"] = create_card(
 		"Healing Salve",
 		"Gentle restoration of life.",
@@ -217,292 +148,6 @@ func _create_all_cards():
 		2, 14, 0, 0, 0
 	)
 	all_cards["smite"].piercing = true
-
-	# === SHADOW ASSASSIN CARDS (Black - Removal/Drain) ===
-	all_cards["doom_blade"] = create_card(
-		"Doom Blade",
-		"Strike from the shadows.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		2, 18, 0, 0, 0
-	)
-
-	all_cards["drain_life"] = create_card(
-		"Drain Life",
-		"Steal vitality from your foe.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		2, 12, 0, 0, 0
-	)
-	all_cards["drain_life"].lifesteal = true
-
-	all_cards["poison_strike"] = create_card(
-		"Poison Strike",
-		"Venomous blade that lingers.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		1, 6, 0, 0, 0
-	)
-	all_cards["poison_strike"].apply_poison = 4
-
-	all_cards["shadow_step"] = create_card(
-		"Shadow Step",
-		"Strike twice from the darkness.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		2, 7, 0, 0, 1
-	)
-	all_cards["shadow_step"].multi_hit = 2
-
-	all_cards["dark_pact"] = create_card(
-		"Dark Pact",
-		"Sacrifice health for power.",
-		Card.CardType.BUFF,
-		Card.TargetType.SELF,
-		1, 0, -5, 0, 2
-	)
-	all_cards["dark_pact"].apply_strength = 4
-
-	all_cards["corrupt"] = create_card(
-		"Corrupt",
-		"Spread decay to all enemies.",
-		Card.CardType.DEBUFF,
-		Card.TargetType.ALL_ENEMIES,
-		2, 0, 0, 0, 0
-	)
-	all_cards["corrupt"].apply_poison = 3
-
-	all_cards["assassination"] = create_card(
-		"Assassination",
-		"Silent kill that bypasses armor.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		3, 25, 0, 0, 0
-	)
-	all_cards["assassination"].piercing = true
-
-	all_cards["vampiric_touch"] = create_card(
-		"Vampiric Touch",
-		"Drain life force continuously.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		2, 10, 0, 0, 0
-	)
-	all_cards["vampiric_touch"].lifesteal = true
-	all_cards["vampiric_touch"].apply_poison = 2
-
-	# === STORM CALLER CARDS (Blue - Control/Draw) ===
-	all_cards["counterspell"] = create_card(
-		"Counterspell",
-		"Shield yourself and draw insight.",
-		Card.CardType.BUFF,
-		Card.TargetType.SELF,
-		2, 0, 0, 10, 1
-	)
-
-	all_cards["divination"] = create_card(
-		"Divination",
-		"Peer into the future.",
-		Card.CardType.SPELL,
-		Card.TargetType.SELF,
-		2, 0, 0, 0, 2
-	)
-	all_cards["divination"].plays_immediately = true
-
-	all_cards["lightning_strike"] = create_card(
-		"Lightning Strike",
-		"Call down the storm.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		1, 11, 0, 0, 0
-	)
-
-	all_cards["frost_bolt"] = create_card(
-		"Frost Bolt",
-		"Freeze and weaken your enemy.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		2, 10, 0, 0, 0
-	)
-	all_cards["frost_bolt"].apply_vulnerable = 2
-
-	all_cards["arcane_intellect"] = create_card(
-		"Arcane Intellect",
-		"Deep study yields knowledge.",
-		Card.CardType.SPELL,
-		Card.TargetType.SELF,
-		1, 0, 0, 0, 2
-	)
-	all_cards["arcane_intellect"].plays_immediately = true
-
-	all_cards["chain_lightning"] = create_card(
-		"Chain Lightning",
-		"Electricity arcs between foes.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		2, 8, 0, 0, 0
-	)
-	all_cards["chain_lightning"].multi_hit = 2
-
-	all_cards["storm_surge"] = create_card(
-		"Storm Surge",
-		"Unleash the tempest.",
-		Card.CardType.ATTACK,
-		Card.TargetType.ALL_ENEMIES,
-		3, 12, 0, 0, 0
-	)
-	all_cards["storm_surge"].aoe_damage = true
-
-	all_cards["mana_shield"] = create_card(
-		"Mana Shield",
-		"Convert energy into protection.",
-		Card.CardType.BUFF,
-		Card.TargetType.SELF,
-		1, 0, 0, 15, 0
-	)
-
-	# === BEAST TAMER CARDS (Green - Creatures/Growth) ===
-	all_cards["giant_growth"] = create_card(
-		"Giant Growth",
-		"Empower yourself with primal strength.",
-		Card.CardType.BUFF,
-		Card.TargetType.SELF,
-		1, 0, 0, 0, 0
-	)
-	all_cards["giant_growth"].apply_strength = 4
-
-	all_cards["wild_strike"] = create_card(
-		"Wild Strike",
-		"Savage, relentless attack.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		1, 9, 0, 0, 0
-	)
-
-	all_cards["regrowth"] = create_card(
-		"Regrowth",
-		"Nature's healing embrace.",
-		Card.CardType.HEAL,
-		Card.TargetType.SELF,
-		1, 0, 12, 0, 0
-	)
-
-	all_cards["bear_claws"] = create_card(
-		"Bear Claws",
-		"Tear into your enemy.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		2, 14, 0, 0, 0
-	)
-
-	all_cards["natures_lore"] = create_card(
-		"Nature's Lore",
-		"Commune with the wild.",
-		Card.CardType.SPELL,
-		Card.TargetType.SELF,
-		1, 0, 0, 0, 1
-	)
-	all_cards["natures_lore"].apply_armor = 2
-	all_cards["natures_lore"].plays_immediately = true
-
-	all_cards["primal_rage"] = create_card(
-		"Primal Rage",
-		"Unleash the beast within.",
-		Card.CardType.BUFF,
-		Card.TargetType.SELF,
-		2, 0, 0, 0, 0
-	)
-	all_cards["primal_rage"].apply_strength = 5
-	all_cards["primal_rage"].apply_vulnerable = 1
-
-	all_cards["stampede"] = create_card(
-		"Stampede",
-		"Overwhelming force crushes all.",
-		Card.CardType.ATTACK,
-		Card.TargetType.ALL_ENEMIES,
-		3, 16, 0, 0, 0
-	)
-	all_cards["stampede"].aoe_damage = true
-
-	all_cards["regenerate"] = create_card(
-		"Regenerate",
-		"Rapid cellular restoration.",
-		Card.CardType.HEAL,
-		Card.TargetType.SELF,
-		2, 0, 18, 0, 0
-	)
-
-	# === CHRONO MAGE CARDS (Blue/White - Tempo/Time) ===
-	all_cards["time_warp"] = create_card(
-		"Time Warp",
-		"Bend time to your will.",
-		Card.CardType.SPELL,
-		Card.TargetType.SELF,
-		3, 0, 0, 0, 3
-	)
-	all_cards["time_warp"].plays_immediately = true
-
-	all_cards["blink"] = create_card(
-		"Blink",
-		"Phase out of danger.",
-		Card.CardType.BUFF,
-		Card.TargetType.SELF,
-		1, 0, 0, 10, 1
-	)
-	all_cards["blink"].plays_immediately = true
-
-	all_cards["temporal_bolt"] = create_card(
-		"Temporal Bolt",
-		"Strike with the force of time.",
-		Card.CardType.ATTACK,
-		Card.TargetType.SINGLE_ENEMY,
-		2, 12, 0, 0, 0
-	)
-
-	all_cards["rewind"] = create_card(
-		"Rewind",
-		"Turn back the clock.",
-		Card.CardType.HEAL,
-		Card.TargetType.SINGLE_ALLY,
-		2, 0, 14, 0, 1
-	)
-	all_cards["rewind"].plays_immediately = true
-
-	all_cards["haste"] = create_card(
-		"Haste",
-		"Accelerate your actions.",
-		Card.CardType.BUFF,
-		Card.TargetType.SELF,
-		1, 0, 0, 0, 2
-	)
-	all_cards["haste"].plays_immediately = true
-
-	all_cards["slow"] = create_card(
-		"Slow",
-		"Reduce enemy efficiency.",
-		Card.CardType.DEBUFF,
-		Card.TargetType.SINGLE_ENEMY,
-		1, 0, 0, 0, 0
-	)
-	all_cards["slow"].apply_weakness = 3
-
-	all_cards["chrono_blast"] = create_card(
-		"Chrono Blast",
-		"Temporal energy explosion.",
-		Card.CardType.ATTACK,
-		Card.TargetType.ALL_ENEMIES,
-		3, 14, 0, 0, 0
-	)
-	all_cards["chrono_blast"].aoe_damage = true
-
-	all_cards["moment_of_clarity"] = create_card(
-		"Moment of Clarity",
-		"Perfect insight and protection.",
-		Card.CardType.BUFF,
-		Card.TargetType.SELF,
-		2, 0, 0, 12, 2
-	)
-	all_cards["moment_of_clarity"].plays_immediately = true
 
 	# === FABIO CARDS (Phase 1 - The Warrior) ===
 
@@ -1030,6 +675,205 @@ func _create_all_cards():
 		1, 0, 0, 0, 2
 	)
 	all_cards["tactical_advantage"].plays_immediately = true
+
+	# === ENRIQUE - THE CLERIC (Divine Aura) ===
+	# Base Deck
+
+	# Expulsion: 2 stamina, ALL aura, deal 3 damage per aura spent to all enemies
+	all_cards["expulsion"] = create_card(
+		"Expulsion",
+		"Spend all your Aura to smite enemies. Deals 3 damage per Aura spent.",
+		Card.CardType.ATTACK,
+		Card.TargetType.ALL_ENEMIES,
+		2, 0, 0, 0, 0
+	)
+	all_cards["expulsion"].aura_cost_all = true
+	all_cards["expulsion"].damage_per_aura_spent = 3
+	all_cards["expulsion"].aoe_damage = true
+
+	# Focused Purge: 1 stamina, 0 aura, 3 damage, gain 1 aura
+	all_cards["focused_purge"] = create_card(
+		"Focused Purge",
+		"Strike with divine purpose and replenish your Aura.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		1, 3, 0, 0, 0
+	)
+	all_cards["focused_purge"].aura_gain = 1
+
+	# Holy Plight: 1 stamina, 2 aura, 5 damage
+	all_cards["holy_plight"] = create_card(
+		"Holy Plight",
+		"Channel divine wrath at the cost of Aura.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		1, 5, 0, 0, 0
+	)
+	all_cards["holy_plight"].aura_cost = 2
+
+	# Prayer Beads (Special): 1 stamina, 1 aura, D6 damage
+	all_cards["prayer_beads"] = create_card(
+		"Prayer Beads",
+		"Roll the dice and pray for divine intervention. Deals 1-6 random damage.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		1, 0, 0, 0, 0
+	)
+	all_cards["prayer_beads"].aura_cost = 1
+	all_cards["prayer_beads"].damage_is_d6 = true
+
+	# Humble Request: 1 stamina, 0 aura, gain 2 aura
+	all_cards["humble_request"] = create_card(
+		"Humble Request",
+		"Pray for divine favor and restore your Aura.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		1, 0, 0, 0, 0
+	)
+	all_cards["humble_request"].aura_gain = 2
+
+	# Divine Reflection: 0 stamina, 3 aura, target's next card plays twice
+	all_cards["divine_reflection"] = create_card(
+		"Divine Reflection",
+		"Bless an ally's next action to trigger twice.",
+		Card.CardType.BUFF,
+		Card.TargetType.SINGLE_ALLY,
+		0, 0, 0, 0, 0
+	)
+	all_cards["divine_reflection"].aura_cost = 3
+	all_cards["divine_reflection"].grants_played_twice = true
+
+	# Healing Aura: 0 stamina, 2 aura, heal 10, apply decay to self
+	all_cards["healing_aura"] = create_card(
+		"Healing Aura",
+		"Divine healing at the cost of your future vitality.",
+		Card.CardType.HEAL,
+		Card.TargetType.SINGLE_ALLY,
+		0, 0, 10, 0, 0
+	)
+	all_cards["healing_aura"].aura_cost = 2
+	all_cards["healing_aura"].apply_decay = 1
+
+	# Magical Purge: 0 stamina, 2 aura, remove 1 debuff from self
+	all_cards["magical_purge"] = create_card(
+		"Magical Purge",
+		"Cleanse yourself of afflictions.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		0, 0, 0, 0, 0
+	)
+	all_cards["magical_purge"].aura_cost = 2
+	all_cards["magical_purge"].remove_target_debuffs = 1
+
+	# Story Of Jacob: 1 stamina, 0 aura, gain 5 aura, apply fatigued to self
+	all_cards["story_of_jacob"] = create_card(
+		"Story Of Jacob",
+		"A long tale that fills you with divine energy but drains your stamina.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		1, 0, 0, 0, 0
+	)
+	all_cards["story_of_jacob"].aura_gain = 5
+	all_cards["story_of_jacob"].apply_fatigued = 1
+
+	# Protection: 1 stamina, 1 aura, give ally 5 shield
+	all_cards["protection"] = create_card(
+		"Protection",
+		"Shield an ally with divine protection.",
+		Card.CardType.BUFF,
+		Card.TargetType.SINGLE_ALLY,
+		1, 0, 0, 5, 0
+	)
+	all_cards["protection"].aura_cost = 1
+
+	# === ENRIQUE REWARD CARDS ===
+
+	# Divine Force: 2 stamina, 2 aura, heal 10, apply decay to self
+	all_cards["divine_force"] = create_card(
+		"Divine Force",
+		"Powerful healing at a permanent cost.",
+		Card.CardType.HEAL,
+		Card.TargetType.SINGLE_ALLY,
+		2, 0, 10, 0, 0
+	)
+	all_cards["divine_force"].aura_cost = 2
+	all_cards["divine_force"].apply_decay = 1
+	all_cards["divine_force"].has_v2 = true
+	all_cards["divine_force"].v2_card_id = "divine_force_v2"
+
+	# Divine Force v2: 2 stamina, 2 aura, 6 damage
+	all_cards["divine_force_v2"] = create_card(
+		"Divine Force",
+		"Channel divine energy into pure damage.",
+		Card.CardType.ATTACK,
+		Card.TargetType.SINGLE_ENEMY,
+		2, 6, 0, 0, 0
+	)
+	all_cards["divine_force_v2"].aura_cost = 2
+
+	# Purging Water: 1 stamina, 1 aura, remove 1 debuff from ally
+	all_cards["purging_water"] = create_card(
+		"Purging Water",
+		"Holy water that cleanses afflictions from an ally.",
+		Card.CardType.BUFF,
+		Card.TargetType.SINGLE_ALLY,
+		1, 0, 0, 0, 0
+	)
+	all_cards["purging_water"].aura_cost = 1
+	all_cards["purging_water"].remove_target_debuffs = 1
+
+	# Divine Barrier: 1 stamina, 3 aura, grant invincible to ally
+	all_cards["divine_barrier"] = create_card(
+		"Divine Barrier",
+		"Protect an ally from all harm this turn.",
+		Card.CardType.BUFF,
+		Card.TargetType.SINGLE_ALLY,
+		1, 0, 0, 0, 0
+	)
+	all_cards["divine_barrier"].aura_cost = 3
+	all_cards["divine_barrier"].grants_invincible = true
+
+	# Refuge: 1 stamina, 0 aura, 5 shield, gain 1 aura
+	all_cards["refuge"] = create_card(
+		"Refuge",
+		"Find shelter in divine light.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		1, 0, 0, 5, 0
+	)
+	all_cards["refuge"].aura_gain = 1
+
+	# Gift: 0 stamina, 2 aura, ally draws 2 cards
+	all_cards["gift"] = create_card(
+		"Gift",
+		"Share divine inspiration with an ally.",
+		Card.CardType.BUFF,
+		Card.TargetType.SINGLE_ALLY,
+		0, 0, 0, 0, 2
+	)
+	all_cards["gift"].aura_cost = 2
+
+	# Divine Gift: 2 stamina, 2 aura, give ally 2 stamina
+	all_cards["divine_gift"] = create_card(
+		"Divine Gift",
+		"Grant an ally the energy to act.",
+		Card.CardType.BUFF,
+		Card.TargetType.SINGLE_ALLY,
+		2, 0, 0, 0, 0
+	)
+	all_cards["divine_gift"].aura_cost = 2
+	all_cards["divine_gift"].target_stamina_gain = 2
+
+	# Guy with Beard: 0 stamina, 2 aura, all players draw 1
+	all_cards["guy_with_beard"] = create_card(
+		"Guy with Beard",
+		"A wise figure appears and enlightens everyone.",
+		Card.CardType.BUFF,
+		Card.TargetType.SELF,
+		0, 0, 0, 0, 0
+	)
+	all_cards["guy_with_beard"].aura_cost = 2
+	all_cards["guy_with_beard"].all_players_draw = 1
 
 ## Factory function for creating cards with basic stats
 ##

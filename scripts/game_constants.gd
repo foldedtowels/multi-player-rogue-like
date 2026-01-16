@@ -61,14 +61,9 @@ const BOSS_STAMINA_SCALING: Dictionary = {
 # HERO BALANCE
 # =============================================================================
 
-## Health pools for each hero archetype
+## Health pools for each hero archetype (legacy reference - heroes_data.gd is source of truth)
 const HERO_MAX_HEALTH: Dictionary = {
-	"flame_wielder": 90,    # Glass cannon - low HP, high damage
-	"life_weaver": 110,     # Healer - highest HP
-	"shadow_assassin": 85,  # Lowest HP - relies on drains
-	"storm_caller": 95,     # Mid-range mage
-	"beast_tamer": 120,     # Tank - highest HP
-	"chrono_mage": 100      # Balanced time mage
+	"life_weaver": 110     # Selene - Healer
 }
 
 ## Starting stamina for all heroes

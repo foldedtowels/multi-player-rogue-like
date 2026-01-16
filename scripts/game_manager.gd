@@ -345,6 +345,7 @@ func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 		# Reset temporary combat state
 		player.shield = 0
 		player.current_stamina = player.max_stamina
+		player.current_aura = 0  # Aura starts at 0 each combat, gained via passive
 		player.clear_all_effects()  # Clear ALL buffs/debuffs between encounters
 
 
@@ -1279,12 +1280,33 @@ func _server_play_card_v2(caster: Character, original_card: Card, chosen_card: C
 	if caster.scared > 0 and chosen_card.card_type == Card.CardType.ATTACK:
 		return
 
+	# Calculate aura spent BEFORE play_card (for damage_per_aura_spent effects like Expulsion)
+	var aura_spent = 0
+	if chosen_card.aura_cost_all:
+		aura_spent = caster.current_aura  # Will spend ALL aura
+	else:
+		aura_spent = chosen_card.aura_cost
+
+	# Check if caster has "played twice" buff BEFORE playing (Divine Reflection effect)
+	var should_play_twice = caster.played_twice > 0
+
 	# Remove the ORIGINAL card from hand (not the chosen card)
 	if not caster.play_card(original_card):
 		return
 
 	# Apply effects from the CHOSEN card
-	var affected_targets = apply_card_effects(caster, chosen_card, target)
+	var affected_targets = apply_card_effects(caster, chosen_card, target, aura_spent)
+
+	# If "played twice" was active, apply effects a second time and consume the buff
+	if should_play_twice:
+		print("[PLAYED_TWICE] ", caster.character_name, " plays ", chosen_card.card_name, " twice!")
+		var second_targets = apply_card_effects(caster, chosen_card, target, aura_spent)
+		# Merge affected targets from second application
+		for t in second_targets:
+			if not affected_targets.has(t):
+				affected_targets.append(t)
+		# Consume one stack of played_twice
+		caster.played_twice -= 1
 
 	# Track last played card (only for players, not enemies)
 	var player_index = players.find(caster)
@@ -1353,11 +1375,32 @@ func _server_play_card(caster: Character, card: Card, target: Character):
 	if caster.scared > 0 and card.card_type == Card.CardType.ATTACK:
 		return
 
+	# Calculate aura spent BEFORE play_card (for damage_per_aura_spent effects like Expulsion)
+	var aura_spent = 0
+	if card.aura_cost_all:
+		aura_spent = caster.current_aura  # Will spend ALL aura
+	else:
+		aura_spent = card.aura_cost
+
+	# Check if caster has "played twice" buff BEFORE playing (Divine Reflection effect)
+	var should_play_twice = caster.played_twice > 0
+
 	if not caster.play_card(card):
 		return
 
 	# Apply card effects and get affected targets
-	var affected_targets = apply_card_effects(caster, card, target)
+	var affected_targets = apply_card_effects(caster, card, target, aura_spent)
+
+	# If "played twice" was active, apply effects a second time and consume the buff
+	if should_play_twice:
+		print("[PLAYED_TWICE] ", caster.character_name, " plays ", card.card_name, " twice!")
+		var second_targets = apply_card_effects(caster, card, target, aura_spent)
+		# Merge affected targets from second application
+		for t in second_targets:
+			if not affected_targets.has(t):
+				affected_targets.append(t)
+		# Consume one stack of played_twice
+		caster.played_twice -= 1
 
 	# Track last played card (only for players, not enemies)
 	var player_index = players.find(caster)
@@ -1417,7 +1460,7 @@ func client_card_played(card_data: Dictionary, caster_index: int, caster_is_play
 	card_played.emit(caster, card, target)
 	game_state_changed.emit()
 
-func apply_card_effects(caster: Character, card: Card, target: Character) -> Array[Character]:
+func apply_card_effects(caster: Character, card: Card, target: Character, aura_spent: int = 0) -> Array[Character]:
 	# Delegate to CardEffectEngine - update its references first
 	card_effect_engine.players = players
 	card_effect_engine.enemies = enemies
@@ -1425,7 +1468,7 @@ func apply_card_effects(caster: Character, card: Card, target: Character) -> Arr
 	card_effect_engine.delayed_effects = delayed_effects
 	card_effect_engine.round_number = round_number
 
-	return card_effect_engine.apply_effects(caster, card, target)
+	return card_effect_engine.apply_effects(caster, card, target, aura_spent)
 
 
 ## LEGACY: Original apply_card_effects implementation (kept for reference during migration)

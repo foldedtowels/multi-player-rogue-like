@@ -22,16 +22,20 @@ signal boss_intent_reveal_requested()
 signal enemy_damage_stats_changed()  # Emitted when weakness/hinder/strength applied to enemy
 signal spell_search_requested(player: Character, count: int, card_name: String)  # For Reformulate-style cards
 
-# Status effect categories for registry-based application
-const DEBUFF_EFFECTS: Array[String] = ["poison", "burn", "vulnerable", "weakness", "fatigued", "hinder", "scared", "wet"]
-const BUFF_EFFECTS: Array[String] = ["strength", "armor", "rested", "invigorated", "damage_plus", "ring_of_fire"]
-const SELF_DEBUFF_EFFECTS: Array[String] = ["exhausted", "decay", "fatigued"]
+# Status effect categories - now fetched from StatusEffectRegistry for modularity
 
 
 ## Calculate damage for a card (unified formula used by both effect application and previews)
 ## This is the SINGLE SOURCE OF TRUTH for damage calculation.
-static func calculate_damage(card: Card, caster: Character, target: Character = null) -> int:
+## aura_spent is used for "All Aura" cards like Expulsion that deal damage per aura spent
+static func calculate_damage(card: Card, caster: Character, target: Character = null, aura_spent: int = 0) -> int:
 	var total_damage = card.damage
+
+	# D6 damage (Prayer Beads): replace base damage with random 1-6
+	if card.damage_is_d6:
+		# Note: For UI preview, we show average (3.5 -> 4). For actual damage, use random.
+		# This static method is used for preview, so we show average.
+		total_damage = 4  # Average of D6
 
 	if card.card_type == Card.CardType.ATTACK:
 		# Add attack modifiers
@@ -57,6 +61,10 @@ static func calculate_damage(card: Card, caster: Character, target: Character = 
 		if card.bonus_damage_per_wet > 0 and target != null:
 			total_damage += card.bonus_damage_per_wet * target.wet
 
+		# Bonus damage per Aura spent (Enrique's Expulsion - "All Aura" cards)
+		if card.damage_per_aura_spent > 0 and aura_spent > 0:
+			total_damage += card.damage_per_aura_spent * aura_spent
+
 		total_damage = max(0, total_damage)
 
 	return total_damage
@@ -69,7 +77,8 @@ static func calculate_total_damage(card: Card, caster: Character, target: Charac
 
 ## Apply all effects from a card to target(s)
 ## Returns array of affected characters for state broadcasting
-func apply_effects(caster: Character, card: Card, target: Character) -> Array[Character]:
+## aura_spent is the amount of aura that was spent to play this card (for damage_per_aura_spent)
+func apply_effects(caster: Character, card: Card, target: Character, aura_spent: int = 0) -> Array[Character]:
 	print("[CARD] ", caster.character_name, " plays ", card.card_name, " (heal:", card.heal_amount, " decay:", card.apply_decay, ")")
 
 	# Handle spell discard mechanics BEFORE damage calculation (for Accumulation-style cards)
@@ -91,12 +100,13 @@ func apply_effects(caster: Character, card: Card, target: Character) -> Array[Ch
 		var is_enemy = _is_enemy(caster, t)
 
 		# Apply effect categories
-		_apply_damage(caster, card, t, is_enemy, spells_discarded_count)
+		_apply_damage(caster, card, t, is_enemy, spells_discarded_count, aura_spent)
 		_apply_delayed_damage(caster, card, t, is_enemy)
 		_apply_healing(caster, card, t, is_ally)
 		_apply_shield(caster, card, t, is_ally, is_enemy)
 		_apply_debuffs(caster, card, t, is_enemy)
 		_apply_buffs(caster, card, t, is_ally)
+		_apply_enrique_buffs(caster, card, t, is_ally)  # Enrique's played_twice and invincible
 		_apply_card_draw(card, t)
 		_apply_card_generation(caster, card, t)
 		_apply_card_retention(caster, card, t)
@@ -115,7 +125,9 @@ func apply_effects(caster: Character, card: Card, target: Character) -> Array[Ch
 	_apply_self_debuffs(caster, card)
 	_apply_caster_discard(caster, card)
 	_apply_stamina_gain(caster, card)
+	_apply_aura_gain(caster, card)  # Enrique's aura gain
 	_apply_all_players_shield(caster, card)
+	_apply_all_players_draw(caster, card)  # Enrique's Guy with Beard
 	_apply_spell_search(caster, card)
 
 	return affected
@@ -233,9 +245,10 @@ func process_delayed_effects() -> Array[Character]:
 # EFFECT APPLICATION METHODS
 # =============================================================================
 
-func _apply_damage(caster: Character, card: Card, target: Character, is_enemy: bool, spells_discarded: int = 0) -> void:
-	# Allow cards with damage_per_spell_discarded even if base damage is 0 (Accumulation)
-	if (card.damage <= 0 and card.damage_per_spell_discarded <= 0) or not is_enemy:
+func _apply_damage(caster: Character, card: Card, target: Character, is_enemy: bool, spells_discarded: int = 0, aura_spent: int = 0) -> void:
+	# Allow cards with damage_per_spell_discarded or damage_per_aura_spent even if base damage is 0
+	var has_conditional_damage = card.damage_per_spell_discarded > 0 or card.damage_per_aura_spent > 0
+	if (card.damage <= 0 and not has_conditional_damage and not card.damage_is_d6) or not is_enemy:
 		return
 
 	# Protection redirect: enemy attacking protected player
@@ -244,7 +257,30 @@ func _apply_damage(caster: Character, card: Card, target: Character, is_enemy: b
 		damage_target = get_redirected_target(target)
 
 	for i in card.multi_hit:
-		var total_damage = CardEffectEngine.calculate_damage(card, caster, damage_target)
+		# Handle D6 damage (Prayer Beads): roll 1-6
+		var base_damage = card.damage
+		if card.damage_is_d6:
+			base_damage = rng.randi_range(1, 6)
+			print("[D6 DAMAGE] Rolled: ", base_damage)
+
+		# Calculate total damage with buffs/debuffs
+		var total_damage = base_damage
+		if card.card_type == Card.CardType.ATTACK:
+			total_damage += caster.strength + caster.damage_plus
+			total_damage -= caster.weakness + caster.hinder
+			if card.bonus_damage_if_wounded > 0:
+				var hp_percent = float(damage_target.current_health) / float(damage_target.max_health)
+				if hp_percent < 0.5:
+					total_damage += card.bonus_damage_if_wounded
+			if card.bonus_damage_per_debuff > 0:
+				total_damage += card.bonus_damage_per_debuff * damage_target.get_total_debuff_stacks()
+			if card.bonus_damage_per_wet > 0:
+				total_damage += card.bonus_damage_per_wet * damage_target.wet
+			if card.damage_per_aura_spent > 0 and aura_spent > 0:
+				var aura_bonus = aura_spent * card.damage_per_aura_spent
+				total_damage += aura_bonus
+				print("[AURA DAMAGE] Bonus damage from ", aura_spent, " aura: +", aura_bonus)
+			total_damage = max(0, total_damage)
 
 		# Add bonus damage per spell discarded (Accumulation mechanic)
 		if card.damage_per_spell_discarded > 0 and spells_discarded > 0:
@@ -354,7 +390,7 @@ func _apply_debuffs(caster: Character, card: Card, target: Character, is_enemy: 
 	var applied_damage_debuff_to_enemy = false
 
 	# Registry-based debuff application
-	for effect_name in DEBUFF_EFFECTS:
+	for effect_name in StatusEffectRegistry.get_debuff_effect_names():
 		var amount = card.get("apply_" + effect_name)
 		if amount != null and amount > 0:
 			# Direct property access for debuffs (they're stored as properties)
@@ -377,7 +413,7 @@ func _apply_buffs(caster: Character, card: Card, target: Character, is_ally: boo
 		return
 
 	# Registry-based buff application
-	for effect_name in BUFF_EFFECTS:
+	for effect_name in StatusEffectRegistry.get_buff_effect_names():
 		var amount = card.get("apply_" + effect_name)
 		if amount != null and amount > 0:
 			var current = target.get(effect_name)
@@ -391,7 +427,7 @@ func _apply_buffs(caster: Character, card: Card, target: Character, is_ally: boo
 
 func _apply_self_debuffs(caster: Character, card: Card) -> void:
 	# Self-debuffs always apply to caster regardless of card target
-	for effect_name in SELF_DEBUFF_EFFECTS:
+	for effect_name in StatusEffectRegistry.get_self_debuff_effect_names():
 		var amount = card.get("apply_" + effect_name)
 		if amount != null and amount > 0:
 			var current = caster.get(effect_name)
@@ -491,7 +527,7 @@ func _apply_remove_target_debuffs(card: Card, target: Character, is_ally: bool) 
 		return
 
 	var removed_count = 0
-	var debuffs_to_check = ["poison", "burn", "vulnerable", "weakness", "fatigued", "hinder", "scared", "wet"]
+	var debuffs_to_check = StatusEffectRegistry.get_debuff_effect_names()
 
 	for debuff in debuffs_to_check:
 		if removed_count >= card.remove_target_debuffs:
@@ -566,3 +602,47 @@ func _apply_spell_search(caster: Character, card: Card) -> void:
 	# The actual card transfer happens when the modal completes
 	spell_search_requested.emit(caster, card.choose_spell_from_deck, card.card_name)
 	print("[SPELL SEARCH] ", caster.character_name, " can search deck for ", card.choose_spell_from_deck, " spell(s)")
+
+
+# =============================================================================
+# ENRIQUE'S AURA & DIVINE EFFECTS
+# =============================================================================
+
+func _apply_aura_gain(caster: Character, card: Card) -> void:
+	if card.aura_gain <= 0:
+		return
+
+	# Only apply if caster has aura system enabled
+	if caster.max_aura <= 0:
+		return
+
+	caster.add_aura(card.aura_gain)
+
+
+func _apply_enrique_buffs(caster: Character, card: Card, target: Character, is_ally: bool) -> void:
+	if not is_ally:
+		return
+
+	# Grant "Played Twice" buff (Divine Reflection)
+	if card.grants_played_twice:
+		target.played_twice += 1
+		print("[PLAYED TWICE] ", target.character_name, " gains Played Twice buff")
+
+	# Grant "Invincible" buff (Divine Barrier)
+	if card.grants_invincible:
+		target.invincible += 1
+		print("[INVINCIBLE] ", target.character_name, " gains Invincible buff")
+
+
+func _apply_all_players_draw(caster: Character, card: Card) -> void:
+	if card.all_players_draw <= 0:
+		return
+
+	# Only apply if caster is a player
+	if not players.has(caster):
+		return
+
+	for player in players:
+		if player.is_alive():
+			player.draw_cards(card.all_players_draw)
+			print("[DRAW] All players draw: ", player.character_name, " draws ", card.all_players_draw, " card(s)")

@@ -3,6 +3,26 @@ class_name HeroesData
 ##
 ## This file contains all hero configurations in a data-driven format.
 ## To add a new hero, simply add a new entry to the HEROES dictionary below.
+##
+## ============================================================================
+## REFACTORING PLAN SUMMARY (Jan 2026) - ALL PHASES COMPLETE
+## ============================================================================
+## Phase 1: COMPLETED - Removed 5 characters (Pyra, Nyx, Zephyr, Thorne, Kairos)
+##          Kept: Selene (life_weaver), Fabio, Kevin.
+##
+## Phase 2: COMPLETED - Status effect system now data-driven
+##          See: status_effect_registry.gd (dynamic category functions)
+##          See: card_effect_engine.gd (uses registry for buff/debuff lists)
+##
+## Phase 3: COMPLETED - Passive ability registry system
+##          See: passive_ability_manager.gd (PASSIVE_ABILITIES const)
+##
+## Phase 4: COMPLETED - Enrique added as WIP placeholder (deck TBD)
+##
+## FIXED ISSUES:
+## - Kevin's passive ID mismatch (now uses kevin_alchemist_brew consistently)
+## - UI tearing (added signature caching to card_hand_display.gd & player_status_panel.gd)
+## ============================================================================
 
 ## Complete hero definitions
 ## Each hero entry contains:
@@ -12,29 +32,6 @@ class_name HeroesData
 ## - starting_stamina: Stamina available per turn
 ## - deck: Array of card IDs that make up the hero's starting deck (14+ cards recommended)
 const HEROES = {
-	"flame_wielder": {
-		"name": "Pyra, Flame Wielder",
-		"description": "Master of fire magic, dealing devastating burn damage.",
-		"max_health": 90,
-		"starting_stamina": 3,
-		"deck": [
-			"lightning_bolt",
-			"lightning_bolt",
-			"shock",
-			"shock",
-			"shock",
-			"flame_slash",
-			"flame_slash",
-			"burning_hands",
-			"burning_hands",
-			"volcanic_strike",
-			"flame_barrier",
-			"flame_barrier",
-			"ignite",
-			"fireball"
-		]
-	},
-
 	"life_weaver": {
 		"name": "Selene, Life Weaver",
 		"description": "Divine healer and protector of allies.",
@@ -56,102 +53,22 @@ const HEROES = {
 			"blessing",
 			"mass_heal",
 			"smite"
+		],
+		# Reward deck: support/healer themed cards from shared pool
+		"reward_deck": [
+			"sacrifice",
+			"medkit",
+			"energy",
+			"fighters_spirit",
+			"protector",
+			"leader",
+			"fortify",
+			"rejuvenation",
+			"healing_potion"
 		]
 	},
 
-	"shadow_assassin": {
-		"name": "Nyx, Shadow Assassin",
-		"description": "Silent killer who drains life and spreads poison.",
-		"max_health": 85,
-		"starting_stamina": 3,
-		"deck": [
-			"doom_blade",
-			"doom_blade",
-			"drain_life",
-			"drain_life",
-			"poison_strike",
-			"poison_strike",
-			"poison_strike",
-			"shadow_step",
-			"shadow_step",
-			"dark_pact",
-			"corrupt",
-			"corrupt",
-			"assassination",
-			"vampiric_touch"
-		]
-	},
-
-	"storm_caller": {
-		"name": "Zephyr, Storm Caller",
-		"description": "Lightning mage who controls the battlefield with spells.",
-		"max_health": 95,
-		"starting_stamina": 3,
-		"deck": [
-			"lightning_strike",
-			"lightning_strike",
-			"lightning_strike",
-			"frost_bolt",
-			"frost_bolt",
-			"chain_lightning",
-			"chain_lightning",
-			"arcane_intellect",
-			"arcane_intellect",
-			"divination",
-			"counterspell",
-			"mana_shield",
-			"mana_shield",
-			"storm_surge"
-		]
-	},
-
-	"beast_tamer": {
-		"name": "Thorne, Beast Tamer",
-		"description": "Primal warrior who channels nature's fury.",
-		"max_health": 120,
-		"starting_stamina": 3,
-		"deck": [
-			"wild_strike",
-			"wild_strike",
-			"wild_strike",
-			"bear_claws",
-			"bear_claws",
-			"giant_growth",
-			"giant_growth",
-			"regrowth",
-			"regrowth",
-			"natures_lore",
-			"primal_rage",
-			"stampede",
-			"regenerate",
-			"regenerate"
-		]
-	},
-
-	"chrono_mage": {
-		"name": "Kairos, Chrono Mage",
-		"description": "Time manipulator with unmatched card advantage.",
-		"max_health": 100,
-		"starting_stamina": 3,
-		"deck": [
-			"temporal_bolt",
-			"temporal_bolt",
-			"temporal_bolt",
-			"blink",
-			"blink",
-			"rewind",
-			"rewind",
-			"haste",
-			"haste",
-			"slow",
-			"slow",
-			"time_warp",
-			"chrono_blast",
-			"moment_of_clarity"
-		]
-	},
-
-	# Phase 1: New Heroes (Fabio, Enrique, Kevin)
+	# Phase 1 Heroes: Fabio, Kevin (Selene above)
 	"fabio": {
 		"name": "Fabio, The Warrior",
 		"description": "Versatile fighter with tactical abilities and battlefield control.",
@@ -183,12 +100,19 @@ const HEROES = {
 			"sacrifice",
 			"leader"
 		],
-		# Reward deck: TEMPORARILY EMPTY FOR TESTING - cards moved to base deck above
+		# Reward deck: cards offered after defeating bosses
 		"reward_deck": [
-			# Move these back after testing:
-			# "dual_wield", "circular_strike", "cursed_dagger", "jumping_strike",
-			# "execution", "frenzy", "weak_point", "energy", "medkit",
-			# "fighters_spirit", "sacrifice", "leader"
+			"dual_wield",
+			"circular_strike",
+			"cursed_dagger",
+			"jumping_strike",
+			"execution",
+			"frenzy",
+			"weak_point",
+			"energy",
+			"fighters_spirit",
+			"sacrifice",
+			"leader"
 		]
 	},
 
@@ -229,6 +153,52 @@ const HEROES = {
 			# Special cards also in rewards
 			"spell_tsunami",
 			"repurpose"
+		]
+	},
+
+	# Enrique: The Cleric - Uses Aura as a second resource
+	"enrique": {
+		"name": "Enrique, The Cleric",
+		"description": "Divine healer who channels Aura to protect and restore allies.",
+		"max_health": 30,
+		"starting_stamina": 2,
+		"starting_aura": 5,  # Second resource: Aura (gains 1 per turn from passive)
+		"passive_ability_id": "enrique_aura_generation",
+		# Base deck: 10 cards
+		"deck": [
+			# === BASE DECK (keep these) ===
+			"expulsion",
+			"focused_purge",
+			"holy_plight",
+			"prayer_beads",
+			"humble_request",
+			"divine_reflection",
+			"healing_aura",
+			"magical_purge",
+			"story_of_jacob",
+			"protection",
+			# === REWARD CARDS (move back to reward_deck after testing) ===
+			"divine_force",
+			"purging_water",
+			"divine_barrier",
+			"refuge",
+			"gift",
+			"divine_gift",
+			"guy_with_beard",
+			"energy",
+			"meditate"
+		],
+		# Reward deck: cards offered after defeating bosses
+		"reward_deck": [
+			"divine_force",
+			"purging_water",
+			"divine_barrier",
+			"refuge",
+			"gift",
+			"divine_gift",
+			"guy_with_beard",
+			"energy",  # From shared pool
+			"meditate"  # From shared pool
 		]
 	}
 }

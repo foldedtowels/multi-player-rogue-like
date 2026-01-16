@@ -3,6 +3,13 @@ extends Node
 ## Central registry for all status effects in the game.
 ## Defines metadata for each effect: display name, decay behavior, modifiers, etc.
 ## Used by Character, GameManager, and UI to handle effects consistently.
+##
+## REFACTORING STATUS (Phase 2) - COMPLETED
+## [x] Added get_debuff_effect_names() -> Array[String]
+## [x] Added get_buff_effect_names() -> Array[String]
+## [x] Added get_self_debuff_effect_names() -> Array[String]
+## [x] Updated card_effect_engine.gd to use these functions
+## [x] Update player_status_panel.gd to use get_status_display_array() (optional - already has signature caching)
 
 enum EffectType { BUFF, DEBUFF, DOT }  # DOT = Damage Over Time
 enum DecayType { NONE, PER_TURN, END_OF_TURN, AFTER_TURN_START, END_OF_ENEMY_TURN }  # END_OF_ENEMY_TURN = removed after enemies finish attacking
@@ -73,7 +80,8 @@ const EFFECTS: Dictionary = {
 		"decay": DecayType.AFTER_TURN_START,  # Apply at turn start, then remove (like Rested)
 		"stamina_modifier": -1,
 		"per_stack": true,  # Fatigued N = -N stamina next turn
-		"apply_at": "turn_start"
+		"apply_at": "turn_start",
+		"self_applicable": true  # Can be applied to caster as card cost
 	},
 	"hinder": {
 		"display_name": "Hinder",
@@ -120,7 +128,8 @@ const EFFECTS: Dictionary = {
 		"type": EffectType.DEBUFF,
 		"decay": DecayType.PER_TURN,
 		"decay_amount": 1,
-		"blocks_card_play": true
+		"blocks_card_play": true,
+		"self_applicable": true  # Cards apply this to caster, not enemies
 	},
 	"scared": {
 		"display_name": "Scared",
@@ -135,7 +144,8 @@ const EFFECTS: Dictionary = {
 		"type": EffectType.DEBUFF,
 		"decay": DecayType.NONE,  # Permanent for entire fight - cannot be removed
 		"blocks_healing": false,  # No longer blocks, just reduces by 5 per stack
-		"permanent": true  # Flag to prevent removal by cards
+		"permanent": true,  # Flag to prevent removal by cards
+		"self_applicable": true  # Cards apply this to caster, not enemies
 	},
 
 	# ============================================
@@ -154,6 +164,24 @@ const EFFECTS: Dictionary = {
 		"type": EffectType.BUFF,
 		"decay": DecayType.END_OF_ENEMY_TURN,  # Persists through enemy attacks, then removed
 		"reflect_damage": 3  # Deal 3 damage back to attacker when hit
+	},
+
+	# ============================================
+	# ENRIQUE'S DIVINE EFFECTS
+	# ============================================
+	"played_twice": {
+		"display_name": "Played Twice",
+		"short_name": "x2",
+		"type": EffectType.BUFF,
+		"decay": DecayType.NONE,  # Manually consumed after playing a card
+		"consumable": true  # Consumed when triggered (after playing one card)
+	},
+	"invincible": {
+		"display_name": "Invincible",
+		"short_name": "Inv",
+		"type": EffectType.BUFF,
+		"decay": DecayType.END_OF_ENEMY_TURN,  # Lasts until enemy turn ends (like Ring of Fire)
+		"prevents_damage": true
 	}
 }
 
@@ -181,6 +209,43 @@ static func is_buff(effect_name: String) -> bool:
 static func is_debuff(effect_name: String) -> bool:
 	var data = get_effect_data(effect_name)
 	return data.get("type", EffectType.DEBUFF) in [EffectType.DEBUFF, EffectType.DOT]
+
+
+# ============================================
+# DYNAMIC CATEGORY FUNCTIONS (Phase 2 Refactoring)
+# ============================================
+# These replace hardcoded arrays in card_effect_engine.gd
+
+## Get all debuff effect names (applied to enemies/targets)
+## Excludes self-applicable debuffs that are only applied to caster
+static func get_debuff_effect_names() -> Array[String]:
+	var result: Array[String] = []
+	for effect_name in EFFECTS.keys():
+		var data = EFFECTS[effect_name]
+		var effect_type = data.get("type", EffectType.DEBUFF)
+		# Include DEBUFF and DOT types, but also include self_applicable ones
+		# since some (like fatigued) can be applied to either target or caster
+		if effect_type in [EffectType.DEBUFF, EffectType.DOT]:
+			result.append(effect_name)
+	return result
+
+## Get all buff effect names (applied to caster/allies)
+static func get_buff_effect_names() -> Array[String]:
+	var result: Array[String] = []
+	for effect_name in EFFECTS.keys():
+		var data = EFFECTS[effect_name]
+		if data.get("type", EffectType.DEBUFF) == EffectType.BUFF:
+			result.append(effect_name)
+	return result
+
+## Get self-debuff effect names (debuffs applied to caster as card cost)
+static func get_self_debuff_effect_names() -> Array[String]:
+	var result: Array[String] = []
+	for effect_name in EFFECTS.keys():
+		var data = EFFECTS[effect_name]
+		if data.get("self_applicable", false):
+			result.append(effect_name)
+	return result
 
 
 # ============================================

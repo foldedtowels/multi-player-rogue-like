@@ -12,6 +12,9 @@ var card_scene = preload("res://scenes/card_visual.tscn")
 var awaiting_target: bool = false
 var selected_card: Card = null
 
+# Cache to detect when hand has actually changed (prevents unnecessary rebuilds)
+var _cached_hand_signature: String = ""
+
 func setup(gm: Node, container: HBoxContainer, label: Label):
 	game_manager = gm
 	hand_container = container
@@ -27,19 +30,36 @@ func update_display():
 	if game_manager.turn_phase == game_manager.TurnPhase.PLAYER_TURN:
 		_display_hand_cards()
 
+## Generate a signature string that represents the current hand state
+func _get_hand_signature(character: Character) -> String:
+	var parts: Array[String] = []
+	for card in character.hand:
+		parts.append(card.card_name)
+	# Include stamina and status effects that affect playability
+	parts.append("stam:" + str(character.current_stamina))
+	parts.append("scared:" + str(character.scared))
+	parts.append("exh:" + str(character.exhausted))
+	return "|".join(parts)
+
 ## Display hand cards during PLAYER_TURN phase
 func _display_hand_cards():
 	var my_index = game_manager.local_player_index
+	var my_character = game_manager.players[my_index]
+
+	# Check if hand has actually changed (skip rebuild if unchanged)
+	var new_signature = _get_hand_signature(my_character)
+	if new_signature == _cached_hand_signature:
+		return  # No changes, skip rebuild to prevent tearing
+	_cached_hand_signature = new_signature
 
 	# Clear existing cards
 	for child in hand_container.get_children():
 		child.queue_free()
 
-	var my_character = game_manager.players[my_index]
-
 	# NEW SYSTEM: Use current stamina (stamina is deducted when cards are played)
 	# No more queued cards - cards play immediately via drag-and-drop
 	var current_stamina = my_character.current_stamina
+	var current_aura = my_character.current_aura  # Enrique's second resource
 
 	# Display cards in hand
 	for card in my_character.hand:
@@ -49,13 +69,13 @@ func _display_hand_cards():
 		card_visual.set_card(card)
 		card_visual.set_card_owner(my_character)  # For dynamic description (damage/heal with buffs)
 
-		# Cards are playable if enough stamina available
-		var can_afford = (card.stamina_cost <= current_stamina)
+		# Cards are playable if enough stamina AND aura available
+		var can_afford_card = card.can_afford(current_stamina, current_aura)
 		# Check if scared (blocks attack cards only)
 		var is_scared_blocked = (my_character.scared > 0 and card.card_type == Card.CardType.ATTACK)
 		# Check if exhausted (blocks all cards)
 		var is_exhausted = my_character.exhausted > 0
-		card_visual.set_playable(can_afford and not is_scared_blocked and not is_exhausted)
+		card_visual.set_playable(can_afford_card and not is_scared_blocked and not is_exhausted)
 
 		# Connect click signals
 		if not card_visual.card_clicked.is_connected(_on_hand_card_clicked):
