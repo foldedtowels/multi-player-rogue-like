@@ -16,10 +16,17 @@ func _on_start_pressed():
 	get_tree().change_scene_to_file("res://scenes/character_selection.tscn")
 
 func _on_multiplayer_pressed():
+	# Clear test mode flag for regular multiplayer
+	var game_manager = get_node("/root/GameManager")
+	if game_manager.has_meta("test_mode"):
+		game_manager.remove_meta("test_mode")
 	get_tree().change_scene_to_file("res://scenes/lobby.tscn")
 
 func _on_test_mode_pressed():
-	get_tree().change_scene_to_file("res://scenes/test_mode_setup.tscn")
+	# Set test mode flag and go to lobby (multiplayer test mode)
+	var game_manager = get_node("/root/GameManager")
+	game_manager.set_meta("test_mode", true)
+	get_tree().change_scene_to_file("res://scenes/lobby.tscn")
 
 func _on_quit_pressed():
 	get_tree().quit()

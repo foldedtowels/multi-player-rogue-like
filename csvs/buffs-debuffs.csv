@@ -1,0 +1,17 @@
+"all buffs and debuffs reset after a fight ends, unless specified otherwise",,,
+,,,
+name,system,Stackable?,
+Wet,,1,"debuff itself does nothing, creates stack on player that have interaction with cards"
+Famished Beast,,0,"Discard 2 cards at the beggining of your turn, this debuff removes itself at the end of the turn."
+Venom,,1,"This debuff is stackable, when the player has 3 Venom their Health is reduced to 0."
+Scared,,0,"You cannot use attacks next turn, removed after that turn"
+Hinder,,1,-x strength until player finishes next attack turn
+Exhausted,,0,"can not play cards this turn, removed at end of turn."
+Fatigued,,0,"User starts with 1 less stamina at the beggining of the turn, debuff is removed at the end of next turn "
+Decay,,0,can not heal or be healed for rest of turn
+Acquisition,,0,Top card of your deck is exhausted until end of the fight.
+Rested,,1,"Gain +1 stamina at the start of your turn, removed after stamina from buff added"
+Invigorated,strength,1,Gain 2 strength until end of turn
+RingofFire,similar to thorns,1,"Whenever you take damage, deal 3 damage to a boss when it deals damage to you. Removed at end of turn."
+Invincible,invulnerability,0,"Take no damage this turn, buff is removed at the end of the turn."
+DamagePlus,strength,1,strength that lasts for only one turn

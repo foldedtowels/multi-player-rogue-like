@@ -115,6 +115,14 @@ func _on_hand_card_double_clicked(card: Card):
 		Card.TargetType.SELF:
 			can_auto_play = true
 			target = my_character
+		Card.TargetType.SINGLE_ALLY:
+			# Context-sensitive v2 cards auto-play v1 on self
+			if card.has_v2 and card.context_sensitive_v2:
+				can_auto_play = true
+				target = my_character
+				print("[CARD_HAND] Double-click auto-playing context-sensitive v2 card as v1 on self: ", card.card_name)
+				game_manager.play_card_version(my_character, card, card, target)
+				return
 		Card.TargetType.ALL_ALLIES:
 			can_auto_play = true
 			target = my_character  # Target doesn't matter for ALL_ALLIES
@@ -134,7 +142,7 @@ func _on_hand_card_double_clicked(card: Card):
 			if alive_enemies.size() > 0:
 				target = alive_enemies[randi() % alive_enemies.size()]
 		_:
-			# SINGLE_ALLY, SINGLE_ENEMY, ANY require manual targeting
+			# SINGLE_ENEMY, ANY require manual targeting
 			can_auto_play = false
 
 	if can_auto_play and target != null:

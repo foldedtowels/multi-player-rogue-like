@@ -18,7 +18,7 @@ var rng: RandomNumberGenerator
 signal enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int)
 signal ring_of_fire_reflected(enemy_index: int, player_name: String, damage: int)  # For floating text on enemy
 signal card_retain_choice_needed(player_index: int, expires_after_round: int)
-signal boss_intent_reveal_requested()
+signal boss_intent_reveal_requested(player_index: int)
 signal enemy_damage_stats_changed()  # Emitted when weakness/hinder/strength applied to enemy
 signal spell_search_requested(player: Character, count: int, card_name: String)  # For Reformulate-style cards
 
@@ -127,7 +127,10 @@ func apply_effects(caster: Character, card: Card, target: Character, aura_spent:
 	_apply_stamina_gain(caster, card)
 	_apply_aura_gain(caster, card)  # Enrique's aura gain
 	_apply_all_players_shield(caster, card)
-	_apply_all_players_draw(caster, card)  # Enrique's Guy with Beard
+	var all_draw_affected = _apply_all_players_draw(caster, card)  # Enrique's Guy with Beard
+	for p in all_draw_affected:
+		if not affected.has(p):
+			affected.append(p)
 	_apply_spell_search(caster, card)
 
 	return affected
@@ -479,7 +482,8 @@ func _apply_enemy_target_swap(caster: Character, card: Card, target: Character, 
 
 func _apply_boss_intent_reveal(caster: Character, card: Card, target: Character) -> void:
 	if card.reveals_boss_intent and target == caster:
-		boss_intent_reveal_requested.emit()
+		var player_idx = players.find(caster)
+		boss_intent_reveal_requested.emit(player_idx)
 
 
 func _apply_caster_discard(caster: Character, card: Card) -> void:
@@ -634,15 +638,23 @@ func _apply_enrique_buffs(caster: Character, card: Card, target: Character, is_a
 		print("[INVINCIBLE] ", target.character_name, " gains Invincible buff")
 
 
-func _apply_all_players_draw(caster: Character, card: Card) -> void:
+func _apply_all_players_draw(caster: Character, card: Card) -> Array[Character]:
+	var draw_affected: Array[Character] = []
 	if card.all_players_draw <= 0:
-		return
+		return draw_affected
+
+	print("[DEBUG] _apply_all_players_draw - players.size(): ", players.size())
 
 	# Only apply if caster is a player
 	if not players.has(caster):
-		return
+		print("[DEBUG] Caster not in players array!")
+		return draw_affected
 
 	for player in players:
+		print("[DEBUG] Player in array: ", player.character_name, " alive: ", player.is_alive())
 		if player.is_alive():
 			player.draw_cards(card.all_players_draw)
+			draw_affected.append(player)
 			print("[DRAW] All players draw: ", player.character_name, " draws ", card.all_players_draw, " card(s)")
+
+	return draw_affected

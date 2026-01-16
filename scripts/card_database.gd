@@ -154,7 +154,7 @@ func _create_all_cards():
 	# Base Deck Cards (9)
 	all_cards["slash"] = create_card(
 		"Slash",
-		"A quick sword strike.",
+		"Deal 7 damage. TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		2, 7, 0, 0, 0
@@ -162,7 +162,7 @@ func _create_all_cards():
 
 	all_cards["big_smack"] = create_card(
 		"Big Smack",
-		"A powerful overhead blow.",
+		"Deal 10 damage. TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		3, 10, 0, 0, 0
@@ -170,7 +170,7 @@ func _create_all_cards():
 
 	all_cards["duel_purpose"] = create_card(
 		"Duel Purpose",
-		"Strike while defending yourself.",
+		"Deal 3 damage and gain 5 Shield. TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		1, 3, 0, 5, 0
@@ -178,7 +178,7 @@ func _create_all_cards():
 
 	all_cards["rest"] = create_card(
 		"Rest",
-		"Take a breather and recover your stamina.",
+		"Gain Rested (draw 1 extra card next turn). TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		1, 0, 0, 0, 0
@@ -187,7 +187,7 @@ func _create_all_cards():
 
 	all_cards["bulk_up"] = create_card(
 		"Bulk Up",
-		"Push your body to the limit for explosive power.",
+		"Gain 1 Invigorated (+2 damage next attack) and 1 Fatigued (-1 stamina next turn). TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		0, 0, 0, 0, 0
@@ -197,7 +197,7 @@ func _create_all_cards():
 
 	all_cards["dig_a_hole"] = create_card(
 		"Dig a Hole",
-		"Select a card to retain. It stays in hand until played or end of next turn.",
+		"Plays instantly. Pick 1 card in your hand to keep until played or end of next turn. TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		0, 0, 0, 0, 0  # No draw cards - retention only
@@ -207,7 +207,7 @@ func _create_all_cards():
 
 	all_cards["protector"] = create_card(
 		"Protector",
-		"Redirect enemy attacks from an ally to yourself this turn.",
+		"This turn all enemy attacks on target ally hit you instead. TARGET: 1 Ally.",
 		Card.CardType.BUFF,
 		Card.TargetType.SINGLE_ALLY,
 		0, 0, 0, 0, 0  # No shield - just redirects attacks
@@ -216,7 +216,7 @@ func _create_all_cards():
 
 	all_cards["protective_footwear"] = create_card(
 		"Protective Footwear",
-		"Sturdy boots provide defense.",
+		"Gain 5 Shield. TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		1, 0, 0, 5, 0
@@ -224,7 +224,7 @@ func _create_all_cards():
 
 	all_cards["hunters_instinct"] = create_card(
 		"Hunter's Instinct",
-		"Reveal what cards the boss will play next turn.",
+		"Plays instantly. Reveal the boss's cards for next turn. TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		1, 0, 0, 0, 0  # No card draw - reveals boss intent
@@ -235,7 +235,7 @@ func _create_all_cards():
 	# Reward Cards (17)
 	all_cards["dual_wield"] = create_card(
 		"Dual Wield",
-		"Strike twice with both weapons.",
+		"Hit twice for 2 damage each (4 total). TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		2, 2, 0, 0, 0
@@ -244,7 +244,7 @@ func _create_all_cards():
 
 	all_cards["circular_strike"] = create_card(
 		"Circular Strike",
-		"Swing in a wide arc hitting all enemies.",
+		"Deal 3 damage to ALL enemies. TARGET: All Enemies.",
 		Card.CardType.ATTACK,
 		Card.TargetType.ALL_ENEMIES,
 		1, 3, 0, 0, 0
@@ -253,7 +253,7 @@ func _create_all_cards():
 
 	all_cards["cursed_dagger"] = create_card(
 		"Cursed Dagger",
-		"A free but weak strike with a cursed blade.",
+		"Deal 2 damage. TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		0, 2, 0, 0, 0
@@ -261,7 +261,7 @@ func _create_all_cards():
 
 	all_cards["jumping_strike"] = create_card(
 		"Jumping Strike",
-		"Leap attack. Next turn: Deal 5 damage if you took no damage this turn.",
+		"Next turn: Deal 5 damage IF you took no damage this turn. TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		1, 0, 0, 0, 0  # 0 immediate damage
@@ -272,7 +272,7 @@ func _create_all_cards():
 
 	all_cards["execution"] = create_card(
 		"Execution",
-		"Finishing blow. +4 damage if target below 50% HP.",
+		"Deal 4 damage. +4 bonus damage if target is below 50% HP. TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		2, 4, 0, 0, 0
@@ -281,7 +281,7 @@ func _create_all_cards():
 
 	all_cards["frenzy"] = create_card(
 		"Frenzy!",
-		"Unleash wild fury on all enemies, exhausting yourself.",
+		"Deal 8 damage to ALL enemies. Gain 2 Exhausted (can't play cards until it wears off). TARGET: All Enemies.",
 		Card.CardType.ATTACK,
 		Card.TargetType.ALL_ENEMIES,
 		2, 8, 0, 0, 0
@@ -291,7 +291,7 @@ func _create_all_cards():
 
 	all_cards["weak_point"] = create_card(
 		"Weak Point!",
-		"Strike at weak points. +2 damage per debuff on target.",
+		"Deal 2 damage +2 per debuff on target. TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		1, 2, 0, 0, 0
@@ -300,7 +300,7 @@ func _create_all_cards():
 
 	all_cards["medkit"] = create_card(
 		"Medkit",
-		"Heal 10 HP. Apply 1 Decay.",
+		"Heal 10 HP. Gain 1 Decay (-1 max HP permanently). TARGET: Self.",
 		Card.CardType.HEAL,
 		Card.TargetType.SELF,
 		2, 0, 10, 0, 0
@@ -310,7 +310,7 @@ func _create_all_cards():
 	# v2 Card System - Fighter's Spirit
 	var fighters_spirit_v1 = create_card(
 		"Fighter's Spirit",
-		"Remove one debuff from yourself.",
+		"CHOICE: Drop on Self to remove 1 debuff. OR gain 5 Shield instead. TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		1, 0, 0, 0, 0
@@ -321,7 +321,7 @@ func _create_all_cards():
 
 	var fighters_spirit_v2 = create_card(
 		"Fighter's Spirit V2",
-		"Fortify your defenses.",
+		"Gain 5 Shield. TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		1, 0, 0, 5, 0
@@ -333,7 +333,7 @@ func _create_all_cards():
 
 	all_cards["sacrifice"] = create_card(
 		"Sacrifice",
-		"Empower an ally with your strength.",
+		"Give target 1 Strength (+2 damage per attack). TARGET: 1 Ally.",
 		Card.CardType.BUFF,
 		Card.TargetType.SINGLE_ALLY,
 		1, 0, 0, 0, 0
@@ -343,7 +343,7 @@ func _create_all_cards():
 	# v2 Card System - Leader
 	var leader_v1 = create_card(
 		"Leader",
-		"All teammates draw 1 card.",
+		"Plays instantly. CHOICE: All OTHER allies draw 1 card. OR discard 2 random cards and all OTHER allies draw 2. TARGET: Other Allies.",
 		Card.CardType.BUFF,
 		Card.TargetType.OTHER_ALLIES,
 		0, 0, 0, 0, 1  # 0 cost, draw 1 for other allies
@@ -354,7 +354,7 @@ func _create_all_cards():
 
 	var leader_v2 = create_card(
 		"Leader V2",
-		"Discard 2 random cards. Teammates draw 2.",
+		"Discard 2 random cards. All OTHER allies draw 2 cards. TARGET: Other Allies.",
 		Card.CardType.BUFF,
 		Card.TargetType.OTHER_ALLIES,
 		0, 0, 0, 0, 2  # 0 cost, draw 2 for other allies
@@ -395,7 +395,7 @@ func _create_all_cards():
 	# Shared reward card (used by multiple characters)
 	all_cards["energy"] = create_card(
 		"Energy!",
-		"Gain 1 stamina immediately.",
+		"Plays instantly. Gain 1 stamina. TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		0, 0, 0, 0, 0
@@ -500,12 +500,11 @@ func _create_all_cards():
 
 	all_cards["it_bit_my_hand"] = create_card(
 		"It bit my Hand!",
-		"A nasty bite that slows you down.",
+		"Deal 3 damage. TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		1, 3, 0, 0, 0
 	)
-	all_cards["it_bit_my_hand"].apply_hinder = 1
 
 	all_cards["anger"] = create_card(
 		"Anger",
@@ -682,7 +681,7 @@ func _create_all_cards():
 	# Expulsion: 2 stamina, ALL aura, deal 3 damage per aura spent to all enemies
 	all_cards["expulsion"] = create_card(
 		"Expulsion",
-		"Spend all your Aura to smite enemies. Deals 3 damage per Aura spent.",
+		"Spends ALL your Aura. Deal 3 damage per aura spent to ALL enemies. TARGET: All Enemies.",
 		Card.CardType.ATTACK,
 		Card.TargetType.ALL_ENEMIES,
 		2, 0, 0, 0, 0
@@ -694,7 +693,7 @@ func _create_all_cards():
 	# Focused Purge: 1 stamina, 0 aura, 3 damage, gain 1 aura
 	all_cards["focused_purge"] = create_card(
 		"Focused Purge",
-		"Strike with divine purpose and replenish your Aura.",
+		"Deal 3 damage. Gain 1 Aura. TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		1, 3, 0, 0, 0
@@ -704,7 +703,7 @@ func _create_all_cards():
 	# Holy Plight: 1 stamina, 2 aura, 5 damage
 	all_cards["holy_plight"] = create_card(
 		"Holy Plight",
-		"Channel divine wrath at the cost of Aura.",
+		"Deal 5 damage. TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		1, 5, 0, 0, 0
@@ -714,7 +713,7 @@ func _create_all_cards():
 	# Prayer Beads (Special): 1 stamina, 1 aura, D6 damage
 	all_cards["prayer_beads"] = create_card(
 		"Prayer Beads",
-		"Roll the dice and pray for divine intervention. Deals 1-6 random damage.",
+		"Deal 1-6 random damage (rolls a D6). TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		1, 0, 0, 0, 0
@@ -725,7 +724,7 @@ func _create_all_cards():
 	# Humble Request: 1 stamina, 0 aura, gain 2 aura
 	all_cards["humble_request"] = create_card(
 		"Humble Request",
-		"Pray for divine favor and restore your Aura.",
+		"Gain 2 Aura. TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		1, 0, 0, 0, 0
@@ -735,7 +734,7 @@ func _create_all_cards():
 	# Divine Reflection: 0 stamina, 3 aura, target's next card plays twice
 	all_cards["divine_reflection"] = create_card(
 		"Divine Reflection",
-		"Bless an ally's next action to trigger twice.",
+		"Target ally's next card plays twice. TARGET: 1 Ally.",
 		Card.CardType.BUFF,
 		Card.TargetType.SINGLE_ALLY,
 		0, 0, 0, 0, 0
@@ -746,7 +745,7 @@ func _create_all_cards():
 	# Healing Aura: 0 stamina, 2 aura, heal 10, apply decay to self
 	all_cards["healing_aura"] = create_card(
 		"Healing Aura",
-		"Divine healing at the cost of your future vitality.",
+		"Heal target 10 HP. You gain 1 Decay (-1 max HP permanently). TARGET: 1 Ally.",
 		Card.CardType.HEAL,
 		Card.TargetType.SINGLE_ALLY,
 		0, 0, 10, 0, 0
@@ -757,7 +756,7 @@ func _create_all_cards():
 	# Magical Purge: 0 stamina, 2 aura, remove 1 debuff from self
 	all_cards["magical_purge"] = create_card(
 		"Magical Purge",
-		"Cleanse yourself of afflictions.",
+		"Remove 1 debuff from yourself. TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		0, 0, 0, 0, 0
@@ -768,7 +767,7 @@ func _create_all_cards():
 	# Story Of Jacob: 1 stamina, 0 aura, gain 5 aura, apply fatigued to self
 	all_cards["story_of_jacob"] = create_card(
 		"Story Of Jacob",
-		"A long tale that fills you with divine energy but drains your stamina.",
+		"Gain 5 Aura. Gain 1 Fatigued (-1 stamina next turn). TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		1, 0, 0, 0, 0
@@ -779,7 +778,7 @@ func _create_all_cards():
 	# Protection: 1 stamina, 1 aura, give ally 5 shield
 	all_cards["protection"] = create_card(
 		"Protection",
-		"Shield an ally with divine protection.",
+		"Give target 5 Shield. TARGET: 1 Ally.",
 		Card.CardType.BUFF,
 		Card.TargetType.SINGLE_ALLY,
 		1, 0, 0, 5, 0
@@ -791,7 +790,7 @@ func _create_all_cards():
 	# Divine Force: 2 stamina, 2 aura, heal 10, apply decay to self
 	all_cards["divine_force"] = create_card(
 		"Divine Force",
-		"Powerful healing at a permanent cost.",
+		"CHOICE: Drop on Ally to heal 10 HP (you gain 1 Decay). Drop on Enemy to deal 6 damage.",
 		Card.CardType.HEAL,
 		Card.TargetType.SINGLE_ALLY,
 		2, 0, 10, 0, 0
@@ -800,11 +799,12 @@ func _create_all_cards():
 	all_cards["divine_force"].apply_decay = 1
 	all_cards["divine_force"].has_v2 = true
 	all_cards["divine_force"].v2_card_id = "divine_force_v2"
+	all_cards["divine_force"].context_sensitive_v2 = true  # Drop target determines version
 
 	# Divine Force v2: 2 stamina, 2 aura, 6 damage
 	all_cards["divine_force_v2"] = create_card(
 		"Divine Force",
-		"Channel divine energy into pure damage.",
+		"Deal 6 damage. TARGET: 1 Enemy.",
 		Card.CardType.ATTACK,
 		Card.TargetType.SINGLE_ENEMY,
 		2, 6, 0, 0, 0
@@ -814,7 +814,7 @@ func _create_all_cards():
 	# Purging Water: 1 stamina, 1 aura, remove 1 debuff from ally
 	all_cards["purging_water"] = create_card(
 		"Purging Water",
-		"Holy water that cleanses afflictions from an ally.",
+		"Remove 1 debuff from target ally. TARGET: 1 Ally.",
 		Card.CardType.BUFF,
 		Card.TargetType.SINGLE_ALLY,
 		1, 0, 0, 0, 0
@@ -825,7 +825,7 @@ func _create_all_cards():
 	# Divine Barrier: 1 stamina, 3 aura, grant invincible to ally
 	all_cards["divine_barrier"] = create_card(
 		"Divine Barrier",
-		"Protect an ally from all harm this turn.",
+		"Target ally becomes Invincible (takes no damage) this turn. TARGET: 1 Ally.",
 		Card.CardType.BUFF,
 		Card.TargetType.SINGLE_ALLY,
 		1, 0, 0, 0, 0
@@ -836,7 +836,7 @@ func _create_all_cards():
 	# Refuge: 1 stamina, 0 aura, 5 shield, gain 1 aura
 	all_cards["refuge"] = create_card(
 		"Refuge",
-		"Find shelter in divine light.",
+		"Gain 5 Shield and 1 Aura. TARGET: Self.",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		1, 0, 0, 5, 0
@@ -846,7 +846,7 @@ func _create_all_cards():
 	# Gift: 0 stamina, 2 aura, ally draws 2 cards
 	all_cards["gift"] = create_card(
 		"Gift",
-		"Share divine inspiration with an ally.",
+		"Target ally draws 2 cards. TARGET: 1 Ally.",
 		Card.CardType.BUFF,
 		Card.TargetType.SINGLE_ALLY,
 		0, 0, 0, 0, 2
@@ -856,7 +856,7 @@ func _create_all_cards():
 	# Divine Gift: 2 stamina, 2 aura, give ally 2 stamina
 	all_cards["divine_gift"] = create_card(
 		"Divine Gift",
-		"Grant an ally the energy to act.",
+		"Give target ally 2 stamina. TARGET: 1 Ally.",
 		Card.CardType.BUFF,
 		Card.TargetType.SINGLE_ALLY,
 		2, 0, 0, 0, 0
@@ -867,7 +867,7 @@ func _create_all_cards():
 	# Guy with Beard: 0 stamina, 2 aura, all players draw 1
 	all_cards["guy_with_beard"] = create_card(
 		"Guy with Beard",
-		"A wise figure appears and enlightens everyone.",
+		"ALL players draw 1 card. TARGET: Self (affects all).",
 		Card.CardType.BUFF,
 		Card.TargetType.SELF,
 		0, 0, 0, 0, 0

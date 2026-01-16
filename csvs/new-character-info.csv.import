@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://dd5qo1oh1n7l5"
+
+[deps]
+
+files=["res://csvs/new-character-info.starting stamina.translation", "res://csvs/new-character-info.starting hp.translation", "res://csvs/new-character-info.special ability.translation"]
+
+source_file="res://csvs/new-character-info.csv"
+dest_files=["res://csvs/new-character-info.starting stamina.translation", "res://csvs/new-character-info.starting hp.translation", "res://csvs/new-character-info.special ability.translation"]
+
+[params]
+
+compress=true
+delimiter=0

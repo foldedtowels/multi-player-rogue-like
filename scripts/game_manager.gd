@@ -18,7 +18,7 @@ signal ring_of_fire_reflected(enemy_index: int, player_name: String, damage: int
 signal card_v2_choice_needed(caster: Character, v1_card: Card, v2_card: Card, target: Character)
 signal card_retain_choice_needed(player_index: int, expires_after_round: int)  # Player needs to select a card to retain
 signal spell_search_requested(player: Character, count: int, card_name: String)  # Spell tutor effect
-signal boss_intent_revealed(next_intents: Dictionary)  # enemy_index -> EnemyIntent for next turn
+signal boss_intent_revealed(player_index: int, next_intents: Dictionary)  # player_index = who played the reveal card, enemy_index -> EnemyIntent for next turn
 signal enemy_intents_calculated(intents: Dictionary)  # Enemy intents calculated at round start
 
 enum GameState {
@@ -104,6 +104,9 @@ var boss_next_turn_cards: Array[String] = []  # Card names boss will play next t
 var enemy_intents: Dictionary = {}  # enemy_index -> EnemyIntent
 var locked_card_targets: Dictionary = {}  # enemy_idx -> Array of {target_index, is_special} - targets locked by Hunter's Instinct
 var locked_enemy_hands: Dictionary = {}  # enemy_index -> Array[Card] - hands locked by Hunter's Instinct
+
+# Tracks which player triggered the boss intent reveal (for modal display)
+var _intent_reveal_player_index: int = -1
 
 # Card effect engine - handles all card effect application
 var card_effect_engine: CardEffectEngine
@@ -231,7 +234,7 @@ func _connect_enemy_ai_signals():
 
 
 func _on_ai_boss_intent_revealed(next_turn_intents: Dictionary):
-	boss_intent_revealed.emit(next_turn_intents)
+	boss_intent_revealed.emit(_intent_reveal_player_index, next_turn_intents)
 
 func start_new_game():
 	players.clear()
@@ -370,6 +373,157 @@ func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 		rpc("sync_game_seed", game_seed)
 
 	rng.seed = game_seed
+
+
+## TEST MODE ENCOUNTER INITIALIZATION ##
+## Used by multiplayer test mode to set up a custom encounter with selected enemies
+@rpc("any_peer", "call_local", "reliable")
+func initialize_test_encounter(enemy_ids: Array):
+	"""
+	Initialize a test encounter with specific enemies selected by the host.
+
+	Args:
+		enemy_ids: Array of strings like "minion:minion_1" or "boss:boss_0"
+	"""
+
+	# Step 1: Clear ALL combat state
+	enemies.clear()
+	queued_cards.clear()
+	players_done_acting.clear()
+	last_played_cards.clear()
+	card_previews.clear()
+	delayed_effects.clear()
+	protected_by.clear()
+	boss_intent_revealed_for_round = 0
+	boss_next_turn_cards.clear()
+	enemy_intents.clear()
+	locked_card_targets.clear()
+	locked_enemy_hands.clear()
+
+	# Initialize CCW targeting
+	var alive_players = players.filter(func(p): return p.is_alive())
+	if alive_players.size() > 0:
+		ccw_target_index = rng.randi() % alive_players.size()
+	else:
+		ccw_target_index = 0
+
+	# Step 2: Set game state
+	current_state = GameState.COMBAT
+	round_number = 1
+	current_player_index = 0
+	combat_phase = CombatPhase.MINION_COMBAT  # Use minion combat phase for test
+
+	# Step 3: Create enemies from IDs using existing database functions
+	for enemy_id in enemy_ids:
+		var parts = str(enemy_id).split(":")
+		if parts.size() != 2:
+			push_warning("[TEST] Invalid enemy_id format: " + str(enemy_id))
+			continue
+
+		var enemy_type = parts[0]
+		var id = parts[1]
+
+		var enemy: Character = null
+		if enemy_type == "minion":
+			# Use MinionDatabase to create the minion properly
+			enemy = minion_db.create_minion_by_id(id)
+			if enemy:
+				# Override health for test mode
+				enemy.max_health = 100
+				enemy.current_health = 100
+		elif enemy_type == "boss":
+			# Use BossDatabase to create the boss properly
+			enemy = boss_db.create_boss_by_id(id)
+			if enemy:
+				# Override health for test mode
+				enemy.max_health = 100
+				enemy.current_health = 100
+
+		if enemy:
+			enemies.append(enemy)
+			print("[TEST] Created enemy: ", enemy.character_name)
+
+	# Step 4: Reset players for test mode
+	for i in range(players.size()):
+		var player = players[i]
+
+		# Set test mode stats
+		player.max_health = 100
+		player.current_health = 100
+		player.max_stamina = 10
+		player.current_stamina = 10
+
+		# Set aura for Enrique (characters with max_aura > 0)
+		if player.max_aura > 0:
+			player.max_aura = 10
+			player.current_aura = 10
+
+		# Return all cards to deck
+		for card in player.hand:
+			player.deck.append(card)
+		player.hand.clear()
+
+		for card in player.discard_pile:
+			player.deck.append(card)
+		player.discard_pile.clear()
+
+		player.exhaust_pile.clear()
+
+		# Shuffle deck
+		player.deck.shuffle()
+
+		# Reset temporary combat state
+		player.shield = 0
+		player.clear_all_effects()
+
+	# Step 5: Sync state to all clients (server only)
+	if multiplayer.is_server():
+		# Assign network ownership
+		assign_characters_to_network_peers()
+
+		# Broadcast player state
+		for i in range(players.size()):
+			broadcast_character_state(players[i])
+
+		# Sync enemies
+		_sync_test_enemies()
+
+		# Sync RNG seed for deterministic gameplay
+		game_seed = randi()
+		rpc("sync_game_seed", game_seed)
+
+	rng.seed = game_seed
+	set_meta("test_mode", true)
+	print("[TEST] Test encounter initialized with ", enemies.size(), " enemies")
+
+
+## Sync test mode enemies to all clients
+func _sync_test_enemies():
+	if not multiplayer.is_server(): return
+
+	# Serialize all enemy states
+	var enemy_states: Array[Dictionary] = []
+	for enemy in enemies:
+		enemy_states.append(enemy.get_state_dict())
+
+	rpc("_client_receive_test_enemies", enemy_states)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func _client_receive_test_enemies(enemy_states: Array):
+	# Server already has enemies, skip
+	if multiplayer.is_server():
+		return
+
+	# Clear and recreate enemies from state data
+	enemies.clear()
+
+	for state in enemy_states:
+		var enemy = Character.new()
+		enemy.apply_state_dict(state)
+		enemies.append(enemy)
+
+	game_state_changed.emit()
 
 
 # Character state sync RPCs
@@ -1160,7 +1314,10 @@ func _get_redirected_target(target: Character) -> Character:
 
 func end_boss_turn():
 	# Apply boss end-of-turn effects (status decay, etc.)
-	current_boss.end_turn(round_number)
+	# Note: In test mode or minion combat, current_boss may be null
+	# Enemies already have end_turn() called in _server_process_enemy_turn()
+	if current_boss != null:
+		current_boss.end_turn(round_number)
 
 	# NOTE: round_number increment removed - handled by start_enemy_turn_phase()
 	# NOTE: start_player_turn() removed - using new simultaneous turn system via start_round()
@@ -1178,23 +1335,28 @@ func end_boss_turn():
 func play_card(caster: Character, card: Card, target: Character):
 	# Check if card has v2 variant and needs player choice
 	if card.has_v2:
-		var v2 = card.v2_card
-		# If v2_card is null (e.g., after network sync), look it up from database
-		if v2 == null and card.v2_card_id != "":
-			v2 = card_db.get_card(card.v2_card_id)
-		if v2 != null:
-			# Need to show modal on correct client (may be remote peer)
-			var caster_index = players.find(caster)
-			var target_index = _get_character_index(target)
-			var target_is_player = players.has(target)
-			var peer_id = caster.network_owner_id
-			if peer_id == -1 or peer_id == multiplayer.get_unique_id():
-				# Local player - emit signal directly
-				card_v2_choice_needed.emit(caster, card, v2, target)
-			else:
-				# Remote player - send RPC to show modal on their client
-				rpc_id(peer_id, "client_show_card_v2_choice_modal", caster_index, card.serialize(), v2.serialize(), target_index, target_is_player)
-			return
+		# Context-sensitive v2 cards skip modal - drop target already determined version
+		# If we reach here, treat as v1 (base card) and continue normal processing
+		if card.context_sensitive_v2:
+			pass  # Fall through to normal processing
+		else:
+			var v2 = card.v2_card
+			# If v2_card is null (e.g., after network sync), look it up from database
+			if v2 == null and card.v2_card_id != "":
+				v2 = card_db.get_card(card.v2_card_id)
+			if v2 != null:
+				# Need to show modal on correct client (may be remote peer)
+				var caster_index = players.find(caster)
+				var target_index = _get_character_index(target)
+				var target_is_player = players.has(target)
+				var peer_id = caster.network_owner_id
+				if peer_id == -1 or peer_id == multiplayer.get_unique_id():
+					# Local player - emit signal directly
+					card_v2_choice_needed.emit(caster, card, v2, target)
+				else:
+					# Remote player - send RPC to show modal on their client
+					rpc_id(peer_id, "client_show_card_v2_choice_modal", caster_index, card.serialize(), v2.serialize(), target_index, target_is_player)
+				return
 
 	# Server validates and processes
 	if not multiplayer.is_server():
@@ -1705,7 +1867,10 @@ func _legacy_apply_card_effects(caster: Character, card: Card, target: Character
 	return targets
 
 ## Reveal enemies' next turn intents (Hunter's Instinct)
-func _reveal_boss_intent():
+func _reveal_boss_intent(player_index: int = -1):
+	# Store which player triggered the reveal (for modal display on correct client)
+	_intent_reveal_player_index = player_index
+
 	# Delegate to EnemyAI module
 	enemy_ai.players = players
 	enemy_ai.enemies = enemies

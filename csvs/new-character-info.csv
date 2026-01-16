@@ -1,0 +1,5 @@
+Character name,starting stamina,starting hp,special ability
+Name,Max Stamina,Hp,Passive
+Fabio,2,50,"Player has option to do one of the following: target boss takes 2 damage, draw 1 card, or target player gains 3 shield."
+Kevin,2,40,Every turn player has opportunity to select an Alc' in their Satchel Deck to add to their hand by discarding Spell cards described in that Alc's ingredient list.
+Enrique,2,30,"Has an additional resource called Aura, gains 1 aura at the start of every turn."

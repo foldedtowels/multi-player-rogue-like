@@ -1,0 +1,14 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://bah6j8iduid0s"
+
+[deps]
+
+source_file="res://csvs/buffs-debuffs.csv"
+
+[params]
+
+compress=true
+delimiter=0

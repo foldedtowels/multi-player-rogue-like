@@ -21,6 +21,7 @@ const EFFECTS: Dictionary = {
 	"poison": {
 		"display_name": "Poison",
 		"short_name": "Psn",
+		"symbol": "☠️",
 		"type": EffectType.DOT,
 		"decay": DecayType.PER_TURN,
 		"decay_amount": 1,
@@ -30,6 +31,7 @@ const EFFECTS: Dictionary = {
 	"burn": {
 		"display_name": "Burn",
 		"short_name": "Brn",
+		"symbol": "🔥",
 		"type": EffectType.DOT,
 		"decay": DecayType.NONE,
 		"deals_damage": true,
@@ -42,6 +44,7 @@ const EFFECTS: Dictionary = {
 	"strength": {
 		"display_name": "Strength",
 		"short_name": "Str",
+		"symbol": "💪",
 		"type": EffectType.BUFF,
 		"decay": DecayType.NONE,
 		"attack_modifier": 1  # +1 damage per stack
@@ -49,6 +52,7 @@ const EFFECTS: Dictionary = {
 	"armor": {
 		"display_name": "Armor",
 		"short_name": "Arm",
+		"symbol": "🛡️",
 		"type": EffectType.BUFF,
 		"decay": DecayType.NONE,
 		"damage_reduction": 1  # -1 damage taken per stack
@@ -60,6 +64,7 @@ const EFFECTS: Dictionary = {
 	"vulnerable": {
 		"display_name": "Vulnerable",
 		"short_name": "Vuln",
+		"symbol": "💔",
 		"type": EffectType.DEBUFF,
 		"decay": DecayType.PER_TURN,
 		"decay_amount": 1,
@@ -68,6 +73,7 @@ const EFFECTS: Dictionary = {
 	"weakness": {
 		"display_name": "Weakness",
 		"short_name": "Weak",
+		"symbol": "😵",
 		"type": EffectType.DEBUFF,
 		"decay": DecayType.PER_TURN,
 		"decay_amount": 1,
@@ -76,6 +82,7 @@ const EFFECTS: Dictionary = {
 	"fatigued": {
 		"display_name": "Fatigued",
 		"short_name": "Ftg",
+		"symbol": "😴",
 		"type": EffectType.DEBUFF,
 		"decay": DecayType.AFTER_TURN_START,  # Apply at turn start, then remove (like Rested)
 		"stamina_modifier": -1,
@@ -86,6 +93,7 @@ const EFFECTS: Dictionary = {
 	"hinder": {
 		"display_name": "Hinder",
 		"short_name": "Hnd",
+		"symbol": "🚫",
 		"type": EffectType.DEBUFF,
 		"decay": DecayType.END_OF_TURN,  # Completely removed at end of turn
 		"attack_modifier": -1,  # -1 damage per stack
@@ -98,6 +106,7 @@ const EFFECTS: Dictionary = {
 	"rested": {
 		"display_name": "Rested",
 		"short_name": "Rest",
+		"symbol": "😌",
 		"type": EffectType.BUFF,
 		"decay": DecayType.AFTER_TURN_START,  # Persists through turn end, applies and is removed at next turn start
 		"stamina_modifier": 1,
@@ -107,6 +116,7 @@ const EFFECTS: Dictionary = {
 	"invigorated": {
 		"display_name": "Invigorated",
 		"short_name": "Invig",
+		"symbol": "⚡",
 		"type": EffectType.BUFF,
 		"decay": DecayType.END_OF_TURN,
 		"grants_on_apply": {"effect": "damage_plus", "multiplier": 2}
@@ -114,6 +124,7 @@ const EFFECTS: Dictionary = {
 	"damage_plus": {
 		"display_name": "Damage+",
 		"short_name": "Dmg+",
+		"symbol": "⚔️",
 		"type": EffectType.BUFF,
 		"decay": DecayType.END_OF_TURN,
 		"attack_modifier": 1  # +1 damage per stack
@@ -125,6 +136,7 @@ const EFFECTS: Dictionary = {
 	"exhausted": {
 		"display_name": "Exhausted",
 		"short_name": "Exh",
+		"symbol": "🥵",
 		"type": EffectType.DEBUFF,
 		"decay": DecayType.PER_TURN,
 		"decay_amount": 1,
@@ -134,6 +146,7 @@ const EFFECTS: Dictionary = {
 	"scared": {
 		"display_name": "Scared",
 		"short_name": "Scar",
+		"symbol": "😨",
 		"type": EffectType.DEBUFF,
 		"decay": DecayType.END_OF_TURN,
 		"blocks_attacks": true  # Only blocks attack cards, not all cards
@@ -141,6 +154,7 @@ const EFFECTS: Dictionary = {
 	"decay": {
 		"display_name": "Decay",
 		"short_name": "Dcy",
+		"symbol": "💀",
 		"type": EffectType.DEBUFF,
 		"decay": DecayType.NONE,  # Permanent for entire fight - cannot be removed
 		"blocks_healing": false,  # No longer blocks, just reduces by 5 per stack
@@ -154,6 +168,7 @@ const EFFECTS: Dictionary = {
 	"wet": {
 		"display_name": "Wet",
 		"short_name": "Wet",
+		"symbol": "💧",
 		"type": EffectType.DEBUFF,
 		"decay": DecayType.NONE,  # Doesn't decay naturally - must be removed by cards
 		"stackable": true  # Can accumulate stacks for bonus damage mechanics
@@ -161,6 +176,7 @@ const EFFECTS: Dictionary = {
 	"ring_of_fire": {
 		"display_name": "Ring of Fire",
 		"short_name": "RoF",
+		"symbol": "💍",
 		"type": EffectType.BUFF,
 		"decay": DecayType.END_OF_ENEMY_TURN,  # Persists through enemy attacks, then removed
 		"reflect_damage": 3  # Deal 3 damage back to attacker when hit
@@ -172,6 +188,7 @@ const EFFECTS: Dictionary = {
 	"played_twice": {
 		"display_name": "Played Twice",
 		"short_name": "x2",
+		"symbol": "🔁",
 		"type": EffectType.BUFF,
 		"decay": DecayType.NONE,  # Manually consumed after playing a card
 		"consumable": true  # Consumed when triggered (after playing one card)
@@ -179,6 +196,7 @@ const EFFECTS: Dictionary = {
 	"invincible": {
 		"display_name": "Invincible",
 		"short_name": "Inv",
+		"symbol": "✨",
 		"type": EffectType.BUFF,
 		"decay": DecayType.END_OF_ENEMY_TURN,  # Lasts until enemy turn ends (like Ring of Fire)
 		"prevents_damage": true
@@ -198,6 +216,9 @@ static func get_display_name(effect_name: String) -> String:
 
 static func get_short_name(effect_name: String) -> String:
 	return EFFECTS.get(effect_name, {}).get("short_name", effect_name.left(4).capitalize())
+
+static func get_symbol(effect_name: String) -> String:
+	return EFFECTS.get(effect_name, {}).get("symbol", "?")
 
 static func get_all_effect_names() -> Array:
 	return EFFECTS.keys()
@@ -279,6 +300,7 @@ static func get_status_display_array(status_effects: Dictionary) -> Array[Dictio
 			"effect_name": effect_name,
 			"display_name": get_display_name(effect_name),
 			"short_name": get_short_name(effect_name),
+			"symbol": get_symbol(effect_name),
 			"amount": amount,
 			"is_buff": is_buff(effect_name)
 		})

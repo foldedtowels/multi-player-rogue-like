@@ -16,11 +16,19 @@ const BG_DEFAULT = preload("res://assets/temp cards/Enrique.png")
 const CARD_TEXT_BOX = preload("res://assets/temp cards/card text box.png")
 const STAMINA_CIRCLE = preload("res://assets/temp cards/Stamina.png")
 const STAMINA_NUMS = [
-	preload("res://assets/temp cards/0.png"),
-	preload("res://assets/temp cards/1.png"),
-	preload("res://assets/temp cards/2.png"),
-	preload("res://assets/temp cards/3.png")
+	preload("res://assets/temp cards/0 stamina.png"),
+	preload("res://assets/temp cards/1 stamina.png"),
+	preload("res://assets/temp cards/2 stamina.png"),
+	preload("res://assets/temp cards/3 stamina.png")
 ]
+const AURA_CIRCLE = preload("res://assets/temp cards/Aura.png")
+const AURA_NUMS = [
+	preload("res://assets/temp cards/0 Aura.png"),
+	preload("res://assets/temp cards/1 Aura.png"),
+	preload("res://assets/temp cards/2 Aura.png"),
+	preload("res://assets/temp cards/3 Aura.png")
+]
+const AURA_X = preload("res://assets/temp cards/X Aura.png")
 const TYPE_BOX_ATTACK = preload("res://assets/temp cards/attack text box.png")
 const TYPE_BOX_SKILL = preload("res://assets/temp cards/Skill text box.png")
 const TYPE_TEXT_ATTACK = preload("res://assets/temp cards/Attack.png")
@@ -34,6 +42,8 @@ const ELEM_EARTH = preload("res://assets/temp cards/Earth.png")
 @onready var card_text_box: TextureRect = $CardTextBox
 @onready var stamina_circle: TextureRect = $StaminaCircle
 @onready var stamina_number: TextureRect = $StaminaCircle/StaminaNumber
+@onready var aura_circle: TextureRect = $AuraCircle
+@onready var aura_number: TextureRect = $AuraCircle/AuraNumber
 @onready var element_icon: TextureRect = $ElementIcon
 @onready var type_box: TextureRect = $TypeBox
 @onready var type_text: TextureRect = $TypeBox/TypeText
@@ -92,6 +102,18 @@ func update_display():
 	stamina_circle.texture = STAMINA_CIRCLE
 	var cost = clampi(card_data.stamina_cost, 0, 3)
 	stamina_number.texture = STAMINA_NUMS[cost]
+
+	# Aura circle and number (only show if card has aura cost)
+	if card_data.aura_cost > 0 or card_data.aura_cost_all:
+		aura_circle.visible = true
+		aura_circle.texture = AURA_CIRCLE
+		if card_data.aura_cost_all:
+			aura_number.texture = AURA_X
+		else:
+			var aura_cost = clampi(card_data.aura_cost, 0, 3)
+			aura_number.texture = AURA_NUMS[aura_cost]
+	else:
+		aura_circle.visible = false
 
 	# Type box and text based on card type
 	var is_attack = card_data.card_type == Card.CardType.ATTACK

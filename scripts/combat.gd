@@ -17,6 +17,9 @@ var player_status_panel: PlayerStatusPanel
 var last_turn_phase = null  # Track phase changes for animations
 var _display_dirty: bool = false  # Debounce flag for display updates
 var enemy_panel_cache: Dictionary = {}  # Cache enemy panels to avoid destroy/recreate on every update
+var is_test_mode: bool = false  # Test mode: 10 stamina, 10 cards, special behavior
+var kill_enemies_button: Button = null  # Test mode button
+var buff_debuff_modal: Control = null  # Test mode buff/debuff modal
 
 # UI References - New multiplayer layout
 @onready var left_player_panel: Panel = $MainArea/LeftPlayerPanel
@@ -106,6 +109,12 @@ func _ready():
 
 	# Setup player panels as drop targets (BEFORE displaying cards)
 	_setup_drop_zones()
+
+	# Check if we're in test mode
+	is_test_mode = game_manager.has_meta("test_mode") and game_manager.get_meta("test_mode")
+
+	if is_test_mode:
+		_setup_test_mode()
 
 	# Start the first round with simultaneous selection phase
 	if game_manager.current_state == game_manager.GameState.COMBAT:
@@ -211,6 +220,120 @@ func _create_character_face():
 	character_face_panel.panel_clicked.connect(_on_panel_clicked_for_passive)
 	character_face_panel.card_dropped.connect(_on_card_dropped_on_character_face)
 
+
+## TEST MODE SETUP ##
+func _setup_test_mode():
+	print("[TEST MODE] Setting up test mode in combat scene")
+
+	# Create buff/debuff modal from scene
+	var buff_debuff_scene = preload("res://scenes/ui/buff_debuff_modal.tscn")
+	buff_debuff_modal = buff_debuff_scene.instantiate()
+	add_child(buff_debuff_modal)
+	buff_debuff_modal.effects_applied.connect(_on_test_mode_buff_debuff_applied)
+
+	var top_bar = $TopBar
+
+	# Create a button container in the center of the top bar
+	var button_container = HBoxContainer.new()
+	button_container.set_anchors_preset(Control.PRESET_CENTER)
+	button_container.set_anchor_and_offset(SIDE_LEFT, 0.5, -150)
+	button_container.set_anchor_and_offset(SIDE_RIGHT, 0.5, 150)
+	button_container.set_anchor_and_offset(SIDE_TOP, 0.5, -20)
+	button_container.set_anchor_and_offset(SIDE_BOTTOM, 0.5, 20)
+	button_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	button_container.add_theme_constant_override("separation", 10)
+	top_bar.add_child(button_container)
+
+	# Create Buff/Debuff button
+	var buff_debuff_button = Button.new()
+	buff_debuff_button.text = "Buff/Debuff"
+	buff_debuff_button.custom_minimum_size = Vector2(120, 35)
+	buff_debuff_button.pressed.connect(_on_buff_debuff_button_pressed)
+	button_container.add_child(buff_debuff_button)
+
+	# Create Kill All Enemies button
+	kill_enemies_button = Button.new()
+	kill_enemies_button.text = "Kill All Enemies"
+	kill_enemies_button.custom_minimum_size = Vector2(140, 35)
+	kill_enemies_button.pressed.connect(_on_kill_enemies_pressed)
+	button_container.add_child(kill_enemies_button)
+
+	# Update turn label to show test mode
+	turn_label.text = "TEST MODE"
+
+	# Override player stats for test mode
+	for player in game_manager.players:
+		player.max_stamina = 10
+		player.current_stamina = 10
+		if player.max_aura > 0:
+			player.max_aura = 10
+			player.current_aura = 10
+
+		# Build full deck with all cards
+		_setup_test_deck(player)
+
+
+func _setup_test_deck(player: Character):
+	## Build player's deck with all main deck + reward deck cards (one of each)
+	player.deck.clear()
+	player.discard_pile.clear()
+	player.hand.clear()
+
+	var card_db = get_node("/root/CardDatabase")
+	var hero_id = player.hero_id if player.hero_id else ""
+
+	# Try to match by name if hero_id is empty
+	if hero_id == "":
+		for hid in HeroesData.HEROES.keys():
+			if HeroesData.HEROES[hid].name == player.character_name:
+				hero_id = hid
+				break
+
+	var seen_names: Array[String] = []
+
+	if hero_id != "" and HeroesData.HEROES.has(hero_id):
+		var hero_data = HeroesData.HEROES[hero_id]
+
+		# Add main deck cards (one of each unique card)
+		for card_id in hero_data.deck:
+			var card = card_db.get_card(card_id)
+			if card and card.card_name not in seen_names:
+				seen_names.append(card.card_name)
+				player.deck.append(card.duplicate())
+
+		# Add reward deck cards if they exist (one of each unique card)
+		if hero_data.has("reward_deck"):
+			for card_id in hero_data.reward_deck:
+				var card = card_db.get_card(card_id)
+				if card and card.card_name not in seen_names:
+					seen_names.append(card.card_name)
+					player.deck.append(card.duplicate())
+
+	# Shuffle and draw 10 cards
+	player.deck.shuffle()
+	player.draw_cards(10)
+	print("[TEST MODE] ", player.character_name, " deck built with ", player.deck.size() + player.hand.size(), " unique cards")
+
+
+func _on_buff_debuff_button_pressed():
+	## Opens the buff/debuff modal in test mode
+	if buff_debuff_modal:
+		buff_debuff_modal.show_modal()
+
+
+func _on_kill_enemies_pressed():
+	## Test mode: Kill all enemies instantly
+	for enemy in game_manager.enemies:
+		enemy.current_health = 0
+	update_all_displays()
+	turn_label.text = "TEST MODE - All enemies killed!"
+
+
+func _on_test_mode_buff_debuff_applied(_character: Character):
+	## Called when buff/debuff modal applies changes in test mode
+	update_all_displays()
+
+
 func create_animated_background():
 	var bg = ColorRect.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -301,11 +424,11 @@ func _create_enemy_panel(enemy: Character, index: int) -> Panel:
 	hp_label.add_theme_font_size_override("font_size", 14)
 	vbox.add_child(hp_label)
 
-	var status_label = Label.new()
-	status_label.name = "StatusLabel"
-	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	status_label.add_theme_font_size_override("font_size", 12)
-	vbox.add_child(status_label)
+	var status_container = HBoxContainer.new()
+	status_container.name = "StatusContainer"
+	status_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	status_container.add_theme_constant_override("separation", 5)
+	vbox.add_child(status_container)
 
 	# Intent row for displaying enemy intentions
 	var intent_container = HBoxContainer.new()
@@ -326,7 +449,7 @@ func _create_enemy_panel(enemy: Character, index: int) -> Panel:
 func update_enemy_display(display: Panel, enemy: Character):
 	var name_label = display.get_node("VBoxContainer/NameLabel")
 	var hp_label = display.get_node("VBoxContainer/HPLabel")
-	var status_label = display.get_node("VBoxContainer/StatusLabel")
+	var status_container = display.get_node("VBoxContainer/StatusContainer")
 	var intent_container = display.get_node("VBoxContainer/IntentContainer")
 
 	name_label.text = enemy.character_name
@@ -335,35 +458,8 @@ func update_enemy_display(display: Panel, enemy: Character):
 	if enemy.shield > 0:
 		hp_label.text += "\nShield: %d" % enemy.shield
 
-	# Status effects
-	var status_text = ""
-	# Buffs
-	if enemy.strength > 0:
-		status_text += "Str +%d " % enemy.strength
-	if enemy.armor > 0:
-		status_text += "Armor +%d " % enemy.armor
-	if enemy.rested > 0:
-		status_text += "Rested %d " % enemy.rested
-	if enemy.invigorated > 0:
-		status_text += "Invig %d " % enemy.invigorated
-	if enemy.damage_plus > 0:
-		status_text += "Dmg+ %d " % enemy.damage_plus
-	# Debuffs
-	if enemy.poison > 0:
-		status_text += "Poison %d " % enemy.poison
-	if enemy.burn > 0:
-		status_text += "Burn %d " % enemy.burn
-	if enemy.vulnerable > 0:
-		status_text += "Vuln %d " % enemy.vulnerable
-	if enemy.weakness > 0:
-		status_text += "Weak %d " % enemy.weakness
-	if enemy.fatigued > 0:
-		status_text += "Fatigued %d " % enemy.fatigued
-	if enemy.wet > 0:
-		status_text += "Wet %d " % enemy.wet
-	if enemy.hinder > 0:
-		status_text += "Hinder %d " % enemy.hinder
-	status_label.text = status_text
+	# Status effects with individual hoverable labels
+	_populate_enemy_status_container(status_container, enemy)
 
 	# Display enemy intent
 	_update_intent_display(intent_container, enemy)
@@ -378,6 +474,52 @@ func update_enemy_display(display: Panel, enemy: Character):
 	style.border_width_top = 2
 	style.border_width_bottom = 2
 	display.add_theme_stylebox_override("panel", style)
+
+## Populate enemy status container with individual hoverable labels
+func _populate_enemy_status_container(container: HBoxContainer, enemy: Character):
+	# Clear existing children
+	for child in container.get_children():
+		child.queue_free()
+
+	# Map of effect names to character properties
+	var effects: Dictionary = {
+		"strength": enemy.strength,
+		"armor": enemy.armor,
+		"rested": enemy.rested,
+		"invigorated": enemy.invigorated,
+		"damage_plus": enemy.damage_plus,
+		"ring_of_fire": enemy.ring_of_fire,
+		"played_twice": enemy.played_twice,
+		"invincible": enemy.invincible,
+		"poison": enemy.poison,
+		"burn": enemy.burn,
+		"vulnerable": enemy.vulnerable,
+		"weakness": enemy.weakness,
+		"fatigued": enemy.fatigued,
+		"hinder": enemy.hinder,
+		"scared": enemy.scared,
+		"decay": enemy.decay,
+		"exhausted": enemy.exhausted,
+		"wet": enemy.wet
+	}
+
+	for effect_name in effects:
+		var amount = effects[effect_name]
+		if amount > 0:
+			var label = Label.new()
+			var symbol = StatusEffectRegistry.get_symbol(effect_name)
+			var display_name = StatusEffectRegistry.get_display_name(effect_name)
+
+			# Non-stacking effects don't show a number
+			if effect_name in ["scared", "invincible"]:
+				label.text = symbol
+			else:
+				label.text = "%s%d" % [symbol, amount]
+
+			label.tooltip_text = display_name
+			label.add_theme_font_size_override("font_size", 12)
+			label.mouse_filter = Control.MOUSE_FILTER_PASS
+			container.add_child(label)
 
 ## Update the intent display in the enemy panel
 ## Uses named children to update in-place instead of destroying/recreating
@@ -623,6 +765,14 @@ func _on_card_dropped_on_player_panel(card_data_dict: Dictionary, panel: Panel):
 		print("[COMBAT] Not enough stamina to play card")
 		return
 
+	# Check for context-sensitive v2 cards - use v1 (base card) when dropped on ally
+	if card.has_v2 and card.context_sensitive_v2:
+		print("[COMBAT] Context-sensitive v2: playing ", card.card_name, " v1 (heal) on ally")
+		game_manager.play_card_version(my_character, card, card, target_character)
+		game_manager.rpc("clear_card_preview", my_index)
+		mark_display_dirty()
+		return
+
 	# Play the card (with discard check if needed)
 	var played = await _play_card_with_discard_check(my_character, card, target_character)
 	if not played:
@@ -642,7 +792,32 @@ func _on_card_dropped_on_enemy_panel(card_data_dict: Dictionary, enemy: Characte
 
 	var my_character = game_manager.players[my_index]
 
-	# Validate target type
+	# Check for context-sensitive v2 cards first
+	if card.has_v2 and card.context_sensitive_v2:
+		# Look up v2 variant and check if it targets enemies
+		var v2_card = card.v2_card
+		if v2_card == null and card.v2_card_id != "":
+			v2_card = game_manager.card_db.get_card(card.v2_card_id)
+
+		if v2_card != null:
+			var v2_valid = false
+			match v2_card.target_type:
+				Card.TargetType.SINGLE_ENEMY, Card.TargetType.ALL_ENEMIES, Card.TargetType.RANDOM_ENEMY:
+					v2_valid = game_manager.enemies.has(enemy)
+
+			if v2_valid:
+				# Validate stamina
+				if my_character.current_stamina < card.stamina_cost:
+					print("[COMBAT] Not enough stamina to play card")
+					return
+
+				print("[COMBAT] Context-sensitive v2: playing ", card.card_name, " v2 (attack) on enemy")
+				game_manager.play_card_version(my_character, card, v2_card, enemy)
+				game_manager.rpc("clear_card_preview", my_index)
+				mark_display_dirty()
+				return
+
+	# Standard validation for regular cards
 	var valid_target = false
 	match card.target_type:
 		Card.TargetType.SINGLE_ENEMY, Card.TargetType.ALL_ENEMIES, Card.TargetType.RANDOM_ENEMY:
@@ -692,6 +867,14 @@ func _on_card_dropped_on_character_face(card_data_dict: Dictionary):
 		print("[COMBAT] Not enough stamina to play card")
 		return
 
+	# Check for context-sensitive v2 cards - use v1 (base card) when dropped on self
+	if card.has_v2 and card.context_sensitive_v2:
+		print("[COMBAT] Context-sensitive v2: playing ", card.card_name, " v1 (heal) on self")
+		game_manager.play_card_version(my_character, card, card, my_character)
+		game_manager.rpc("clear_card_preview", my_index)
+		mark_display_dirty()
+		return
+
 	# Play the card on self (with discard check if needed)
 	var played = await _play_card_with_discard_check(my_character, card, my_character)
 	if not played:
@@ -719,6 +902,18 @@ func _play_card_with_discard_check(caster: Character, card: Card, target: Charac
 		for spell in discarded:
 			caster.discard_card(spell)
 			print("[COMBAT] Pre-discarded spell: ", spell.card_name)
+
+	# Check if card removes debuffs and target is an ally (player)
+	if card.remove_target_debuffs > 0 and game_manager.players.has(target):
+		# Use in-UI debuff selection (clickable labels in status panel)
+		var has_debuffs = player_status_panel.start_debuff_selection(target, card.remove_target_debuffs, card.card_name)
+		if has_debuffs:
+			# Wait for debuff selection to complete
+			await player_status_panel.debuff_selection_completed
+			print("[COMBAT] Debuff selection completed for: ", card.card_name)
+			# BUGFIX: Clear remove_target_debuffs so card_effect_engine doesn't also remove debuffs
+			# (The UI already removed them when the player clicked on them)
+			card.remove_target_debuffs = 0
 
 	# Now play the card
 	game_manager.play_card(caster, card, target)
@@ -947,6 +1142,15 @@ func _on_card_v2_choice_needed(caster: Character, v1_card: Card, v2_card: Card, 
 	# Wait for player's choice
 	var chosen_card = await card_v2_choice_modal.choice_made
 
+	# Handle debuff selection for chosen card (if it removes debuffs and target is ally)
+	if chosen_card.remove_target_debuffs > 0 and game_manager.players.has(target):
+		var has_debuffs = player_status_panel.start_debuff_selection(target, chosen_card.remove_target_debuffs, chosen_card.card_name)
+		if has_debuffs:
+			await player_status_panel.debuff_selection_completed
+			print("[COMBAT] Debuff selection completed for choice card: ", chosen_card.card_name)
+			# BUGFIX: Clear so card_effect_engine doesn't also remove debuffs
+			chosen_card.remove_target_debuffs = 0
+
 	# Play the chosen version, but remove the ORIGINAL card from hand
 	# The original v1_card is what's actually in the hand
 	game_manager.play_card_version(caster, v1_card, chosen_card, target)
@@ -1066,7 +1270,11 @@ func _on_spell_search_requested(player: Character, count: int, card_name: String
 	update_all_displays()
 
 
-func _on_boss_intent_revealed(next_intents: Dictionary):
+func _on_boss_intent_revealed(player_index: int, next_intents: Dictionary):
+	# Only show modal for the player who played the reveal card
+	if player_index != game_manager.local_player_index:
+		return
+
 	# Show a modal with full intent details for next turn
 
 	# Create semi-transparent background
@@ -1335,10 +1543,38 @@ func _update_enemy_intent_debug_panel():
 					line += " [color=#AA00AA]Weak %d[/color]" % card.apply_weakness
 				if card.apply_vulnerable > 0:
 					line += " [color=#AA00AA]Vuln %d[/color]" % card.apply_vulnerable
+				if card.apply_burn > 0:
+					line += " [color=#FF6600]Burn %d[/color]" % card.apply_burn
+				if card.apply_fatigued > 0:
+					line += " [color=#AA00AA]Fatigued %d[/color]" % card.apply_fatigued
+				if card.apply_exhausted > 0:
+					line += " [color=#AA00AA]Exhausted[/color]"
+				if card.apply_decay > 0:
+					line += " [color=#AA00AA]Decay %d[/color]" % card.apply_decay
+				if card.apply_scared > 0:
+					line += " [color=#AA00AA]Scared %d[/color]" % card.apply_scared
+				if card.apply_wet > 0:
+					line += " [color=#0088FF]Wet %d[/color]" % card.apply_wet
 
 				# Add buff info (self-buffs)
 				if card.apply_strength > 0:
 					line += " [color=#FF8800]+%d STR[/color]" % card.apply_strength
+				if card.apply_armor > 0:
+					line += " [color=#00AAAA]+%d Armor[/color]" % card.apply_armor
+				if card.apply_rested > 0:
+					line += " [color=#00AA00]+%d Rested[/color]" % card.apply_rested
+				if card.apply_invigorated > 0:
+					line += " [color=#FF8800]+%d Invig[/color]" % card.apply_invigorated
+				if card.apply_damage_plus > 0:
+					line += " [color=#FF8800]+%d DmgPlus[/color]" % card.apply_damage_plus
+				if card.apply_ring_of_fire > 0:
+					line += " [color=#FF8800]RingOfFire[/color]"
+				if card.aura_gain > 0:
+					line += " [color=#FFCC00]+%d Aura[/color]" % card.aura_gain
+				if card.grants_played_twice:
+					line += " [color=#AA00FF]PlayedTwice[/color]"
+				if card.grants_invincible:
+					line += " [color=#FFD700]Invincible[/color]"
 
 				# Show pre-selected target (not dynamic lookup)
 				var target_str = _get_target_name_from_index(target_index, card)
@@ -1356,7 +1592,7 @@ func _update_enemy_intent_debug_panel():
 	enemy_intent_debug_panel.visible = true
 
 	# Resize panel to fit content (with max height)
-	var content_height = min(enemy_intent_debug_label.get_content_height() + 20, 400)
+	var content_height = min(enemy_intent_debug_label.get_content_height() + 20, 500)
 	enemy_intent_debug_panel.custom_minimum_size.y = content_height
 	enemy_intent_debug_panel.size.y = content_height
 

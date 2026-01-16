@@ -1,0 +1,63 @@
+character,deck,card_id,card_name,card_type,card_description
+Fabio,base,slash,Slash,ATTACK,Deal 7 damage. TARGET: 1 Enemy.
+Fabio,base,big_smack,Big Smack,ATTACK,Deal 10 damage. TARGET: 1 Enemy.
+Fabio,base,duel_purpose,Duel Purpose,ATTACK,Deal 3 damage and gain 5 Shield. TARGET: 1 Enemy.
+Fabio,base,rest,Rest,SKILL,Gain Rested (draw 1 extra card next turn). TARGET: Self.
+Fabio,base,bulk_up,Bulk Up,SKILL,Gain 1 Invigorated (+2 damage next attack) and 1 Fatigued (-1 stamina next turn). TARGET: Self.
+Fabio,base,dig_a_hole,Dig a Hole,SKILL,Plays instantly. Pick 1 card in your hand to keep until played or end of next turn. TARGET: Self.
+Fabio,base,protector,Protector,SKILL,This turn all enemy attacks on target ally hit you instead. TARGET: 1 Ally.
+Fabio,base,protective_footwear,Protective Footwear,SKILL,Gain 5 Shield. TARGET: Self.
+Fabio,base,hunters_instinct,Hunter's Instinct,SKILL,Plays instantly. Reveal the boss's cards for next turn. TARGET: Self.
+Fabio,base,medkit,Medkit,SKILL,Heal 10 HP. Gain 1 Decay (-1 max HP permanently). TARGET: Self.
+Fabio,reward,dual_wield,Dual Wield,ATTACK,Hit twice for 2 damage each (4 total). TARGET: 1 Enemy.
+Fabio,reward,circular_strike,Circular Strike,ATTACK,Deal 3 damage to ALL enemies. TARGET: All Enemies.
+Fabio,reward,cursed_dagger,Cursed Dagger,ATTACK,Deal 2 damage. TARGET: 1 Enemy.
+Fabio,reward,jumping_strike,Jumping Strike,ATTACK,Next turn: Deal 5 damage IF you took no damage this turn. TARGET: 1 Enemy.
+Fabio,reward,execution,Execution,ATTACK,Deal 4 damage. +4 bonus damage if target is below 50% HP. TARGET: 1 Enemy.
+Fabio,reward,frenzy,Frenzy!,ATTACK,Deal 8 damage to ALL enemies. Gain 2 Exhausted (can't play cards until it wears off). TARGET: All Enemies.
+Fabio,reward,weak_point,Weak Point!,ATTACK,Deal 2 damage +2 per debuff on target. TARGET: 1 Enemy.
+Fabio,reward,energy,Energy!,SKILL,Plays instantly. Gain 1 stamina. TARGET: Self.
+Fabio,reward,fighters_spirit,Fighter's Spirit,SKILL,CHOICE: Drop on Self to remove 1 debuff. OR gain 5 Shield instead. TARGET: Self.
+Fabio,reward,sacrifice,Sacrifice,SKILL,Give target 1 Strength (+2 damage per attack). TARGET: 1 Ally.
+Fabio,reward,leader,Leader,SKILL,Plays instantly. CHOICE: All OTHER allies draw 1 card. OR discard 2 random cards and all OTHER allies draw 2. TARGET: Other Allies.
+Kevin,base,spell_fire_smash,Fire Smash,ATTACK,Deal 5 damage. [Fire Spell]. TARGET: 1 Enemy.
+Kevin,base,spell_water_ball,Water Ball,ATTACK,Deal 1 damage. Apply 1 Wet (+50% damage from next hit). [Water Spell]. TARGET: 1 Enemy.
+Kevin,base,spell_earthquake,Earth Quake,ATTACK,Deal 2 damage to ALL enemies. [Earth Spell]. TARGET: All Enemies.
+Kevin,base,spell_fiery_flash,Fiery Flash!,ATTACK,Deal 4 damage. Apply 4 Hinder (reduced damage dealt). [Fire Spell]. TARGET: 1 Enemy.
+Kevin,base,poke,Poke,ATTACK,Deal 2 damage. TARGET: 1 Enemy.
+Kevin,base,meditate,Meditate,SKILL,Draw 2 cards. TARGET: Self.
+Kevin,base,rest,Rest,SKILL,Gain Rested (draw 1 extra card next turn). TARGET: Self.
+Kevin,base,fetal_position,Fetal Position,SKILL,Gain 5 Shield. TARGET: Self.
+Kevin,base,spell_ice_shield,Ice Shield,SKILL,Give target 5 Shield. [Water Spell]. TARGET: 1 Ally (including self).
+Kevin,base,spell_encapsulation,Encapsulation,SKILL,Discard 1 card. Search your deck for any Spell and add it to hand. [Earth Spell]. TARGET: Self.
+Kevin,satchel,alc_lightning_storm,Alc: Lightning Storm,ATTACK,Deal 3 damage. Brew by discarding 1 Water + 1 Earth spell. TARGET: 1 Enemy.
+Kevin,satchel,alc_accumulation,Alc: Accumulation,ATTACK,Deal 3 damage per Strength you have. Brew by discarding 1 Water + 1 Fire spell. TARGET: 1 Enemy.
+Kevin,satchel,alc_giant_shield,Alc: Giant Shield,SKILL,ALL allies gain 5 Shield. Brew by discarding 1 Earth + 1 Fire spell. TARGET: All Allies.
+Kevin,reward,spell_future_vision,Future Vision,SKILL,Reveal the boss's cards for next turn. [Earth Spell]. TARGET: Self.
+Kevin,reward,spell_mortar_pestle,Mortar and Pestle,SKILL,Discard 2 cards. Your next card plays twice. [Earth Spell]. TARGET: Self.
+Kevin,reward,spell_enflame,Enflame,SKILL,Target's next attack deals +2 damage. [Fire Spell]. TARGET: 1 Ally (including self).
+Kevin,reward,spell_restore,Restore,HEAL,Remove all Wet from target. Heal 5 HP per Wet removed. [Water Spell]. TARGET: 1 Ally (including self).
+Kevin,reward,spell_ring_of_fire,Ring Of Fire,SKILL,Give target 5 Shield. When shield is hit deal 2 damage back to attacker. [Fire Spell]. TARGET: 1 Ally (including self).
+Kevin,reward,reformulate,Reformulate,SKILL,Discard 1 Spell. Search your deck for a different Spell. TARGET: Self.
+Kevin,reward,accretion,Accretion,SKILL,Discard any number of Spells. Target ally draws 2 cards per Spell discarded. TARGET: 1 Ally (including self).
+Kevin,reward,spell_tsunami,Tsunami,ATTACK,Deal 4 damage to ALL enemies. Apply 1 Wet to all. [Water Spell]. TARGET: All Enemies.
+Kevin,reward,repurpose,Repurpose,ATTACK,Discard 1 Spell. Deal 2 damage +2 per Spell discarded this turn. TARGET: 1 Enemy.
+Enrique,base,expulsion,Expulsion,ATTACK,Spends ALL your Aura. Deal 3 damage per aura spent to ALL enemies. TARGET: All Enemies.
+Enrique,base,focused_purge,Focused Purge,ATTACK,Deal 3 damage. Gain 1 Aura. TARGET: 1 Enemy.
+Enrique,base,holy_plight,Holy Plight,ATTACK,Deal 5 damage. TARGET: 1 Enemy.
+Enrique,base,prayer_beads,Prayer Beads,ATTACK,Deal 1-6 random damage (rolls a D6). TARGET: 1 Enemy.
+Enrique,base,humble_request,Humble Request,SKILL,Gain 2 Aura. TARGET: Self.
+Enrique,base,divine_reflection,Divine Reflection,SKILL,Target ally's next card plays twice. TARGET: 1 Ally.
+Enrique,base,healing_aura,Healing Aura,HEAL,Heal target 10 HP. You gain 1 Decay (-1 max HP permanently). TARGET: 1 Ally.
+Enrique,base,magical_purge,Magical Purge,SKILL,Remove 1 debuff from yourself. TARGET: Self.
+Enrique,base,story_of_jacob,Story Of Jacob,SKILL,Gain 5 Aura. Gain 1 Fatigued (-1 stamina next turn). TARGET: Self.
+Enrique,base,protection,Protection,SKILL,Give target 5 Shield. TARGET: 1 Ally.
+Enrique,reward,divine_force,Divine Force,HEAL,CHOICE: Drop on Ally to heal 10 HP (you gain 1 Decay). Drop on Enemy to deal 6 damage.
+Enrique,reward,purging_water,Purging Water,SKILL,Remove 1 debuff from target ally. TARGET: 1 Ally.
+Enrique,reward,divine_barrier,Divine Barrier,SKILL,Target ally becomes Invincible (takes no damage) this turn. TARGET: 1 Ally.
+Enrique,reward,refuge,Refuge,SKILL,Gain 5 Shield and 1 Aura. TARGET: Self.
+Enrique,reward,gift,Gift,SKILL,Target ally draws 2 cards. TARGET: 1 Ally.
+Enrique,reward,divine_gift,Divine Gift,SKILL,Give target ally 2 stamina. TARGET: 1 Ally.
+Enrique,reward,guy_with_beard,Guy with Beard,SKILL,ALL players draw 1 card. TARGET: Self (affects all).
+Enrique,reward,energy,Energy!,SKILL,Plays instantly. Gain 1 stamina. TARGET: Self.
+Enrique,reward,meditate,Meditate,SKILL,Draw 2 cards. TARGET: Self.

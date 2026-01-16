@@ -47,6 +47,7 @@ enum ElementType {
 # v2 Card System - allows player to choose between two effects during play
 @export var has_v2: bool = false
 @export var v2_card_id: String = ""  # ID to look up v2 variant from CardDatabase
+@export var context_sensitive_v2: bool = false  # If true, drop target determines version (no modal)
 var v2_card: Card = null  # Local reference (not serialized over network)
 
 # Status effects
@@ -152,97 +153,8 @@ var v2_card: Card = null  # Local reference (not serialized over network)
 # Used to distinguish between identical cards in the queue (e.g., two Fire Strike cards)
 var queue_instance_id: int = 0
 
-func get_full_description(caster = null) -> String:
-	var desc = description + "\n\n"
-
-	# Show Aura cost prominently if card requires aura
-	if aura_cost_all:
-		desc += "[Costs ALL Aura]\n"
-	elif aura_cost > 0:
-		desc += "[Aura Cost: %d]\n" % aura_cost
-
-	# DAMAGE - calculate effective damage with buffs/debuffs
-	if damage > 0 or damage_is_d6 or damage_per_aura_spent > 0:
-		var effective_damage = damage
-		if damage_is_d6:
-			desc += "Deal D6 (1-6) damage"
-		elif damage_per_aura_spent > 0:
-			desc += "Deal %d damage per Aura spent" % damage_per_aura_spent
-		else:
-			if caster and card_type == CardType.ATTACK:
-				effective_damage += caster.strength + caster.damage_plus
-				effective_damage -= caster.weakness + caster.hinder
-				effective_damage = max(0, effective_damage)
-			desc += "Deal %d damage" % effective_damage
-		if multi_hit > 1:
-			desc += " %d times" % multi_hit
-		if piercing:
-			desc += " (Piercing)"
-		desc += "\n"
-
-	# HEALING - calculate effective healing with decay
-	if heal_amount > 0:
-		var effective_heal = heal_amount
-		if caster and caster.decay > 0:
-			effective_heal = max(0, heal_amount - (caster.decay * 5))
-		desc += "Heal %d HP\n" % effective_heal
-
-	if shield_amount > 0:
-		desc += "Gain %d Shield\n" % shield_amount
-
-	if draw_cards > 0:
-		desc += "Draw %d card(s)\n" % draw_cards
-
-	if apply_poison > 0:
-		desc += "Apply %d Poison\n" % apply_poison
-
-	if apply_burn > 0:
-		desc += "Apply %d Burn\n" % apply_burn
-
-	if apply_strength > 0:
-		desc += "Gain %d Strength\n" % apply_strength
-
-	if apply_vulnerable > 0:
-		desc += "Apply %d Vulnerable\n" % apply_vulnerable
-
-	if apply_rested > 0:
-		desc += "Gain %d Rested\n" % apply_rested
-
-	if apply_invigorated > 0:
-		desc += "Gain %d Invigorated\n" % apply_invigorated
-
-	if apply_damage_plus > 0:
-		desc += "Gain %d Damage Plus\n" % apply_damage_plus
-
-	if apply_fatigued > 0:
-		desc += "Apply %d Fatigued\n" % apply_fatigued
-
-	if apply_exhausted > 0:
-		desc += "Apply Exhausted (cannot play more cards)\n"
-
-	if apply_decay > 0:
-		desc += "Apply %d Decay\n" % apply_decay
-
-	# Enrique's aura and buff effects
-	if aura_gain > 0:
-		desc += "Gain %d Aura\n" % aura_gain
-
-	if grants_played_twice:
-		desc += "Target's next card plays twice\n"
-
-	if grants_invincible:
-		desc += "Grant Invincible (immune to damage)\n"
-
-	if all_players_draw > 0:
-		desc += "All players draw %d card(s)\n" % all_players_draw
-
-	if target_stamina_gain > 0:
-		desc += "Give target %d Stamina\n" % target_stamina_gain
-
-	if remove_target_debuffs > 0:
-		desc += "Remove %d debuff(s) from target\n" % remove_target_debuffs
-
-	return desc
+func get_full_description(_caster = null) -> String:
+	return description
 
 func can_afford(current_stamina: int, current_aura: int = 0) -> bool:
 	# Check stamina
@@ -298,6 +210,7 @@ func serialize() -> Dictionary:
 		"queue_instance_id": queue_instance_id,
 		"has_v2": has_v2,
 		"v2_card_id": v2_card_id,
+		"context_sensitive_v2": context_sensitive_v2,
 		"is_delayed_damage": is_delayed_damage,
 		"delay_condition": delay_condition,
 		"delayed_damage_amount": delayed_damage_amount,
@@ -369,6 +282,7 @@ static func deserialize(data: Dictionary) -> Card:
 	card.queue_instance_id = data.get("queue_instance_id", 0)  # Default to 0 for old cards
 	card.has_v2 = data.get("has_v2", false)  # Default to false for old cards
 	card.v2_card_id = data.get("v2_card_id", "")
+	card.context_sensitive_v2 = data.get("context_sensitive_v2", false)
 	card.is_delayed_damage = data.get("is_delayed_damage", false)
 	card.delay_condition = data.get("delay_condition", "")
 	card.delayed_damage_amount = data.get("delayed_damage_amount", 0)

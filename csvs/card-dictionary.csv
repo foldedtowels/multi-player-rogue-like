@@ -1,0 +1,62 @@
+Card Name,name of card
+Card Location,deck(s) card is in
+Card Type,Class of Card
+Target Stamina Gain,target +x Stamina
+Stamina Gain,gain +x stamina
+Alc Water Discard ,"Amount of cards with Water ""Spell Element"" you must discard to add this card from the Spell Satchel to your hand."
+Alc Earth Discard,"Amount of cards with Earth ""Spell Element"" you must discard to add this card from the Spell Satchel to your hand."
+Alc Fire Discard,"Amount of cards with Fire ""Spell Element"" you must discard to add this card from the Spell Satchel to your hand."
+Spell Element,Class of Spell card
+Stamina Cost,Stamina cost to play card
+Aura Cost,Aura cost to play card
+Aura Gain,gain+x aura
+Target Boss reveal cards,Amount of card's revealed from top of target Boss's deck.
+Player's Target,Enemy(s) targeted
+Boss's Target,Player(s) targeted
+Damage,"minus (-x) hp/shield to target, prioritize shield if not piercing"
+All Players Shield Gain,all players +x shield
+Target Shield Gain,target +x shield
+Self Shield Gain,self +x shield
+Total Attacks,"Times that ""Damage"" is executed."
+Rarity,"quality of card that may have to do with attributes like % chance to see, cost, visual attributes, etc"
+Turn 1 Damage?,"If entry is TRUE, the card's damage is dealt the turn it is played"
+Turn 2 Damage?,"If entry is TRUE, the card's damage is dealt at the beggining of next turn."
+Turn 2 Condition,"Condition for ""Turn 2 Damage"" where if not met then reduces card's damage to 0."
+Additional Turn 1 Damage Condition,"Condition for ""Additional Damage"", if not met then ""Additional Damage"" is changed to 0."
+Additional Damage,"Value added to ""Damage"""
+Self Debuff,self [debuff type] +x
+Self Buff,self[buff type] +x
+Next Turn Self Buff,next turn - self[buff type] +x
+Next Turn Self Debuff,next turn - self[debuff type] -x
+Target gains Buff,target [buff type] +x
+Target gains Debuff,Debuff type
+Target Debuff Amount,"Target gains ""Target Debuff Amount""*x, where x is this value."
+Additional Damage per target's Wet,"Count target's ""Wet"", multiply that amount by this value and add to ""Damage"""
+Additional Damage per target's Venom,"Count target's ""Venom"", multiply that amount by this value and add to ""Damage"""
+Additional Damager per Target's Total Debuffs,"Count target's debuffs, multiply that amount by this value and add to ""Damage"""
+Discard All Spells?,"If value is TRUE, user discards all cards whos ""Spell Element"" is not 0."
+Additional Damage per spell discarded,damage = x*[numer of spells discarded]
+Discard Any Spell requirement Amount,"User is promped to discard a number of cards whos ""Spell Element"" is not 0, to play the card."
+Additional Damage per Angry on board,"Value is equal to total number of ""Angry"" buffs on the board, value is added to ""Damage""."
+"Damage taken induces reduction, requirement","If user takes damage this turn equal or greater than this value, then ""Damage reduction by Damage Taken"" is not changed to 0."
+Damage reduction by Damage Taken,"Value is subtracted from ""Damage"""
+Targets Card Gains Played Twice?,"Sets target card's ""Played Twice?"" to TRUE (set logic to buff the card on second use if for example: card does 3 base damage then plus 2 for each time played: damage = 3+2x where x is the number of previous times the card was played)"
+Played Twice?,"If entry is TRUE, then this card plays itself twice (should ignore costs if so)."
+Self Heal Amount,self hp +x
+Target Heal Amount ,target hp +x
+Target Remove Debuffs amount,tarder [debuff type] -x
+Draw Cards,self draw x cards
+Target Draw Cards,target draw x cards
+All Players Draw Cards,all players draw x cards
+Retain Card in Hand,selected card(s) are retained until end of next turn
+Takes all Target's damage and Debuffs this turn,enemy target = player using this card
+Take All Players Damage this Turn?,"for every enemy, enemy target = player using this card"
+Remove all Wet,"For every enemy, set Wet=0."
+Heal Target for Each Wet Removed,target hp +(x*wet removed)
+Choose Spell(s) from Deck Amount,"Search deck, add an amount of spells from your deck to your hand based off of this entry's value."
+Target Gain Stamina Amount,target stamina +x
+Remove Self Debuff Amount,self [debuff type -x] 
+Discard Cards Requirement Amount,User is promped to discard a number of cards to play the card.
+Other Players Draw Cards Amount ,Each player who isn't the user draw cards equal to this value.
+Strength Gain,strength +x
+Add Random Spiderling Amount,"Adds a character with ""Spiderling"" in the name to the fight, will be on the Boss's side."

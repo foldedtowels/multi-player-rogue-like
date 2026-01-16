@@ -23,9 +23,17 @@ func _ready():
 	start_button.disabled = true
 	info_panel.visible = false
 
+	# Check if test mode
+	var game_manager = get_node("/root/GameManager")
+	var is_test_mode = game_manager.has_meta("test_mode") and game_manager.get_meta("test_mode")
+
 	# Add multiplayer status indicator
 	var status_label = Label.new()
-	status_label.text = "Multiplayer: Each player picks ONE hero"
+	if is_test_mode:
+		status_label.text = "TEST MODE: Each player picks ONE hero"
+		start_button.text = "Next: Select Enemies"
+	else:
+		status_label.text = "Multiplayer: Each player picks ONE hero"
 	status_label.add_theme_font_size_override("font_size", 20)
 	status_label.add_theme_color_override("font_color", Color(1, 1, 0))
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -138,7 +146,13 @@ func _on_start_pressed():
 		# Call select_heroes via RPC so it runs on ALL clients
 		game_manager.select_heroes.rpc(selected_heroes)
 
-		# Initialize first minion encounter using unified modular system (RPC so all clients initialize)
-		game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.MINION, 0)
+		# Check if test mode
+		var is_test_mode = game_manager.has_meta("test_mode") and game_manager.get_meta("test_mode")
 
-		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
+		if is_test_mode:
+			# Go to enemy selection for test mode
+			network_manager.change_scene_synchronized.rpc("res://scenes/test_enemy_selection.tscn")
+		else:
+			# Normal game - Initialize first minion encounter and go to combat
+			game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.MINION, 0)
+			network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")

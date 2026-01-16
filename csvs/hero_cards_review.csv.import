@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://bist5wupgcrv3"
+
+[deps]
+
+files=["res://csvs/hero_cards_review.deck.translation", "res://csvs/hero_cards_review.card.translation", "res://csvs/hero_cards_review.card.translation", "res://csvs/hero_cards_review.card.translation", "res://csvs/hero_cards_review.card.translation"]
+
+source_file="res://csvs/hero_cards_review.csv"
+dest_files=["res://csvs/hero_cards_review.deck.translation", "res://csvs/hero_cards_review.card.translation", "res://csvs/hero_cards_review.card.translation", "res://csvs/hero_cards_review.card.translation", "res://csvs/hero_cards_review.card.translation"]
+
+[params]
+
+compress=true
+delimiter=0

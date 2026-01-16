@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cwokr61pxtte4"
+
+[deps]
+
+files=["res://csvs/card-dictionary.name of card.translation"]
+
+source_file="res://csvs/card-dictionary.csv"
+dest_files=["res://csvs/card-dictionary.name of card.translation"]
+
+[params]
+
+compress=true
+delimiter=0

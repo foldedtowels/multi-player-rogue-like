@@ -8,7 +8,7 @@ var boss_db: Node
 # Selections
 var selected_heroes: Array[int] = []  # Which heroes are selected (indices)
 var selected_enemies: Array[String] = []  # Which enemies are selected (minion/boss IDs)
-var player_count: int = 1  # 1-3 players
+var player_count: int = 3  # 1-3 players (default to 3 for test mode)
 var is_solo_mode: bool = true  # Solo or multiplayer
 
 # UI Elements
@@ -36,7 +36,7 @@ func _ready():
 	back_button.pressed.connect(_on_back_pressed)
 
 	# Initialize
-	player_count_slider.value = 1
+	player_count_slider.value = 3  # Default to 3 players for test mode
 	solo_check.button_pressed = true
 
 	_create_hero_buttons()
@@ -196,8 +196,8 @@ func _start_test_combat():
 
 	for hero_idx in selected_heroes:
 		var hero = all_heroes[hero_idx].duplicate_character()
-		hero.max_health = 1000
-		hero.current_health = 1000
+		hero.max_health = 100
+		hero.current_health = 100
 		game_manager.players.append(hero)
 
 	# Set local player index for solo
@@ -215,14 +215,14 @@ func _start_test_combat():
 		if enemy_type == "minion":
 			var enemy = minion_db.create_minion_by_id(id)
 			if enemy:
-				enemy.max_health = 1000
-				enemy.current_health = 1000
+				enemy.max_health = 100
+				enemy.current_health = 100
 				game_manager.enemies.append(enemy)
 		else:  # boss
 			var enemy = boss_db.create_boss_by_id(id)
 			if enemy:
-				enemy.max_health = 1000
-				enemy.current_health = 1000
+				enemy.max_health = 100
+				enemy.current_health = 100
 				game_manager.enemies.append(enemy)
 
 	# Set game state

@@ -1,6 +1,8 @@
 extends Control
 
 var network_manager: Node
+var game_manager: Node
+var is_test_mode: bool = false
 
 @onready var host_button: Button = $HostButton
 @onready var join_button: Button = $JoinButton
@@ -12,6 +14,10 @@ var network_manager: Node
 
 func _ready():
 	network_manager = get_node("/root/NetworkManager")
+	game_manager = get_node("/root/GameManager")
+
+	# Check if we're in test mode
+	is_test_mode = game_manager.has_meta("test_mode") and game_manager.get_meta("test_mode")
 
 	host_button.pressed.connect(_on_host_pressed)
 	join_button.pressed.connect(_on_join_pressed)
@@ -21,6 +27,11 @@ func _ready():
 	network_manager.player_connected.connect(_on_player_connected)
 	network_manager.player_disconnected.connect(_on_player_disconnected)
 	network_manager.connection_failed.connect(_on_connection_failed)
+
+	# Update UI for test mode
+	if is_test_mode:
+		status_label.text = "TEST MODE - Waiting for players..."
+		start_button.text = "Start Test"
 
 	update_player_list()
 

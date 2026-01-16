@@ -36,9 +36,9 @@ const MINIONS = {
 			{"name": "Monkey Punch!", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
 			{"name": "Monkey Punch!", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
 			{"name": "Monkey Punch!", "type": "ATTACK", "cost": 1, "damage": 5, "target": "CCW_PLAYER"},
-			{"name": "It bit my Hand!", "type": "ATTACK", "cost": 1, "damage": 3, "hinder": 1, "target": "HIGHEST_HP"},
-			{"name": "It bit my Hand!", "type": "ATTACK", "cost": 1, "damage": 3, "hinder": 1, "target": "HIGHEST_HP"},
-			{"name": "It bit my Hand!", "type": "ATTACK", "cost": 1, "damage": 3, "hinder": 1, "target": "HIGHEST_HP"},
+			{"name": "It bit my Hand!", "type": "ATTACK", "cost": 1, "damage": 3, "target": "HIGHEST_HP"},
+			{"name": "It bit my Hand!", "type": "ATTACK", "cost": 1, "damage": 3, "target": "HIGHEST_HP"},
+			{"name": "It bit my Hand!", "type": "ATTACK", "cost": 1, "damage": 3, "target": "HIGHEST_HP"},
 		],
 		"special_deck": [
 			{"name": "Anger", "type": "BUFF", "cost": 0, "strength": 2, "target": "SELF"}

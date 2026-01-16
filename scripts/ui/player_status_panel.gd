@@ -4,6 +4,9 @@ extends Node
 ## Manages player status panel updates for combat UI
 ## Handles left, right, and your character panels with consistent styling
 
+signal debuff_clicked(debuff_name: String, character: Character)
+signal debuff_selection_completed()
+
 var game_manager: Node
 var left_player_panel: Panel
 var right_player_panel: Panel
@@ -18,6 +21,34 @@ var _style_cache: Dictionary = {}
 
 # Cache to detect when panel state has actually changed
 var _panel_signatures: Dictionary = {}
+
+# Debuff selection mode state
+var debuff_selection_active: bool = false
+var debuff_selection_target: Character = null
+var debuff_selection_remaining: int = 0
+var debuff_selection_card_name: String = ""
+
+# Status effect name to property mapping (for looking up values on Character)
+const STATUS_EFFECT_PROPERTIES: Dictionary = {
+	"strength": "strength",
+	"armor": "armor",
+	"rested": "rested",
+	"invigorated": "invigorated",
+	"damage_plus": "damage_plus",
+	"ring_of_fire": "ring_of_fire",
+	"played_twice": "played_twice",
+	"invincible": "invincible",
+	"poison": "poison",
+	"burn": "burn",
+	"vulnerable": "vulnerable",
+	"weakness": "weakness",
+	"fatigued": "fatigued",
+	"hinder": "hinder",
+	"scared": "scared",
+	"decay": "decay",
+	"exhausted": "exhausted",
+	"wet": "wet"
+}
 
 func setup(gm: Node, left: Panel, right: Panel, your: Panel):
 	game_manager = gm
@@ -45,6 +76,165 @@ func _get_panel_style(bg_color: Color, border_color: Color, border_width: int) -
 		style.border_width_bottom = border_width
 		_style_cache[cache_key] = style
 	return _style_cache[cache_key]
+
+## Populate a container with individual status effect labels (each with tooltip)
+## font_size: font size for the labels
+## is_protected: whether this character is protected by an ally
+func _populate_status_container(container: HBoxContainer, character: Character, font_size: int, is_protected: bool):
+	# Clear existing children
+	for child in container.get_children():
+		child.queue_free()
+
+	# Check if this character is the debuff selection target
+	var is_selection_target = debuff_selection_active and character == debuff_selection_target
+
+	# Add instruction label if in selection mode for this character
+	if is_selection_target:
+		var instruction_label = Label.new()
+		instruction_label.text = "Click debuff (%d):" % debuff_selection_remaining
+		instruction_label.add_theme_font_size_override("font_size", font_size - 2)
+		instruction_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))  # Yellow
+		instruction_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		container.add_child(instruction_label)
+
+	# Add labels for each active status effect
+	for effect_name in STATUS_EFFECT_PROPERTIES.keys():
+		var prop_name = STATUS_EFFECT_PROPERTIES[effect_name]
+		var amount = character.get(prop_name)
+		if amount > 0:
+			var symbol = StatusEffectRegistry.get_symbol(effect_name)
+			var display_name = StatusEffectRegistry.get_display_name(effect_name)
+
+			# Check if this is a removable debuff during selection mode
+			var is_debuff = StatusEffectRegistry.is_debuff(effect_name)
+			var effect_data = StatusEffectRegistry.get_effect_data(effect_name)
+			var is_permanent = effect_data.get("permanent", false)
+			var is_clickable = is_selection_target and is_debuff and not is_permanent
+
+			if is_clickable:
+				# Create a Button for clickable debuffs
+				var debuff_button = Button.new()
+
+				# Non-stacking effects (scared, invincible) don't show a number
+				if effect_name in ["scared", "invincible"]:
+					debuff_button.text = symbol
+				else:
+					debuff_button.text = "%s%d" % [symbol, amount]
+
+				debuff_button.tooltip_text = "Click to remove: " + display_name
+				debuff_button.add_theme_font_size_override("font_size", font_size)
+				debuff_button.flat = true  # No default button background
+
+				# Style for clickable debuff - highlighted border
+				var style = StyleBoxFlat.new()
+				style.bg_color = Color(0.6, 0.2, 0.2, 0.7)  # Red background
+				style.border_color = Color(1.0, 0.8, 0.2)  # Gold border
+				style.border_width_left = 2
+				style.border_width_right = 2
+				style.border_width_top = 2
+				style.border_width_bottom = 2
+				style.corner_radius_top_left = 4
+				style.corner_radius_top_right = 4
+				style.corner_radius_bottom_left = 4
+				style.corner_radius_bottom_right = 4
+				style.content_margin_left = 4
+				style.content_margin_right = 4
+				style.content_margin_top = 2
+				style.content_margin_bottom = 2
+				debuff_button.add_theme_stylebox_override("normal", style)
+
+				# Hover style
+				var hover_style = StyleBoxFlat.new()
+				hover_style.bg_color = Color(0.8, 0.3, 0.3, 0.9)  # Brighter red
+				hover_style.border_color = Color(1.0, 1.0, 0.4)  # Bright gold
+				hover_style.border_width_left = 2
+				hover_style.border_width_right = 2
+				hover_style.border_width_top = 2
+				hover_style.border_width_bottom = 2
+				hover_style.corner_radius_top_left = 4
+				hover_style.corner_radius_top_right = 4
+				hover_style.corner_radius_bottom_left = 4
+				hover_style.corner_radius_bottom_right = 4
+				hover_style.content_margin_left = 4
+				hover_style.content_margin_right = 4
+				hover_style.content_margin_top = 2
+				hover_style.content_margin_bottom = 2
+				debuff_button.add_theme_stylebox_override("hover", hover_style)
+
+				# Connect click handler
+				debuff_button.pressed.connect(_on_debuff_label_clicked.bind(effect_name, character))
+
+				container.add_child(debuff_button)
+			else:
+				# Regular label for non-clickable effects
+				var effect_label = Label.new()
+
+				# Non-stacking effects (scared, invincible) don't show a number
+				if effect_name in ["scared", "invincible"]:
+					effect_label.text = symbol
+				else:
+					effect_label.text = "%s%d" % [symbol, amount]
+
+				effect_label.tooltip_text = display_name
+				effect_label.add_theme_font_size_override("font_size", font_size)
+				effect_label.mouse_filter = Control.MOUSE_FILTER_PASS  # Allow tooltip to show
+
+				# Gray out permanent debuffs during selection mode
+				if is_selection_target and is_permanent:
+					effect_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+					effect_label.tooltip_text = display_name + " (cannot be removed)"
+
+				container.add_child(effect_label)
+
+	# Add protected status (not in registry - it's a game state)
+	if is_protected:
+		var protected_label = Label.new()
+		protected_label.text = "😇"
+		protected_label.tooltip_text = "Protected by ally"
+		protected_label.add_theme_font_size_override("font_size", font_size)
+		protected_label.mouse_filter = Control.MOUSE_FILTER_PASS
+		container.add_child(protected_label)
+
+## Get or create status container for other player panels (left/right)
+func _get_or_create_other_status_container(panel: Panel) -> HBoxContainer:
+	var vbox = panel.get_node("VBoxContainer")
+	var container_name = "StatusEffectContainer"
+
+	if vbox.has_node(container_name):
+		return vbox.get_node(container_name)
+
+	# Create new container after HPLabel
+	var container = HBoxContainer.new()
+	container.name = container_name
+	container.alignment = BoxContainer.ALIGNMENT_CENTER
+	container.add_theme_constant_override("separation", 5)
+
+	# Insert after HPLabel (index 1, since NameLabel is index 0)
+	var hp_label_index = vbox.get_node("HPLabel").get_index()
+	vbox.add_child(container)
+	vbox.move_child(container, hp_label_index + 1)
+
+	return container
+
+## Get or create status container for your character panel (bottom)
+func _get_or_create_your_status_container(panel: Panel) -> HBoxContainer:
+	var hbox = panel.get_node("HBoxContainer")
+	var container_name = "StatusEffectContainer"
+
+	if hbox.has_node(container_name):
+		return hbox.get_node(container_name)
+
+	# Create new container after ShieldLabel
+	var container = HBoxContainer.new()
+	container.name = container_name
+	container.add_theme_constant_override("separation", 8)
+
+	# Insert after ShieldLabel
+	var shield_label_index = hbox.get_node("ShieldLabel").get_index()
+	hbox.add_child(container)
+	hbox.move_child(container, shield_label_index + 1)
+
+	return container
 
 ## Generate a signature for the panel state to detect changes
 func _get_panel_signature(character: Character, player_index: int, preview_card_name: String, last_played_card_name: String) -> String:
@@ -158,52 +348,10 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 	if character.shield > 0:
 		hp_label.text += "\nShield: %d" % character.shield
 
-	# Add status effects display
-	var status_text = ""
-	# Buffs (green)
-	if character.strength > 0:
-		status_text += "Str +%d " % character.strength
-	if character.armor > 0:
-		status_text += "Armor +%d " % character.armor
-	if character.rested > 0:
-		status_text += "Rested %d " % character.rested
-	if character.invigorated > 0:
-		status_text += "Invig %d " % character.invigorated
-	if character.damage_plus > 0:
-		status_text += "Dmg+ %d " % character.damage_plus
-	if character.ring_of_fire > 0:
-		status_text += "RoF %d " % character.ring_of_fire
-	if character.played_twice > 0:
-		status_text += "x2 %d " % character.played_twice
-	if character.invincible > 0:
-		status_text += "Invincible "
-	# Debuffs (red)
-	if character.poison > 0:
-		status_text += "Poison %d " % character.poison
-	if character.burn > 0:
-		status_text += "Burn %d " % character.burn
-	if character.vulnerable > 0:
-		status_text += "Vuln %d " % character.vulnerable
-	if character.weakness > 0:
-		status_text += "Weak %d " % character.weakness
-	if character.fatigued > 0:
-		status_text += "Fatigued %d " % character.fatigued
-	if character.hinder > 0:
-		status_text += "Hinder %d " % character.hinder
-	if character.scared > 0:
-		status_text += "SCARED "
-	if character.decay > 0:
-		status_text += "Decay %d " % character.decay
-	if character.exhausted > 0:
-		status_text += "Exh %d " % character.exhausted
-	if character.wet > 0:
-		status_text += "Wet %d " % character.wet
-	# Check if this player is protected by another player
-	if game_manager.protected_by.has(player_index):
-		status_text += "🛡PROTECTED "
-
-	if status_text != "":
-		hp_label.text += "\n" + status_text
+	# Add status effects display with individual hoverable labels
+	var status_container = _get_or_create_other_status_container(panel)
+	var is_protected = game_manager.protected_by.has(player_index)
+	_populate_status_container(status_container, character, 14, is_protected)
 
 	stamina_label.text = "S: %d/%d" % [character.current_stamina, character.max_stamina]
 
@@ -290,53 +438,10 @@ func _update_your_panel(character: Character):
 
 	shield_label.text = "Shield: %d" % character.shield
 
-	# Add status effects display
-	var status_parts = []
-	# Buffs
-	if character.strength > 0:
-		status_parts.append("Strength +%d" % character.strength)
-	if character.armor > 0:
-		status_parts.append("Armor +%d" % character.armor)
-	if character.rested > 0:
-		status_parts.append("Rested %d" % character.rested)
-	if character.invigorated > 0:
-		status_parts.append("Invigorated %d" % character.invigorated)
-	if character.damage_plus > 0:
-		status_parts.append("Damage+ %d" % character.damage_plus)
-	if character.ring_of_fire > 0:
-		status_parts.append("Ring of Fire %d" % character.ring_of_fire)
-	if character.played_twice > 0:
-		status_parts.append("Played Twice x%d" % character.played_twice)
-	if character.invincible > 0:
-		status_parts.append("Invincible")
-	# Debuffs
-	if character.poison > 0:
-		status_parts.append("Poison %d" % character.poison)
-	if character.burn > 0:
-		status_parts.append("Burn %d" % character.burn)
-	if character.vulnerable > 0:
-		status_parts.append("Vulnerable %d" % character.vulnerable)
-	if character.weakness > 0:
-		status_parts.append("Weakness %d" % character.weakness)
-	if character.fatigued > 0:
-		status_parts.append("Fatigued %d" % character.fatigued)
-	if character.hinder > 0:
-		status_parts.append("Hinder %d" % character.hinder)
-	if character.scared > 0:
-		status_parts.append("SCARED")
-	if character.decay > 0:
-		status_parts.append("Decay %d" % character.decay)
-	if character.exhausted > 0:
-		status_parts.append("Exhausted %d" % character.exhausted)
-	if character.wet > 0:
-		status_parts.append("Wet %d" % character.wet)
-	# Check if this player is protected by another player
-	if game_manager.protected_by.has(my_index):
-		status_parts.append("🛡PROTECTED")
-
-	# Append to shield label for now (or create separate label if needed)
-	if status_parts.size() > 0:
-		shield_label.text += " | " + " | ".join(status_parts)
+	# Add status effects display with individual hoverable labels
+	var status_container = _get_or_create_your_status_container(your_character_panel)
+	var is_protected = game_manager.protected_by.has(my_index)
+	_populate_status_container(status_container, character, 18, is_protected)
 
 	# Highlight panel if it's your turn (use cached StyleBoxFlat)
 	var is_my_turn = game_manager.local_player_index == game_manager.current_player_index
@@ -438,3 +543,78 @@ func _get_incoming_icons(player_index: int) -> String:
 		result += " 🌀?"
 
 	return result
+
+## Start debuff selection mode - makes debuff labels clickable
+## Returns true if target has removable debuffs, false otherwise
+func start_debuff_selection(target: Character, count: int, card_name: String) -> bool:
+	# Check if target has any removable debuffs
+	var removable = _count_removable_debuffs(target)
+	if removable == 0:
+		print("[DEBUFF SELECT] No removable debuffs on ", target.character_name)
+		return false
+
+	debuff_selection_active = true
+	debuff_selection_target = target
+	debuff_selection_remaining = min(count, removable)  # Can't remove more than exist
+	debuff_selection_card_name = card_name
+
+	print("[DEBUFF SELECT] Started selection for ", target.character_name, " - can remove ", debuff_selection_remaining, " debuffs")
+
+	# Force panel refresh to make labels clickable
+	_panel_signatures.clear()
+	update_all()
+
+	return true
+
+## End debuff selection mode
+func end_debuff_selection():
+	debuff_selection_active = false
+	debuff_selection_target = null
+	debuff_selection_remaining = 0
+	debuff_selection_card_name = ""
+
+	# Force panel refresh to restore normal labels
+	_panel_signatures.clear()
+	update_all()
+
+	debuff_selection_completed.emit()
+
+## Count removable (non-permanent) debuffs on a character
+func _count_removable_debuffs(character: Character) -> int:
+	var count = 0
+	for debuff_name in StatusEffectRegistry.get_debuff_effect_names():
+		var current_value = character.get(debuff_name)
+		if current_value != null and current_value > 0:
+			var effect_data = StatusEffectRegistry.get_effect_data(debuff_name)
+			if not effect_data.get("permanent", false):
+				count += 1
+	return count
+
+## Handle a debuff being clicked during selection mode
+func _on_debuff_label_clicked(debuff_name: String, character: Character):
+	if not debuff_selection_active:
+		return
+	if character != debuff_selection_target:
+		return
+	if debuff_selection_remaining <= 0:
+		return
+
+	# Check if this debuff is permanent (shouldn't be clickable, but safety check)
+	var effect_data = StatusEffectRegistry.get_effect_data(debuff_name)
+	if effect_data.get("permanent", false):
+		return
+
+	# Remove the debuff
+	character.set(debuff_name, 0)
+	debuff_selection_remaining -= 1
+	print("[DEBUFF SELECT] Removed ", debuff_name, " from ", character.character_name, " - ", debuff_selection_remaining, " remaining")
+
+	debuff_clicked.emit(debuff_name, character)
+
+	# Check if done (no more removals OR no more debuffs)
+	if debuff_selection_remaining <= 0 or _count_removable_debuffs(character) == 0:
+		end_debuff_selection()
+	else:
+		# Refresh to update remaining debuffs
+		_panel_signatures.clear()
+		update_all()
