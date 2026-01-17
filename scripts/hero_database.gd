@@ -11,7 +11,7 @@ func _ready():
 	card_db = get_node("/root/CardDatabase")
 
 ## Create a hero from its ID using the factory pattern
-## @param hero_id: The hero identifier (e.g., "flame_wielder", "life_weaver")
+## @param hero_id: The hero identifier (e.g., "fabio", "kevin", "enrique")
 ## @returns: Fully initialized Character with deck populated
 func create_hero(hero_id: String) -> Character:
 	if not HeroesData.has_hero(hero_id):
@@ -58,10 +58,6 @@ func create_hero(hero_id: String) -> Character:
 		print("[HeroDatabase] ", hero.character_name, " satchel built with ", satchel.size(), " Alc cards")
 
 	return hero
-
-## Legacy function for backwards compatibility
-func create_life_weaver() -> Character:
-	return create_hero("life_weaver")
 
 ## Get all available heroes
 ## @returns: Array of all hero characters with decks initialized

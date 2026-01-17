@@ -16,7 +16,7 @@ func create_minion_by_id(minion_id: String) -> Character:
 
 	var minion = Character.new()
 	minion.character_name = data.name
-	minion.description = "Minion of the " + ["Corrupted Treant", "Flame Warlord", "Lich Summoner", "Storm Dragon", "Void Titan"][data.boss_index]
+	minion.description = "Minion of " + ["Giant Moose", "Mr. 67", "Flame Warlord", "Lich Summoner", "Storm Dragon", "Void Titan"][data.boss_index]
 	minion.max_health = data.max_health
 	minion.current_health = data.max_health
 	minion.starting_stamina = data.starting_stamina
@@ -43,6 +43,10 @@ func create_minion_by_id(minion_id: String) -> Character:
 
 	# Set cards per turn limit (-1 = unlimited)
 	minion.main_deck_cards_per_turn = data.get("cards_per_turn", -1)
+
+	# Set extended probability properties
+	minion.extra_main_deck_chance = data.get("extra_main_deck_chance", 0.0)
+	minion.special_deck_double_chance = data.get("special_deck_double_chance", 0.0)
 
 	return minion
 
@@ -82,6 +86,8 @@ func create_card_from_data(data: Dictionary) -> Card:
 			card.target_type = Card.TargetType.CCW_PLAYER
 		"HIGHEST_HP":
 			card.target_type = Card.TargetType.HIGHEST_HP
+		"LOWEST_HP":
+			card.target_type = Card.TargetType.LOWEST_HP
 
 	card.stamina_cost = data.cost
 	card.damage = data.get("damage", 0)
@@ -94,8 +100,16 @@ func create_card_from_data(data: Dictionary) -> Card:
 	card.apply_weakness = data.get("weakness", 0)
 	card.apply_armor = data.get("armor", 0)
 	card.apply_hinder = data.get("hinder", 0)
+	card.apply_scared = data.get("scared", 0)
 	card.piercing = data.get("piercing", false)
 	card.lifesteal = data.get("lifesteal", false)
+
+	# Conditional damage properties
+	card.damage_threshold_check = data.get("damage_threshold_check", 0)
+	card.damage_threshold_modifier = data.get("damage_threshold_modifier", 0)
+
+	if card.damage_threshold_check != 0 or card.damage_threshold_modifier != 0:
+		print("[MINION CARD] ", card.card_name, " threshold_check=", card.damage_threshold_check, " threshold_mod=", card.damage_threshold_modifier)
 
 	return card
 

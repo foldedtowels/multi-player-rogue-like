@@ -586,6 +586,11 @@ func clear_card_preview(player_index: int):
 	# Don't emit game_state_changed - it causes hand to rebuild and breaks drag-and-drop!
 	# Player status panels update automatically via their own update cycles
 
+@rpc("any_peer", "call_local", "reliable")
+func sync_protected_by(protection_dict: Dictionary):
+	protected_by = protection_dict
+	game_state_changed.emit()
+
 func broadcast_character_state(character: Character):
 	if not multiplayer.is_server(): return
 
@@ -938,7 +943,10 @@ func start_round():
 	_process_delayed_effects()
 
 	# Clear protection from previous turn (Protector lasts one turn)
+	print("[PROTECTOR DEBUG] Clearing protection at turn start. Was: ", protected_by)
 	protected_by.clear()
+	if multiplayer.is_server():
+		rpc("sync_protected_by", protected_by)
 
 	# PRE-DRAW enemy cards (unless we have locked hands from Hunter's Instinct)
 	if locked_enemy_hands.size() > 0:
@@ -1213,6 +1221,14 @@ func start_enemy_turn_phase():
 	var alive_players = players.filter(func(p): return p.is_alive())
 	if alive_players.size() > 0:
 		ccw_target_index = (ccw_target_index + 1) % alive_players.size()
+
+	# Test mode: Draw 10 extra cards at end of each round
+	if has_meta("test_mode") and get_meta("test_mode"):
+		for player in players:
+			if player.is_alive():
+				player.draw_cards(10)
+				broadcast_character_state(player)
+				send_hand_to_owner(player)
 
 	# Start next round
 	round_number += 1
@@ -1564,6 +1580,10 @@ func _server_play_card(caster: Character, card: Card, target: Character):
 		# Consume one stack of played_twice
 		caster.played_twice -= 1
 
+	# Sync protection state if any was set (must sync BEFORE client_card_played so UI updates)
+	if protected_by.size() > 0:
+		rpc("sync_protected_by", protected_by)
+
 	# Track last played card (only for players, not enemies)
 	var player_index = players.find(caster)
 	if player_index >= 0:
@@ -1790,6 +1810,8 @@ func _legacy_apply_card_effects(caster: Character, card: Card, target: Character
 				debuff_target.hinder += card.apply_hinder
 			if card.apply_scared > 0:
 				debuff_target.scared += card.apply_scared
+			if card.apply_wet > 0:
+				debuff_target.wet += card.apply_wet
 
 		# BENEFICIAL STATUS EFFECTS - only apply to allies
 		if is_ally:
@@ -1835,6 +1857,8 @@ func _legacy_apply_card_effects(caster: Character, card: Card, target: Character
 			var caster_idx = players.find(caster)
 			if target_idx >= 0 and caster_idx >= 0:
 				protected_by[target_idx] = caster_idx
+				print("[PROTECTOR DEBUG] Set protection: player ", target_idx, " protected by player ", caster_idx, " | protected_by dict: ", protected_by)
+				# Note: sync_protected_by is called in _server_play_card after apply_card_effects
 
 		# BOSS INTENT REVEAL - reveal what the boss will play next turn
 		if card.reveals_boss_intent and t == caster:

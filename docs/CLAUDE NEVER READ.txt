@@ -4,8 +4,6 @@ ui thing for when enemy takes damage
 
 make it so you can not play cards that require you to discard if the discard condition isn't met
 
-next refactor make sure there aren't two names for the same variables
-
 protector edge case - does it effect status effects gained from previous turns?
 
 most of the time when i say modular i mean extendable
@@ -17,11 +15,13 @@ Kevin
 
 Enrique
 
-fatigued stacks dont work properly they should take away only one stamina per turn and amount of turns on additional stacks
 
-- ready to be checked
-exhausted needs to be looked at
-fighter spirit v1 is wrong should be "remove one debuff from caster"
 
-non host players modals dont seem to work
+deal with players dying
+fix reward scenes
+fix player draw and discard and shuffle between turns to reflect actual game
+
+
+
+
 

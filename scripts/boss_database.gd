@@ -68,7 +68,7 @@ func create_boss_cards():
 		card_db.all_cards[card_id] = card
 
 ## Create a boss from its ID using the factory pattern
-## @param boss_id: The boss identifier (e.g., "corrupted_treant", "flame_warlord")
+## @param boss_id: The boss identifier (e.g., "giant_moose", "mr_67")
 ## @returns: Fully initialized boss Character with deck populated
 func create_boss_by_id(boss_id: String) -> Character:
 	if not BossesData.has_boss(boss_id):
@@ -121,27 +121,21 @@ func create_boss_by_id(boss_id: String) -> Character:
 	if data.has("cards_per_turn"):
 		boss.main_deck_cards_per_turn = data.cards_per_turn
 
+	# Set extended probability properties
+	if data.has("extra_main_deck_chance"):
+		boss.extra_main_deck_chance = data.extra_main_deck_chance
+	if data.has("special_deck_double_chance"):
+		boss.special_deck_double_chance = data.special_deck_double_chance
+
 	return boss
 
 ## Legacy function for backwards compatibility
-func create_corrupted_treant() -> Character:
-	return create_boss_by_id("corrupted_treant")
+func create_giant_moose() -> Character:
+	return create_boss_by_id("giant_moose")
 
 ## Legacy function for backwards compatibility
-func create_flame_warlord() -> Character:
-	return create_boss_by_id("flame_warlord")
-
-## Legacy function for backwards compatibility
-func create_lich_summoner() -> Character:
-	return create_boss_by_id("lich_summoner")
-
-## Legacy function for backwards compatibility
-func create_storm_dragon() -> Character:
-	return create_boss_by_id("storm_dragon")
-
-## Legacy function for backwards compatibility
-func create_void_titan() -> Character:
-	return create_boss_by_id("void_titan")
+func create_mr_67() -> Character:
+	return create_boss_by_id("mr_67")
 
 ## Get boss by index (0-4 for the 5 boss encounters)
 ## @param index: Boss encounter number (0 = first boss, 4 = final boss)

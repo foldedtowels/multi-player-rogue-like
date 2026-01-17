@@ -32,8 +32,9 @@ func show_discard(player: Character, count: int, card_name: String) -> bool:
 	available_spells.clear()
 
 	# Find all spell cards in the player's hand
+	# Note: Kevin's "spells" are cards with an element (FIRE, WATER, EARTH), not card_type SPELL
 	for card in player.hand:
-		if card.card_type == Card.CardType.SPELL:
+		if card.element != Card.ElementType.NONE:
 			available_spells.append(card)
 
 	# Check if player has enough spells

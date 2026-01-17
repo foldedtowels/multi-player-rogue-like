@@ -65,6 +65,12 @@ static func calculate_damage(card: Card, caster: Character, target: Character = 
 		if card.damage_per_aura_spent > 0 and aura_spent > 0:
 			total_damage += card.damage_per_aura_spent * aura_spent
 
+		# Conditional damage based on target's damage taken this turn
+		# (e.g., Angwy Punch: +5 if target took 1+ damage, Vulnerable Approach: -10 if target took 10+)
+		if card.damage_threshold_check > 0 and target != null:
+			if target.damage_taken_this_turn >= card.damage_threshold_check:
+				total_damage += card.damage_threshold_modifier
+
 		total_damage = max(0, total_damage)
 
 	return total_damage
@@ -249,8 +255,8 @@ func process_delayed_effects() -> Array[Character]:
 # =============================================================================
 
 func _apply_damage(caster: Character, card: Card, target: Character, is_enemy: bool, spells_discarded: int = 0, aura_spent: int = 0) -> void:
-	# Allow cards with damage_per_spell_discarded or damage_per_aura_spent even if base damage is 0
-	var has_conditional_damage = card.damage_per_spell_discarded > 0 or card.damage_per_aura_spent > 0
+	# Allow cards with damage_per_spell_discarded, damage_per_aura_spent, or bonus_damage_per_wet even if base damage is 0
+	var has_conditional_damage = card.damage_per_spell_discarded > 0 or card.damage_per_aura_spent > 0 or card.bonus_damage_per_wet > 0
 	if (card.damage <= 0 and not has_conditional_damage and not card.damage_is_d6) or not is_enemy:
 		return
 
@@ -283,6 +289,12 @@ func _apply_damage(caster: Character, card: Card, target: Character, is_enemy: b
 				var aura_bonus = aura_spent * card.damage_per_aura_spent
 				total_damage += aura_bonus
 				print("[AURA DAMAGE] Bonus damage from ", aura_spent, " aura: +", aura_bonus)
+			# Conditional damage based on target's damage taken this turn
+			print("[DAMAGE] Card: ", card.card_name, " threshold_check: ", card.damage_threshold_check, " threshold_mod: ", card.damage_threshold_modifier)
+			if card.damage_threshold_check > 0:
+				if damage_target.damage_taken_this_turn >= card.damage_threshold_check:
+					total_damage += card.damage_threshold_modifier
+					print("[CONDITIONAL DAMAGE] Target took ", damage_target.damage_taken_this_turn, " damage this turn (threshold: ", card.damage_threshold_check, "), modifier: ", card.damage_threshold_modifier)
 			total_damage = max(0, total_damage)
 
 		# Add bonus damage per spell discarded (Accumulation mechanic)
@@ -394,6 +406,11 @@ func _apply_debuffs(caster: Character, card: Card, target: Character, is_enemy: 
 
 	# Registry-based debuff application
 	for effect_name in StatusEffectRegistry.get_debuff_effect_names():
+		# Skip self-applicable debuffs (like exhausted, fatigued) - those are applied to caster, not target
+		var effect_data = StatusEffectRegistry.get_effect_data(effect_name)
+		if effect_data.get("self_applicable", false):
+			continue
+
 		var amount = card.get("apply_" + effect_name)
 		if amount != null and amount > 0:
 			# Direct property access for debuffs (they're stored as properties)
@@ -420,6 +437,7 @@ func _apply_buffs(caster: Character, card: Card, target: Character, is_ally: boo
 		var amount = card.get("apply_" + effect_name)
 		if amount != null and amount > 0:
 			var current = target.get(effect_name)
+			print("[BUFF APPLY] ", target.character_name, " ", effect_name, ": ", current, " + ", amount)
 			if current != null:
 				target.set(effect_name, current + amount)
 
@@ -576,10 +594,11 @@ func _process_spell_discards(caster: Character, card: Card) -> int:
 		print("[SPELL DISCARD] Using pre-discarded count: ", spells_discarded)
 
 	# discard_all_spells: Automatically discard all Spell cards in hand
+	# Note: Kevin's "spells" are cards with an element (FIRE, WATER, EARTH), not card_type SPELL
 	if card.discard_all_spells:
 		var spells_to_discard: Array[Card] = []
 		for hand_card in caster.hand:
-			if hand_card.card_type == Card.CardType.SPELL:
+			if hand_card.element != Card.ElementType.NONE:
 				spells_to_discard.append(hand_card)
 
 		for spell in spells_to_discard:

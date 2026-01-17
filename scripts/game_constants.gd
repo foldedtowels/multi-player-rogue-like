@@ -63,7 +63,9 @@ const BOSS_STAMINA_SCALING: Dictionary = {
 
 ## Health pools for each hero archetype (legacy reference - heroes_data.gd is source of truth)
 const HERO_MAX_HEALTH: Dictionary = {
-	"life_weaver": 110     # Selene - Healer
+	"fabio": 50,      # Fabio - Warrior
+	"kevin": 40,      # Kevin - Alchemist
+	"enrique": 30     # Enrique - Cleric
 }
 
 ## Starting stamina for all heroes

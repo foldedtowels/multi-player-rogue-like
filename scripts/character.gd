@@ -36,7 +36,12 @@ var burn: int:
 	set(value): set_effect_amount("burn", value)
 var strength: int:
 	get: return get_effect_amount("strength")
-	set(value): set_effect_amount("strength", value)
+	set(value):
+		var old = get_effect_amount("strength")
+		set_effect_amount("strength", value)
+		if old != value:
+			print("[STRENGTH DEBUG] ", character_name, ": ", old, " -> ", value)
+			print_stack()  # Shows call stack to identify caller
 var vulnerable: int:
 	get: return get_effect_amount("vulnerable")
 	set(value): set_effect_amount("vulnerable", value)
@@ -101,6 +106,8 @@ var exhaust_pile: Array[Card] = []
 var special_deck: Array[Card] = []
 var special_chance: float = 0.0  # Probability of playing a special card each turn
 var main_deck_cards_per_turn: int = -1  # -1 = unlimited (greedy), positive = limit per turn
+var extra_main_deck_chance: float = 0.0  # Chance for 2nd main deck card
+var special_deck_double_chance: float = 0.0  # Chance for 2nd special card
 
 # Card retention system (e.g., Dig a Hole)
 # Maps card_name -> expires_after_round (the round number when retention expires)
@@ -592,6 +599,8 @@ func duplicate_character() -> Character:
 	# Copy enemy-specific properties
 	new_char.special_chance = special_chance
 	new_char.main_deck_cards_per_turn = main_deck_cards_per_turn
+	new_char.extra_main_deck_chance = extra_main_deck_chance
+	new_char.special_deck_double_chance = special_deck_double_chance
 
 	# Deep copy special deck
 	var special_copy: Array[Card] = []

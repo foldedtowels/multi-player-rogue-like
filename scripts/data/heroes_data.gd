@@ -7,8 +7,7 @@ class_name HeroesData
 ## ============================================================================
 ## REFACTORING PLAN SUMMARY (Jan 2026) - ALL PHASES COMPLETE
 ## ============================================================================
-## Phase 1: COMPLETED - Removed 5 characters (Pyra, Nyx, Zephyr, Thorne, Kairos)
-##          Kept: Selene (life_weaver), Fabio, Kevin.
+## Phase 1: COMPLETED - Removed characters. Kept: Fabio, Kevin, Enrique.
 ##
 ## Phase 2: COMPLETED - Status effect system now data-driven
 ##          See: status_effect_registry.gd (dynamic category functions)
@@ -32,43 +31,6 @@ class_name HeroesData
 ## - starting_stamina: Stamina available per turn
 ## - deck: Array of card IDs that make up the hero's starting deck (14+ cards recommended)
 const HEROES = {
-	"life_weaver": {
-		"name": "Selene, Life Weaver",
-		"description": "Divine healer and protector of allies.",
-		"max_health": 110,
-		"starting_stamina": 3,
-		"deck": [
-			"healing_salve",
-			"healing_salve",
-			"healing_salve",
-			"divine_light",
-			"divine_light",
-			"holy_strike",
-			"holy_strike",
-			"guardian_shield",
-			"guardian_shield",
-			"guardian_shield",
-			"pacify",
-			"blessing",
-			"blessing",
-			"mass_heal",
-			"smite"
-		],
-		# Reward deck: support/healer themed cards from shared pool
-		"reward_deck": [
-			"sacrifice",
-			"medkit",
-			"energy",
-			"fighters_spirit",
-			"protector",
-			"leader",
-			"fortify",
-			"rejuvenation",
-			"healing_potion"
-		]
-	},
-
-	# Phase 1 Heroes: Fabio, Kevin (Selene above)
 	"fabio": {
 		"name": "Fabio, The Warrior",
 		"description": "Versatile fighter with tactical abilities and battlefield control.",

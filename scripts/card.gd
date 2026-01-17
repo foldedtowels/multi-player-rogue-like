@@ -99,6 +99,8 @@ var v2_card: Card = null  # Local reference (not serialized over network)
 # Conditional damage
 @export var bonus_damage_if_wounded: int = 0  # Extra damage if target below 50% HP
 @export var bonus_damage_per_debuff: int = 0  # Extra damage per debuff stack on target
+@export var damage_threshold_check: int = 0  # If target took >= this damage this turn
+@export var damage_threshold_modifier: int = 0  # Apply this modifier (negative reduces damage)
 
 # Stamina effects
 @export var stamina_gain: int = 0  # Stamina granted to caster when played
@@ -120,6 +122,7 @@ var v2_card: Card = null  # Local reference (not serialized over network)
 @export var discard_spell_requirement: int = 0  # Must discard X spells to play this card
 @export var discard_all_spells: bool = false  # Discard all spell cards in hand
 @export var damage_per_spell_discarded: int = 0  # Bonus damage per spell discarded
+@export var random_spell_discard: bool = false  # If true, randomly discard spells instead of showing modal
 
 # Spell search/tutor (Kevin)
 @export var choose_spell_from_deck: int = 0  # Search deck for X spells, add to hand
@@ -220,6 +223,8 @@ func serialize() -> Dictionary:
 		"caster_discards_random": caster_discards_random,
 		"bonus_damage_if_wounded": bonus_damage_if_wounded,
 		"bonus_damage_per_debuff": bonus_damage_per_debuff,
+		"damage_threshold_check": damage_threshold_check,
+		"damage_threshold_modifier": damage_threshold_modifier,
 		"stamina_gain": stamina_gain,
 		"element": element,
 		"ingredient_list": ingredient_list,
@@ -231,6 +236,7 @@ func serialize() -> Dictionary:
 		"discard_spell_requirement": discard_spell_requirement,
 		"discard_all_spells": discard_all_spells,
 		"damage_per_spell_discarded": damage_per_spell_discarded,
+		"random_spell_discard": random_spell_discard,
 		"choose_spell_from_deck": choose_spell_from_deck,
 		"all_players_shield": all_players_shield,
 		"target_stamina_gain": target_stamina_gain,
@@ -292,6 +298,8 @@ static func deserialize(data: Dictionary) -> Card:
 	card.caster_discards_random = data.get("caster_discards_random", 0)
 	card.bonus_damage_if_wounded = data.get("bonus_damage_if_wounded", 0)
 	card.bonus_damage_per_debuff = data.get("bonus_damage_per_debuff", 0)
+	card.damage_threshold_check = data.get("damage_threshold_check", 0)
+	card.damage_threshold_modifier = data.get("damage_threshold_modifier", 0)
 	card.stamina_gain = data.get("stamina_gain", 0)
 	card.element = data.get("element", ElementType.NONE) as ElementType
 	card.ingredient_list = data.get("ingredient_list", [])
@@ -303,6 +311,7 @@ static func deserialize(data: Dictionary) -> Card:
 	card.discard_spell_requirement = data.get("discard_spell_requirement", 0)
 	card.discard_all_spells = data.get("discard_all_spells", false)
 	card.damage_per_spell_discarded = data.get("damage_per_spell_discarded", 0)
+	card.random_spell_discard = data.get("random_spell_discard", false)
 	card.choose_spell_from_deck = data.get("choose_spell_from_deck", 0)
 	card.all_players_shield = data.get("all_players_shield", 0)
 	card.target_stamina_gain = data.get("target_stamina_gain", 0)

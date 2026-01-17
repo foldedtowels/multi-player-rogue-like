@@ -66,6 +66,7 @@ func _ready():
 	card_hand_display = CardHandDisplay.new()
 	add_child(card_hand_display)
 	card_hand_display.setup(game_manager, hand_container, turn_label)
+	card_hand_display.card_play_requested.connect(_on_card_play_requested)
 
 	# Create player status panel component
 	player_status_panel = PlayerStatusPanel.new()
@@ -195,12 +196,12 @@ func _create_character_face():
 
 	# Map character names to colors
 	var face_color = Color(0.5, 0.5, 0.5)  # Default gray
-	if "Pyra" in my_character.character_name:
-		face_color = Color(0.9, 0.3, 0.1)  # Red/Orange for Pyra
-	elif "Selene" in my_character.character_name:
-		face_color = Color(0.2, 0.6, 0.9)  # Light Blue for Selene
-	elif "Nyx" in my_character.character_name:
-		face_color = Color(0.6, 0.2, 0.8)  # Purple for Nyx
+	if "Fabio" in my_character.character_name:
+		face_color = Color(0.8, 0.4, 0.2)  # Bronze for Fabio (Warrior)
+	elif "Kevin" in my_character.character_name:
+		face_color = Color(0.3, 0.7, 0.5)  # Green for Kevin (Alchemist)
+	elif "Enrique" in my_character.character_name:
+		face_color = Color(0.9, 0.8, 0.3)  # Gold for Enrique (Cleric)
 
 	color_rect.color = face_color
 	character_face_panel.add_child(color_rect)
@@ -645,6 +646,9 @@ func _on_boss_turn_started():
 func _on_card_played(character: Character, card: Card, target: Character):
 	mark_display_dirty()
 
+func _on_card_play_requested(caster: Character, card: Card, target: Character):
+	await _play_card_with_discard_check(caster, card, target)
+
 func _on_game_state_changed():
 	# Detect phase transitions
 	var current_phase = game_manager.turn_phase
@@ -890,18 +894,36 @@ func _on_card_dropped_on_character_face(card_data_dict: Dictionary):
 func _play_card_with_discard_check(caster: Character, card: Card, target: Character) -> bool:
 	# Check if card requires spell discard selection
 	if card.discard_spell_requirement > 0:
-		var has_enough = spell_discard_modal.show_discard(caster, card.discard_spell_requirement, card.card_name)
-		if not has_enough:
+		# Find spell cards (cards with element) in hand
+		var spell_cards: Array[Card] = []
+		for hand_card in caster.hand:
+			if hand_card.element != Card.ElementType.NONE:
+				spell_cards.append(hand_card)
+
+		if spell_cards.size() < card.discard_spell_requirement:
 			print("[COMBAT] Not enough spells to discard for: ", card.card_name)
 			return false
 
-		# Wait for player to select spells
-		var discarded = await spell_discard_modal.discard_completed
+		if card.random_spell_discard:
+			# Randomly discard spells (Repurpose)
+			spell_cards.shuffle()
+			for i in range(card.discard_spell_requirement):
+				caster.discard_card(spell_cards[i])
+				print("[COMBAT] Randomly discarded spell: ", spell_cards[i].card_name)
+		else:
+			# Show modal for player selection (Reformulate, Accretion)
+			var has_enough = spell_discard_modal.show_discard(caster, card.discard_spell_requirement, card.card_name)
+			if not has_enough:
+				print("[COMBAT] Not enough spells to discard for: ", card.card_name)
+				return false
 
-		# Discard the selected spells
-		for spell in discarded:
-			caster.discard_card(spell)
-			print("[COMBAT] Pre-discarded spell: ", spell.card_name)
+			# Wait for player to select spells
+			var discarded = await spell_discard_modal.discard_completed
+
+			# Discard the selected spells
+			for spell in discarded:
+				caster.discard_card(spell)
+				print("[COMBAT] Pre-discarded spell: ", spell.card_name)
 
 	# Check if card removes debuffs and target is an ally (player)
 	if card.remove_target_debuffs > 0 and game_manager.players.has(target):

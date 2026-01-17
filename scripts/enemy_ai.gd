@@ -92,6 +92,28 @@ func calculate_single_intent(enemy: Character, enemy_idx: int) -> EnemyIntent:
 		# Aggregate effects for intent display
 		_aggregate_card_effects(intent, card, enemy, target_index)
 
+	# Check for extra main deck card (extra_main_deck_chance)
+	if enemy.extra_main_deck_chance > 0.0 and rng.randf() < enemy.extra_main_deck_chance:
+		# Find another playable card from hand that hasn't been played
+		for card in hand:
+			if card.stamina_cost <= simulated_stamina:
+				# Check if this exact card instance is already in cards_to_play
+				var already_played = false
+				for played_info in intent.cards_to_play:
+					if played_info.card == card:
+						already_played = true
+						break
+				if not already_played:
+					simulated_stamina -= card.stamina_cost
+					var target_index = determine_card_target(enemy, card)
+					intent.cards_to_play.append({
+						"card": card,
+						"target_index": target_index,
+						"is_special": false
+					})
+					_aggregate_card_effects(intent, card, enemy, target_index)
+					break
+
 	# Handle special deck (based on special_chance)
 	if enemy.special_deck.size() > 0 and rng.randf() < enemy.special_chance:
 		var special_card = enemy.special_deck[rng.randi() % enemy.special_deck.size()].duplicate()
@@ -104,6 +126,19 @@ func calculate_single_intent(enemy: Character, enemy_idx: int) -> EnemyIntent:
 		})
 
 		_aggregate_card_effects(intent, special_card, enemy, special_target_index)
+
+		# Check for second special card (special_deck_double_chance)
+		if enemy.special_deck_double_chance > 0.0 and rng.randf() < enemy.special_deck_double_chance:
+			var special_card2 = enemy.special_deck[rng.randi() % enemy.special_deck.size()].duplicate()
+			var special_target_index2 = determine_card_target(enemy, special_card2)
+
+			intent.cards_to_play.append({
+				"card": special_card2,
+				"target_index": special_target_index2,
+				"is_special": true
+			})
+
+			_aggregate_card_effects(intent, special_card2, enemy, special_target_index2)
 
 	# Calculate intent type based on aggregated effects
 	intent.calculate_intent_type()
@@ -140,6 +175,26 @@ func calculate_intent_with_hand(enemy: Character, enemy_idx: int, hand: Array[Ca
 
 		_aggregate_card_effects(intent, card, enemy, target_index)
 
+	# Check for extra main deck card (extra_main_deck_chance)
+	if enemy.extra_main_deck_chance > 0.0 and rng.randf() < enemy.extra_main_deck_chance:
+		for card in hand:
+			if card.stamina_cost <= simulated_stamina:
+				var already_played = false
+				for played_info in intent.cards_to_play:
+					if played_info.card == card:
+						already_played = true
+						break
+				if not already_played:
+					simulated_stamina -= card.stamina_cost
+					var target_index = determine_card_target(enemy, card)
+					intent.cards_to_play.append({
+						"card": card,
+						"target_index": target_index,
+						"is_special": false
+					})
+					_aggregate_card_effects(intent, card, enemy, target_index)
+					break
+
 	# Handle special deck
 	if enemy.special_deck.size() > 0 and rng.randf() < enemy.special_chance:
 		var special_card = enemy.special_deck[rng.randi() % enemy.special_deck.size()].duplicate()
@@ -152,6 +207,19 @@ func calculate_intent_with_hand(enemy: Character, enemy_idx: int, hand: Array[Ca
 		})
 
 		_aggregate_card_effects(intent, special_card, enemy, special_target_index)
+
+		# Check for second special card (special_deck_double_chance)
+		if enemy.special_deck_double_chance > 0.0 and rng.randf() < enemy.special_deck_double_chance:
+			var special_card2 = enemy.special_deck[rng.randi() % enemy.special_deck.size()].duplicate()
+			var special_target_index2 = determine_card_target(enemy, special_card2)
+
+			intent.cards_to_play.append({
+				"card": special_card2,
+				"target_index": special_target_index2,
+				"is_special": true
+			})
+
+			_aggregate_card_effects(intent, special_card2, enemy, special_target_index2)
 
 	intent.calculate_intent_type()
 	return intent

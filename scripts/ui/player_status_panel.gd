@@ -187,7 +187,9 @@ func _populate_status_container(container: HBoxContainer, character: Character, 
 				container.add_child(effect_label)
 
 	# Add protected status (not in registry - it's a game state)
+	print("[PROTECTOR DEBUG] _populate_status_container called with is_protected=", is_protected, " for character: ", character.character_name)
 	if is_protected:
+		print("[PROTECTOR DEBUG] Adding protected icon 😇 to ", character.character_name)
 		var protected_label = Label.new()
 		protected_label.text = "😇"
 		protected_label.tooltip_text = "Protected by ally"
@@ -272,6 +274,8 @@ func _get_panel_signature(character: Character, player_index: int, preview_card_
 	# Include incoming damage calculation
 	var incoming = _get_incoming_icons(player_index)
 	parts.append("incoming:" + incoming)
+	# Include protected state so UI updates when protection changes
+	parts.append("protected:" + str(game_manager.protected_by.has(player_index)))
 	return "|".join(parts)
 
 ## Update all player panels
@@ -351,6 +355,7 @@ func _update_other_panel(panel: Panel, character: Character, player_index: int):
 	# Add status effects display with individual hoverable labels
 	var status_container = _get_or_create_other_status_container(panel)
 	var is_protected = game_manager.protected_by.has(player_index)
+	print("[PROTECTOR DEBUG] _update_other_player_panel: player_index=", player_index, " protected_by=", game_manager.protected_by, " is_protected=", is_protected)
 	_populate_status_container(status_container, character, 14, is_protected)
 
 	stamina_label.text = "S: %d/%d" % [character.current_stamina, character.max_stamina]
@@ -441,6 +446,7 @@ func _update_your_panel(character: Character):
 	# Add status effects display with individual hoverable labels
 	var status_container = _get_or_create_your_status_container(your_character_panel)
 	var is_protected = game_manager.protected_by.has(my_index)
+	print("[PROTECTOR DEBUG] _update_your_panel: my_index=", my_index, " protected_by=", game_manager.protected_by, " is_protected=", is_protected)
 	_populate_status_container(status_container, character, 18, is_protected)
 
 	# Highlight panel if it's your turn (use cached StyleBoxFlat)

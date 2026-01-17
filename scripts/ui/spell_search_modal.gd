@@ -138,9 +138,10 @@ func show_search(target_player: Character, count: int, card_name: String) -> boo
 		child.queue_free()
 
 	# Find spell cards in deck
+	# Note: Kevin's "spells" are cards with an element (FIRE, WATER, EARTH), not card_type SPELL
 	var spells_in_deck: Array[Card] = []
 	for card in player.deck:
-		if card.card_type == Card.CardType.SPELL:
+		if card.element != Card.ElementType.NONE:
 			spells_in_deck.append(card)
 
 	if spells_in_deck.is_empty():
@@ -151,6 +152,10 @@ func show_search(target_player: Character, count: int, card_name: String) -> boo
 	for spell in spells_in_deck:
 		var container = _create_selectable_card(spell)
 		spell_grid.add_child(container)
+		# Initialize card visual now that it's in the scene tree (@onready vars are ready)
+		var card_visual = container.get_meta("card_visual")
+		card_visual.set_card(spell)
+		card_visual.set_playable(true)
 
 	_update_confirm_button()
 	visible = true
@@ -165,9 +170,8 @@ func _create_selectable_card(card: Card) -> Control:
 	card_visual.custom_minimum_size = CARD_SIZE
 	container.add_child(card_visual)
 
-	# Set card data after adding to tree
-	card_visual.set_card(card)
-	card_visual.set_playable(true)
+	# Store card_visual reference - set_card must be called after container is in scene tree
+	container.set_meta("card_visual", card_visual)
 
 	# Create clickable overlay
 	var overlay = Button.new()
