@@ -11,15 +11,27 @@ most of the time when i say modular i mean extendable
 Fabio 
 cursed dagger needs to add discard one random card
 
-Kevin
 
-Enrique
+Kevin
+repurpose is broken
+
+Enrique 
 
 
 
 deal with players dying
 fix reward scenes
 fix player draw and discard and shuffle between turns to reflect actual game
+dynamic card description not working for at least hinder
+
+
+minion rewards
+heal + 50% max hp
+choose one of 3 cards from reward deck
+
+boss rewards
+one team passive
+choose one 3 rare cards from reward deck (rare is not a a thing rn but know it probably will be)
 
 
 

@@ -3,11 +3,13 @@ class_name SpellDiscardModal
 
 ## Modal for selecting spell cards to discard (for cards like Repurpose, Mortar and Pestle)
 ## Shows the player's spell cards and lets them select the required number to discard.
+## Supports both fixed counts and variable ranges (min/max).
 
 signal discard_completed(discarded_spells: Array[Card])
 signal discard_cancelled()
 
-var required_count: int = 0
+var min_count: int = 0
+var max_count: int = -1  # -1 = unlimited
 var selected_spells: Array[Card] = []
 var available_spells: Array[Card] = []
 var spell_buttons: Array[Button] = []
@@ -24,10 +26,19 @@ func _ready():
 	hide()
 
 
-## Show the modal to select spells to discard
+## Show the modal to select spells to discard (fixed count mode)
 ## Returns true if player has enough spells, false otherwise
 func show_discard(player: Character, count: int, card_name: String) -> bool:
-	required_count = count
+	return show_discard_range(player, count, count, card_name)
+
+
+## Show the modal to select spells to discard (variable range mode)
+## min_discard: minimum spells required (0 = optional)
+## max_discard: maximum spells allowed (-1 = unlimited)
+## Returns true if player has at least min_discard spells, false otherwise
+func show_discard_range(player: Character, min_discard: int, max_discard: int, card_name: String) -> bool:
+	min_count = min_discard
+	max_count = max_discard
 	selected_spells.clear()
 	available_spells.clear()
 
@@ -37,9 +48,9 @@ func show_discard(player: Character, count: int, card_name: String) -> bool:
 		if card.element != Card.ElementType.NONE:
 			available_spells.append(card)
 
-	# Check if player has enough spells
-	if available_spells.size() < required_count:
-		print("[SPELL DISCARD] Not enough spells in hand: have ", available_spells.size(), ", need ", required_count)
+	# Check if player has enough spells for minimum requirement
+	if available_spells.size() < min_count:
+		print("[SPELL DISCARD] Not enough spells in hand: have ", available_spells.size(), ", need ", min_count)
 		return false
 
 	title_label.text = "Discard Spells for " + card_name
@@ -52,11 +63,25 @@ func show_discard(player: Character, count: int, card_name: String) -> bool:
 
 
 func _update_instructions():
-	var remaining = required_count - selected_spells.size()
-	if remaining > 0:
-		instructions_label.text = "Select " + str(remaining) + " more spell(s) to discard"
+	var current = selected_spells.size()
+	var effective_max = max_count if max_count >= 0 else available_spells.size()
+
+	if min_count == 0 and max_count < 0:
+		# Variable mode: 0 to unlimited
+		instructions_label.text = "Select any number of spells to discard (selected: %d)" % current
+	elif min_count == max_count:
+		# Fixed count mode
+		var remaining = min_count - current
+		if remaining > 0:
+			instructions_label.text = "Select %d more spell(s) to discard" % remaining
+		else:
+			instructions_label.text = "Ready to confirm!"
 	else:
-		instructions_label.text = "Ready to confirm!"
+		# Range mode
+		if current < min_count:
+			instructions_label.text = "Select at least %d spell(s) (selected: %d)" % [min_count, current]
+		else:
+			instructions_label.text = "Selected: %d spell(s) - Ready to confirm!" % current
 
 
 func _create_spell_buttons():
@@ -93,11 +118,13 @@ func _create_spell_buttons():
 
 
 func _on_spell_toggled(pressed: bool, spell: Card):
+	var effective_max = max_count if max_count >= 0 else available_spells.size()
+
 	if pressed:
-		if selected_spells.size() < required_count:
+		if selected_spells.size() < effective_max:
 			selected_spells.append(spell)
 		else:
-			# Already have enough selected, deselect this one
+			# Already at max, deselect this one
 			for button in spell_buttons:
 				if button.text.begins_with(spell.card_name):
 					button.button_pressed = false
@@ -110,7 +137,8 @@ func _on_spell_toggled(pressed: bool, spell: Card):
 
 
 func _update_confirm_button():
-	confirm_button.disabled = selected_spells.size() < required_count
+	# Confirm is enabled when we have at least min_count selected
+	confirm_button.disabled = selected_spells.size() < min_count
 
 
 func _on_confirm_pressed():

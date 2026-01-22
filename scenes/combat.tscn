@@ -7,6 +7,8 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/satchel_brew_modal.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://scenes/ui/spell_search_modal.tscn" id="6"]
 [ext_resource type="PackedScene" path="res://scenes/ui/spell_discard_modal.tscn" id="7"]
+[ext_resource type="Texture2D" path="res://assets/Teammate Icons/back of head left.png" id="8"]
+[ext_resource type="Texture2D" path="res://assets/Teammate Icons/back of head right.png" id="9"]
 
 [node name="Combat" type="Control"]
 layout_mode = 3
@@ -89,113 +91,15 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_top = 60.0
-offset_bottom = -370.0
+offset_bottom = -100.0
 grow_horizontal = 2
 grow_vertical = 2
-
-[node name="LeftPlayerPanel" type="Panel" parent="MainArea"]
-custom_minimum_size = Vector2(200, 0)
-layout_mode = 2
-
-[node name="VBoxContainer" type="VBoxContainer" parent="MainArea/LeftPlayerPanel"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 10.0
-offset_top = 10.0
-offset_right = -10.0
-offset_bottom = -10.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 10
-
-[node name="NameLabel" type="Label" parent="MainArea/LeftPlayerPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "Player 2"
-horizontal_alignment = 1
-
-[node name="HPLabel" type="Label" parent="MainArea/LeftPlayerPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 14
-text = "HP: 100/100"
-horizontal_alignment = 1
-
-[node name="EnergyLabel" type="Label" parent="MainArea/LeftPlayerPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 14
-text = "E: 3/3"
-horizontal_alignment = 1
-
-[node name="HSeparator" type="HSeparator" parent="MainArea/LeftPlayerPanel/VBoxContainer"]
-layout_mode = 2
-
-[node name="PlayingLabel" type="Label" parent="MainArea/LeftPlayerPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 12
-text = "Playing:"
-horizontal_alignment = 1
-
-[node name="PlayingCardContainer" type="VBoxContainer" parent="MainArea/LeftPlayerPanel/VBoxContainer"]
-layout_mode = 2
-size_flags_vertical = 3
-alignment = 1
 
 [node name="CenterArea" type="VBoxContainer" parent="MainArea"]
 layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="EnemyDisplays" type="HBoxContainer" parent="MainArea/CenterArea"]
-layout_mode = 2
-size_flags_vertical = 3
-alignment = 1
-
-[node name="RightPlayerPanel" type="Panel" parent="MainArea"]
-custom_minimum_size = Vector2(200, 0)
-layout_mode = 2
-
-[node name="VBoxContainer" type="VBoxContainer" parent="MainArea/RightPlayerPanel"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 10.0
-offset_top = 10.0
-offset_right = -10.0
-offset_bottom = -10.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 10
-
-[node name="NameLabel" type="Label" parent="MainArea/RightPlayerPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "Player 3"
-horizontal_alignment = 1
-
-[node name="HPLabel" type="Label" parent="MainArea/RightPlayerPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 14
-text = "HP: 100/100"
-horizontal_alignment = 1
-
-[node name="EnergyLabel" type="Label" parent="MainArea/RightPlayerPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 14
-text = "E: 3/3"
-horizontal_alignment = 1
-
-[node name="HSeparator" type="HSeparator" parent="MainArea/RightPlayerPanel/VBoxContainer"]
-layout_mode = 2
-
-[node name="PlayingLabel" type="Label" parent="MainArea/RightPlayerPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 12
-text = "Playing:"
-horizontal_alignment = 1
-
-[node name="PlayingCardContainer" type="VBoxContainer" parent="MainArea/RightPlayerPanel/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
 alignment = 1
@@ -209,6 +113,7 @@ anchor_bottom = 1.0
 offset_top = -370.0
 grow_horizontal = 2
 grow_vertical = 0
+z_index = 20
 
 [node name="YourCharacterPanel" type="Panel" parent="BottomArea"]
 custom_minimum_size = Vector2(0, 100)
@@ -323,21 +228,133 @@ grow_vertical = 2
 theme_override_constants/separation = 10
 alignment = 1
 
+[node name="LeftPlayerLabels" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 15.0
+offset_top = -700.0
+offset_right = 825.0
+offset_bottom = -610.0
+z_index = 15
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label" parent="LeftPlayerLabels"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Player 2"
+horizontal_alignment = 0
+
+[node name="HPLabel" type="Label" parent="LeftPlayerLabels"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "HP: 100/100"
+horizontal_alignment = 0
+
+[node name="LeftStatusContainer" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 15.0
+offset_top = -840.0
+offset_right = 400.0
+offset_bottom = -810.0
+z_index = 15
+theme_override_constants/separation = 4
+
+[node name="LeftHeadImage" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = -821.0
+offset_right = 825.0
+offset_bottom = -321.0
+z_index = 10
+texture = ExtResource("8")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="RightPlayerLabels" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -750.0
+offset_top = -700.0
+offset_right = -15.0
+offset_bottom = -610.0
+z_index = 15
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label" parent="RightPlayerLabels"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Player 3"
+horizontal_alignment = 2
+
+[node name="HPLabel" type="Label" parent="RightPlayerLabels"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "HP: 100/100"
+horizontal_alignment = 2
+
+[node name="RightStatusContainer" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -400.0
+offset_top = -840.0
+offset_right = -15.0
+offset_bottom = -810.0
+z_index = 15
+theme_override_constants/separation = 4
+
+[node name="RightHeadImage" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -750.0
+offset_top = -794.0
+offset_right = 0.0
+offset_bottom = -339.0
+z_index = 10
+texture = ExtResource("9")
+expand_mode = 1
+stretch_mode = 5
+
 [node name="PassiveAbilityModal" parent="." instance=ExtResource("2")]
 visible = false
+z_index = 30
 
 [node name="CardV2ChoiceModal" parent="." instance=ExtResource("3")]
 visible = false
+z_index = 30
 
 [node name="DeckViewModal" parent="." instance=ExtResource("4")]
 visible = false
+z_index = 30
 
 [node name="SatchelBrewModal" parent="." instance=ExtResource("5")]
 visible = false
+z_index = 30
 
 [node name="SpellSearchModal" parent="." instance=ExtResource("6")]
 visible = false
+z_index = 30
 
 [node name="SpellDiscardModal" parent="." instance=ExtResource("7")]
 visible = false
+z_index = 30
 

@@ -8,7 +8,7 @@ const CARDS = {
 	# === RARE CARDS (Powerful rewards) ===
 	"apocalypse": {
 		"card_name": "Apocalypse",
-		"description": "Destroy everything. Deals massive damage to all enemies.",
+		"description": "Deal 30 damage to ALL enemies.",
 		"card_type": "ATTACK",
 		"target_type": "ALL_ENEMIES",
 		"stamina_cost": 4,
@@ -18,7 +18,7 @@ const CARDS = {
 
 	"divine_intervention": {
 		"card_name": "Divine Intervention",
-		"description": "Fully heal and gain massive shield.",
+		"description": "Heal 50 HP. Gain 30 Shield.",
 		"card_type": "HEAL",
 		"target_type": "SELF",
 		"stamina_cost": 3,
@@ -28,7 +28,7 @@ const CARDS = {
 
 	"berserker_rage": {
 		"card_name": "Berserker Rage",
-		"description": "Gain massive strength. Unleash fury!",
+		"description": "Gain 5 Strength (permanent +5 attack damage).",
 		"card_type": "BUFF",
 		"target_type": "SELF",
 		"stamina_cost": 2,
@@ -37,7 +37,7 @@ const CARDS = {
 
 	"meteor_swarm": {
 		"card_name": "Meteor Swarm",
-		"description": "Rain fire from the heavens! Multi-hit AoE.",
+		"description": "Hit ALL enemies 3 times for 12 damage each (36 total).",
 		"card_type": "ATTACK",
 		"target_type": "ALL_ENEMIES",
 		"stamina_cost": 3,
@@ -48,16 +48,17 @@ const CARDS = {
 
 	"time_stop": {
 		"card_name": "Time Stop",
-		"description": "Draw 5 cards instantly.",
+		"description": "Draw 5 cards.",
 		"card_type": "SPELL",
 		"target_type": "SELF",
 		"stamina_cost": 2,
-		"draw_cards": 5
+		"draw_cards": 5,
+		"plays_immediately": true
 	},
 
 	"life_drain": {
 		"card_name": "Life Drain",
-		"description": "Massive damage that heals you.",
+		"description": "Deal 25 damage. Heal for damage dealt.",
 		"card_type": "ATTACK",
 		"target_type": "SINGLE_ENEMY",
 		"stamina_cost": 3,
@@ -67,7 +68,7 @@ const CARDS = {
 
 	"annihilation": {
 		"card_name": "Annihilation",
-		"description": "Pierce all defenses. Pure destruction.",
+		"description": "Deal 35 piercing damage (ignores Shield).",
 		"card_type": "ATTACK",
 		"target_type": "SINGLE_ENEMY",
 		"stamina_cost": 3,
@@ -77,7 +78,7 @@ const CARDS = {
 
 	"omnipotence": {
 		"card_name": "Omnipotence",
-		"description": "Gain strength, armor, and draw cards.",
+		"description": "Gain 15 Shield, 3 Strength, 3 Armor. Draw 3 cards.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
 		"stamina_cost": 3,
@@ -90,7 +91,7 @@ const CARDS = {
 	# === COMMON CARDS (Decent rewards) ===
 	"steel_strike": {
 		"card_name": "Steel Strike",
-		"description": "Solid attack with good damage.",
+		"description": "Deal 16 damage.",
 		"card_type": "ATTACK",
 		"target_type": "SINGLE_ENEMY",
 		"stamina_cost": 2,
@@ -99,7 +100,7 @@ const CARDS = {
 
 	"healing_potion": {
 		"card_name": "Healing Potion",
-		"description": "Restore health quickly.",
+		"description": "Heal 15 HP.",
 		"card_type": "HEAL",
 		"target_type": "SELF",
 		"stamina_cost": 1,
@@ -108,7 +109,7 @@ const CARDS = {
 
 	"fortify": {
 		"card_name": "Fortify",
-		"description": "Gain good shield.",
+		"description": "Gain 12 Shield.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
 		"stamina_cost": 1,
@@ -117,7 +118,7 @@ const CARDS = {
 
 	"power_strike": {
 		"card_name": "Power Strike",
-		"description": "Heavy single target damage.",
+		"description": "Deal 18 damage.",
 		"card_type": "ATTACK",
 		"target_type": "SINGLE_ENEMY",
 		"stamina_cost": 2,
@@ -126,7 +127,7 @@ const CARDS = {
 
 	"battle_focus": {
 		"card_name": "Battle Focus",
-		"description": "Gain strength and draw a card.",
+		"description": "Gain 2 Strength. Draw 1 card.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
 		"stamina_cost": 2,
@@ -136,7 +137,7 @@ const CARDS = {
 
 	"cleave": {
 		"card_name": "Cleave",
-		"description": "Hit all enemies for decent damage.",
+		"description": "Deal 10 damage to ALL enemies.",
 		"card_type": "ATTACK",
 		"target_type": "ALL_ENEMIES",
 		"stamina_cost": 2,
@@ -146,7 +147,7 @@ const CARDS = {
 
 	"rejuvenation": {
 		"card_name": "Rejuvenation",
-		"description": "Heal and gain shield.",
+		"description": "Heal 12 HP. Gain 8 Shield.",
 		"card_type": "HEAL",
 		"target_type": "SELF",
 		"stamina_cost": 2,
@@ -156,7 +157,7 @@ const CARDS = {
 
 	"iron_will": {
 		"card_name": "Iron Will",
-		"description": "Solid shield and armor.",
+		"description": "Gain 10 Shield and 2 Armor.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
 		"stamina_cost": 2,
@@ -166,7 +167,7 @@ const CARDS = {
 
 	"quick_strike": {
 		"card_name": "Quick Strike",
-		"description": "Fast, efficient damage.",
+		"description": "Deal 12 damage.",
 		"card_type": "ATTACK",
 		"target_type": "SINGLE_ENEMY",
 		"stamina_cost": 1,
@@ -186,7 +187,7 @@ const CARDS = {
 	# === DEMONSTRATION CARDS (Composability Examples) ===
 	"vampiric_strike": {
 		"card_name": "Vampiric Strike",
-		"description": "Drain the life from your enemy.",
+		"description": "Deal 12 damage. Heal for damage dealt.",
 		"card_type": "ATTACK",
 		"target_type": "SINGLE_ENEMY",
 		"stamina_cost": 2,
@@ -196,7 +197,7 @@ const CARDS = {
 
 	"toxic_cloud": {
 		"card_name": "Toxic Cloud",
-		"description": "Poison all enemies with noxious fumes.",
+		"description": "Deal 8 damage to ALL enemies. Apply 4 Poison.",
 		"card_type": "SPELL",
 		"target_type": "ALL_ENEMIES",
 		"stamina_cost": 3,
@@ -207,7 +208,7 @@ const CARDS = {
 
 	"dark_pact": {
 		"card_name": "Dark Pact",
-		"description": "Sacrifice health for power and knowledge.",
+		"description": "Lose 5 HP. Gain 4 Strength. Draw 2 cards.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
 		"stamina_cost": 1,
@@ -218,7 +219,7 @@ const CARDS = {
 
 	"blazing_fury": {
 		"card_name": "Blazing Fury",
-		"description": "Channel rage into a devastating strike that weakens enemies.",
+		"description": "Deal 15 damage. Apply 3 Burn and 2 Vulnerable.",
 		"card_type": "ATTACK",
 		"target_type": "SINGLE_ENEMY",
 		"stamina_cost": 2,
@@ -229,7 +230,7 @@ const CARDS = {
 
 	"pyroclasm": {
 		"card_name": "Pyroclasm",
-		"description": "Massive explosion that generates embers.",
+		"description": "Deal 18 damage to ALL enemies. Add 2 Ember tokens to hand.",
 		"card_type": "SPELL",
 		"target_type": "ALL_ENEMIES",
 		"stamina_cost": 4,

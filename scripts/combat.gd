@@ -18,12 +18,19 @@ var last_turn_phase = null  # Track phase changes for animations
 var _display_dirty: bool = false  # Debounce flag for display updates
 var enemy_panel_cache: Dictionary = {}  # Cache enemy panels to avoid destroy/recreate on every update
 var is_test_mode: bool = false  # Test mode: 10 stamina, 10 cards, special behavior
+var test_boss_idx: int = -1  # Stored boss index for restart functionality
 var kill_enemies_button: Button = null  # Test mode button
 var buff_debuff_modal: Control = null  # Test mode buff/debuff modal
+var relic_modal: Control = null  # Test mode relic modal
+var revive_modal: Control = null  # Revive teammate modal (active relic)
 
-# UI References - New multiplayer layout
-@onready var left_player_panel: Panel = $MainArea/LeftPlayerPanel
-@onready var right_player_panel: Panel = $MainArea/RightPlayerPanel
+# UI References - New multiplayer layout (heads as drop targets, labels above)
+@onready var left_head_image: TextureRect = $LeftHeadImage  # Drop target for left ally
+@onready var left_player_labels: VBoxContainer = $LeftPlayerLabels  # Labels positioned above head
+@onready var left_status_container: HBoxContainer = $LeftStatusContainer  # Status effects (separate from labels)
+@onready var right_head_image: TextureRect = $RightHeadImage  # Drop target for right ally
+@onready var right_player_labels: VBoxContainer = $RightPlayerLabels  # Labels positioned above head
+@onready var right_status_container: HBoxContainer = $RightStatusContainer  # Status effects (separate from labels)
 @onready var your_character_panel: Panel = $BottomArea/YourCharacterPanel
 @onready var enemy_displays_container: HBoxContainer = $MainArea/CenterArea/EnemyDisplays
 @onready var hand_container: HBoxContainer = $BottomArea/HandPanel/HandContainer
@@ -71,9 +78,18 @@ func _ready():
 	# Create player status panel component
 	player_status_panel = PlayerStatusPanel.new()
 	add_child(player_status_panel)
-	player_status_panel.setup(game_manager, left_player_panel, right_player_panel, your_character_panel)
+	player_status_panel.setup(game_manager, left_head_image, left_player_labels, left_status_container, right_head_image, right_player_labels, right_status_container, your_character_panel)
 	# NOTE: Removed player_status_panel.panel_clicked connection - using direct panel_clicked signals instead
 	# to avoid double-firing (was causing 6 shield instead of 3)
+	# Connect active relic clicked signal
+	player_status_panel.active_relic_clicked.connect(_on_active_relic_clicked)
+
+	# Create revive modal (for active-use relics)
+	var revive_scene = preload("res://scenes/ui/revive_modal.tscn")
+	revive_modal = revive_scene.instantiate()
+	add_child(revive_modal)
+	revive_modal.z_index = 30  # Above BottomArea HUD
+	revive_modal.teammate_selected.connect(_on_revive_teammate_selected)
 
 	# Add animated background
 	create_animated_background()
@@ -125,36 +141,32 @@ func _ready():
 	update_all_displays()
 
 func _setup_drop_zones():
-	# Make player panels accept card drops
-	left_player_panel.set_script(preload("res://scripts/ui/drop_target_panel.gd"))
-	right_player_panel.set_script(preload("res://scripts/ui/drop_target_panel.gd"))
+	# Make head images accept card drops (they ARE the drop targets now)
+	left_head_image.set_script(preload("res://scripts/ui/drop_target_panel.gd"))
+	right_head_image.set_script(preload("res://scripts/ui/drop_target_panel.gd"))
 	your_character_panel.set_script(preload("res://scripts/ui/drop_target_panel.gd"))
 
 	# Make HBoxContainers pass drops through to parent panels
 	var your_hbox = your_character_panel.get_node("HBoxContainer")
 	your_hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	var left_vbox = left_player_panel.get_node("VBoxContainer")
-	left_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	var right_vbox = right_player_panel.get_node("VBoxContainer")
-	right_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Labels containers are separate now - make them pass through mouse events
+	left_player_labels.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	right_player_labels.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in left_player_labels.get_children():
+		child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in right_player_labels.get_children():
+		child.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	# Make all non-button children pass clicks through to parent panel
 	# This allows passive ability target selection to receive clicks
 	for child in your_hbox.get_children():
 		if not child is Button:
 			child.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for child in left_vbox.get_children():
-		if not child is Button:
-			child.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for child in right_vbox.get_children():
-		if not child is Button:
-			child.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	# Connect drop signals
-	left_player_panel.card_dropped.connect(_on_card_dropped_on_player_panel.bind(left_player_panel))
-	right_player_panel.card_dropped.connect(_on_card_dropped_on_player_panel.bind(right_player_panel))
+	# Connect drop signals - head images are the drop targets
+	left_head_image.card_dropped.connect(_on_card_dropped_on_player_panel.bind(left_head_image))
+	right_head_image.card_dropped.connect(_on_card_dropped_on_player_panel.bind(right_head_image))
 	your_character_panel.card_dropped.connect(_on_card_dropped_on_player_panel.bind(your_character_panel))
 
 	# Connect panel_clicked for passive ability targeting (must be after set_script)
@@ -163,9 +175,9 @@ func _setup_drop_zones():
 	# The handler looks up the character dynamically
 	your_character_panel.panel_clicked.connect(_on_panel_clicked_for_passive)
 
-	# Also connect left/right player panels for ally targeting
-	left_player_panel.panel_clicked.connect(_on_ally_panel_clicked.bind("left"))
-	right_player_panel.panel_clicked.connect(_on_ally_panel_clicked.bind("right"))
+	# Also connect left/right head images for ally targeting
+	left_head_image.panel_clicked.connect(_on_ally_panel_clicked.bind("left"))
+	right_head_image.panel_clicked.connect(_on_ally_panel_clicked.bind("right"))
 
 	# Create character face for self-targeting
 	_create_character_face()
@@ -230,7 +242,16 @@ func _setup_test_mode():
 	var buff_debuff_scene = preload("res://scenes/ui/buff_debuff_modal.tscn")
 	buff_debuff_modal = buff_debuff_scene.instantiate()
 	add_child(buff_debuff_modal)
+	buff_debuff_modal.z_index = 30  # Above BottomArea HUD (z_index=20)
 	buff_debuff_modal.effects_applied.connect(_on_test_mode_buff_debuff_applied)
+
+	# Create relic modal from scene
+	var relic_scene = preload("res://scenes/ui/relic_modal.tscn")
+	relic_modal = relic_scene.instantiate()
+	add_child(relic_modal)
+	relic_modal.z_index = 30  # Above BottomArea HUD (z_index=20)
+	relic_modal.relics_changed.connect(_on_test_mode_relics_changed)
+	relic_modal.restart_requested.connect(_on_relic_restart_requested)
 
 	var top_bar = $TopBar
 
@@ -252,12 +273,26 @@ func _setup_test_mode():
 	buff_debuff_button.pressed.connect(_on_buff_debuff_button_pressed)
 	button_container.add_child(buff_debuff_button)
 
+	# Create Relics button
+	var relics_button = Button.new()
+	relics_button.text = "Relics"
+	relics_button.custom_minimum_size = Vector2(100, 35)
+	relics_button.pressed.connect(_on_relics_button_pressed)
+	button_container.add_child(relics_button)
+
 	# Create Kill All Enemies button
 	kill_enemies_button = Button.new()
 	kill_enemies_button.text = "Kill All Enemies"
 	kill_enemies_button.custom_minimum_size = Vector2(140, 35)
 	kill_enemies_button.pressed.connect(_on_kill_enemies_pressed)
 	button_container.add_child(kill_enemies_button)
+
+	# Create Restart button - returns to enemy selection
+	var restart_button = Button.new()
+	restart_button.text = "Restart"
+	restart_button.custom_minimum_size = Vector2(100, 35)
+	restart_button.pressed.connect(_on_restart_pressed)
+	button_container.add_child(restart_button)
 
 	# Update turn label to show test mode
 	turn_label.text = "TEST MODE"
@@ -272,6 +307,16 @@ func _setup_test_mode():
 
 		# Build full deck with all cards
 		_setup_test_deck(player)
+
+	# Apply boss start events AFTER decks are rebuilt
+	# (game_manager stores boss index as metadata since we rebuild decks here)
+	if game_manager.has_meta("test_boss_idx"):
+		test_boss_idx = game_manager.get_meta("test_boss_idx")
+		game_manager._apply_boss_start_event(test_boss_idx)
+		game_manager.remove_meta("test_boss_idx")
+
+	# Apply FIGHT_START relic effects AFTER deck setup and boss events
+	game_manager._apply_relic_fight_start_effects()
 
 
 func _setup_test_deck(player: Character):
@@ -322,6 +367,79 @@ func _on_buff_debuff_button_pressed():
 		buff_debuff_modal.show_modal()
 
 
+func _on_relics_button_pressed():
+	## Opens the relic modal in test mode
+	if relic_modal:
+		relic_modal.show_modal()
+
+
+func _on_test_mode_relics_changed(character: Character):
+	## Called when relics are changed in test mode
+	# Re-apply FIGHT_START relic effects to update character state
+	game_manager._apply_relic_fight_start_effects()
+	update_all_displays()
+
+
+func _on_relic_restart_requested():
+	## Called when user clicks "Restart Fight" in relic modal
+	_restart_test_mode_combat()
+
+
+func _restart_test_mode_combat():
+	## Restart combat with current relics - resets HP/effects but keeps relics
+	print("[TEST MODE] Restarting combat with current relics")
+
+	# Reset player state but keep relics
+	for player in game_manager.players:
+		player.max_health = 100
+		player.current_health = 100
+		player.max_stamina = 10
+		player.current_stamina = 10
+		if player.max_aura > 0:
+			player.max_aura = 10
+			player.current_aura = 0
+		player.shield = 0
+		player.clear_all_effects()
+		player.cards_played_this_turn = 0
+		player.passive_ability_used_this_turn = false
+		# Note: player.relics is NOT cleared
+		# Reset active relic uses for new fight
+		player.reset_relic_uses()
+
+		# Rebuild deck with test mode cards
+		_setup_test_deck(player)
+
+	# Reset enemies
+	for enemy in game_manager.enemies:
+		enemy.current_health = enemy.max_health
+		enemy.shield = 0
+		enemy.clear_all_effects()
+
+	# Apply boss events if applicable (using stored boss index)
+	if test_boss_idx >= 0:
+		game_manager._apply_boss_start_event(test_boss_idx)
+
+	# Apply FIGHT_START relic effects (Power Ring, Nipple Protectors, etc.)
+	game_manager._apply_relic_fight_start_effects()
+
+	# Reset round and player done states
+	game_manager.round_number = 1
+	game_manager.players_done_acting.clear()
+	game_manager.turn_phase = game_manager.TurnPhase.PLAYER_TURN
+
+	# Clear enemy intents and recalculate
+	game_manager.enemy_intents.clear()
+
+	# Force UI refresh
+	player_status_panel.force_refresh()
+	update_all_displays()
+
+	turn_label.text = "TEST MODE - Fight Restarted!"
+
+	# Start first round (triggers player.start_turn() which applies TURN_START relics)
+	game_manager.start_round()
+
+
 func _on_kill_enemies_pressed():
 	## Test mode: Kill all enemies instantly
 	for enemy in game_manager.enemies:
@@ -330,9 +448,82 @@ func _on_kill_enemies_pressed():
 	turn_label.text = "TEST MODE - All enemies killed!"
 
 
+func _on_restart_pressed():
+	## Test mode: Return to enemy selection screen
+	get_tree().change_scene_to_file("res://scenes/test_enemy_selection.tscn")
+
+
 func _on_test_mode_buff_debuff_applied(_character: Character):
 	## Called when buff/debuff modal applies changes in test mode
+	# Force refresh to clear signature cache and ensure status effects display
+	player_status_panel.force_refresh()
 	update_all_displays()
+
+
+## Handle active relic button click from player status panel
+func _on_active_relic_clicked(relic_id: String, character: Character):
+	print("[COMBAT] Active relic clicked: ", relic_id, " by ", character.character_name)
+
+	# Only allow during player turn
+	if game_manager.turn_phase != game_manager.TurnPhase.PLAYER_TURN:
+		print("[COMBAT] Cannot use active relics outside of player turn")
+		return
+
+	# Check if relic can be used
+	if not character.can_use_relic(relic_id):
+		print("[COMBAT] ", relic_id, " cannot be used (no uses remaining)")
+		return
+
+	# Handle specific relic types
+	match relic_id:
+		"revive_relic":
+			_use_revive_relic(character)
+		_:
+			print("[COMBAT] Unknown active relic: ", relic_id)
+
+
+## Use the Revive Relic - show modal to select dead teammate
+func _use_revive_relic(caster: Character):
+	var has_dead_teammates = revive_modal.show_revive_selection(caster)
+	if not has_dead_teammates:
+		print("[COMBAT] Revive Relic: No dead teammates to revive")
+		return
+	# Modal will emit teammate_selected signal when player makes a choice
+
+
+## Handle revive teammate selection from modal
+func _on_revive_teammate_selected(teammate: Character):
+	var my_index = game_manager.local_player_index
+	if my_index == -1:
+		return
+
+	var caster = game_manager.players[my_index]
+
+	# Double-check the relic can still be used
+	if not caster.can_use_relic("revive_relic"):
+		print("[COMBAT] Revive Relic can no longer be used")
+		return
+
+	# Use the relic (decrement uses)
+	caster.use_relic("revive_relic")
+
+	# Revive the teammate
+	teammate.revive()
+
+	# Sync state in multiplayer
+	if multiplayer.is_server():
+		game_manager.broadcast_character_state(caster)
+		game_manager.broadcast_character_state(teammate)
+	else:
+		# Send to server to sync
+		var teammate_index = game_manager.players.find(teammate)
+		game_manager.rpc_id(1, "server_revive_teammate", my_index, teammate_index)
+
+	# Force UI refresh
+	player_status_panel.force_refresh()
+	update_all_displays()
+
+	print("[COMBAT] ", caster.character_name, " revived ", teammate.character_name, " with Revive Relic")
 
 
 func create_animated_background():
@@ -477,10 +668,16 @@ func update_enemy_display(display: Panel, enemy: Character):
 	display.add_theme_stylebox_override("panel", style)
 
 ## Populate enemy status container with individual hoverable labels
+## Uses named children to update in-place instead of destroying/recreating (prevents tearing)
 func _populate_enemy_status_container(container: HBoxContainer, enemy: Character):
-	# Clear existing children
-	for child in container.get_children():
-		child.queue_free()
+	# List of all effect names we track
+	var effect_names: Array[String] = [
+		"strength", "armor", "rested", "invigorated", "damage_plus",
+		"ring_of_fire", "played_twice", "invincible", "poison", "bleed", "burn",
+		"vulnerable", "weakness", "fatigued", "hinder", "scared", "feeble",
+		"decay", "exhausted", "wet", "venom", "burden", "dissolve",
+		"doll_dissolve", "doll_suffering", "doll_burden"
+	]
 
 	# Map of effect names to character properties
 	var effects: Dictionary = {
@@ -493,21 +690,30 @@ func _populate_enemy_status_container(container: HBoxContainer, enemy: Character
 		"played_twice": enemy.played_twice,
 		"invincible": enemy.invincible,
 		"poison": enemy.poison,
+		"bleed": enemy.bleed,
 		"burn": enemy.burn,
 		"vulnerable": enemy.vulnerable,
 		"weakness": enemy.weakness,
 		"fatigued": enemy.fatigued,
 		"hinder": enemy.hinder,
 		"scared": enemy.scared,
+		"feeble": enemy.feeble,
 		"decay": enemy.decay,
 		"exhausted": enemy.exhausted,
-		"wet": enemy.wet
+		"wet": enemy.wet,
+		"venom": enemy.venom,
+		"burden": enemy.burden,
+		"dissolve": enemy.dissolve,
+		"doll_dissolve": enemy.doll_dissolve,
+		"doll_suffering": enemy.doll_suffering,
+		"doll_burden": enemy.doll_burden
 	}
 
-	for effect_name in effects:
+	for effect_name in effect_names:
 		var amount = effects[effect_name]
+		var label = _get_or_create_status_label(container, effect_name)
+
 		if amount > 0:
-			var label = Label.new()
 			var symbol = StatusEffectRegistry.get_symbol(effect_name)
 			var display_name = StatusEffectRegistry.get_display_name(effect_name)
 
@@ -518,9 +724,22 @@ func _populate_enemy_status_container(container: HBoxContainer, enemy: Character
 				label.text = "%s%d" % [symbol, amount]
 
 			label.tooltip_text = display_name
-			label.add_theme_font_size_override("font_size", 12)
-			label.mouse_filter = Control.MOUSE_FILTER_PASS
-			container.add_child(label)
+			label.visible = true
+		else:
+			label.visible = false
+
+
+## Get or create a named status effect label (avoids destroying/recreating to prevent tearing)
+func _get_or_create_status_label(container: HBoxContainer, effect_name: String) -> Label:
+	var label_name = "StatusLabel_" + effect_name
+	var label = container.get_node_or_null(label_name)
+	if label == null:
+		label = Label.new()
+		label.name = label_name
+		label.add_theme_font_size_override("font_size", 12)
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
+		container.add_child(label)
+	return label
 
 ## Update the intent display in the enemy panel
 ## Uses named children to update in-place instead of destroying/recreating
@@ -570,6 +789,14 @@ func _update_intent_display(container: HBoxContainer, enemy: Character):
 	else:
 		buff_label.visible = false
 
+	# SUMMON: Show spider icon + count (update in-place)
+	var summon_label = _get_or_create_intent_label(container, "SummonLabel", Color.MAGENTA)
+	if intent.summon_count > 0:
+		summon_label.text = "🕷️ %d" % intent.summon_count
+		summon_label.visible = true
+	else:
+		summon_label.visible = false
+
 ## Get or create a named intent label (avoids destroying/recreating)
 func _get_or_create_intent_label(container: HBoxContainer, label_name: String, color: Color) -> Label:
 	var label = container.get_node_or_null(label_name)
@@ -604,6 +831,17 @@ func update_turn_display():
 func update_button_states():
 	var my_index = game_manager.local_player_index
 	if my_index == -1:
+		return
+
+	var my_character = game_manager.players[my_index] if my_index < game_manager.players.size() else null
+
+	# Dead players get grayed-out spectator UI
+	if my_character and not my_character.is_alive():
+		phase_label.text = "DEFEATED"
+		ready_button.visible = false
+		pass_button.visible = false
+		passive_button.visible = false
+		ready_status_label.text = "Spectating..."
 		return
 
 	# Update based on current turn phase
@@ -690,7 +928,7 @@ func _get_player_panel_position(player_index: int) -> Vector2:
 	var my_index = game_manager.local_player_index
 
 	# Get panel based on player relationship
-	var panel: Panel = null
+	var panel: Control = null
 
 	if player_index == my_index:
 		# This is your character
@@ -703,11 +941,11 @@ func _get_player_panel_position(player_index: int) -> Vector2:
 				other_indices.append(i)
 
 		if other_indices.size() > 0 and player_index == other_indices[0]:
-			# Left player
-			panel = left_player_panel
+			# Left player - use head image
+			panel = left_head_image
 		elif other_indices.size() > 1 and player_index == other_indices[1]:
-			# Right player
-			panel = right_player_panel
+			# Right player - use head image
+			panel = right_head_image
 
 	# Return position above the panel center
 	if panel:
@@ -716,7 +954,7 @@ func _get_player_panel_position(player_index: int) -> Vector2:
 		return Vector2.ZERO
 
 ## Handle card dropped on player panel (drag-and-drop)
-func _on_card_dropped_on_player_panel(card_data_dict: Dictionary, panel: Panel):
+func _on_card_dropped_on_player_panel(card_data_dict: Dictionary, panel: Control):
 	var card: Card = card_data_dict["card"]
 	var my_index = game_manager.local_player_index
 	if my_index == -1:
@@ -730,16 +968,16 @@ func _on_card_dropped_on_player_panel(card_data_dict: Dictionary, panel: Panel):
 	if panel == your_character_panel:
 		# Dropped on own panel
 		target_character = my_character
-	elif panel == left_player_panel:
-		# Dropped on left player
+	elif panel == left_head_image:
+		# Dropped on left player (head image)
 		var other_indices = []
 		for i in range(game_manager.players.size()):
 			if i != my_index:
 				other_indices.append(i)
 		if other_indices.size() > 0:
 			target_character = game_manager.players[other_indices[0]]
-	elif panel == right_player_panel:
-		# Dropped on right player
+	elif panel == right_head_image:
+		# Dropped on right player (head image)
 		var other_indices = []
 		for i in range(game_manager.players.size()):
 			if i != my_index:
@@ -764,8 +1002,9 @@ func _on_card_dropped_on_player_panel(card_data_dict: Dictionary, panel: Panel):
 		print("[COMBAT] Invalid target for card: ", card.card_name)
 		return
 
-	# Validate stamina
-	if my_character.current_stamina < card.stamina_cost:
+	# Validate stamina (using effective cost with relic reductions)
+	var effective_cost = my_character.get_effective_stamina_cost(card)
+	if my_character.current_stamina < effective_cost:
 		print("[COMBAT] Not enough stamina to play card")
 		return
 
@@ -810,8 +1049,9 @@ func _on_card_dropped_on_enemy_panel(card_data_dict: Dictionary, enemy: Characte
 					v2_valid = game_manager.enemies.has(enemy)
 
 			if v2_valid:
-				# Validate stamina
-				if my_character.current_stamina < card.stamina_cost:
+				# Validate stamina (using effective cost with relic reductions)
+				var effective_cost = my_character.get_effective_stamina_cost(card)
+				if my_character.current_stamina < effective_cost:
 					print("[COMBAT] Not enough stamina to play card")
 					return
 
@@ -833,8 +1073,9 @@ func _on_card_dropped_on_enemy_panel(card_data_dict: Dictionary, enemy: Characte
 		print("[COMBAT] Invalid target for card: ", card.card_name)
 		return
 
-	# Validate stamina
-	if my_character.current_stamina < card.stamina_cost:
+	# Validate stamina (using effective cost with relic reductions)
+	var effective_cost_enemy = my_character.get_effective_stamina_cost(card)
+	if my_character.current_stamina < effective_cost_enemy:
 		print("[COMBAT] Not enough stamina to play card")
 		return
 
@@ -866,8 +1107,9 @@ func _on_card_dropped_on_character_face(card_data_dict: Dictionary):
 		print("[COMBAT] Invalid target for character face - must be SELF or ally-targeting: ", card.card_name)
 		return
 
-	# Validate stamina
-	if my_character.current_stamina < card.stamina_cost:
+	# Validate stamina (using effective cost with relic reductions)
+	var effective_cost_self = my_character.get_effective_stamina_cost(card)
+	if my_character.current_stamina < effective_cost_self:
 		print("[COMBAT] Not enough stamina to play card")
 		return
 
@@ -892,8 +1134,39 @@ func _on_card_dropped_on_character_face(card_data_dict: Dictionary):
 ## Helper to play a card, showing discard modal if needed
 ## Returns true if card was played, false if cancelled
 func _play_card_with_discard_check(caster: Character, card: Card, target: Character) -> bool:
-	# Check if card requires spell discard selection
-	if card.discard_spell_requirement > 0:
+	# Check if card uses variable spell discard (min/max range)
+	if card.max_spell_discard != 0:  # -1 = unlimited, >0 = fixed max
+		# Find spell cards (cards with element) in hand
+		var spell_cards: Array[Card] = []
+		for hand_card in caster.hand:
+			if hand_card.element != Card.ElementType.NONE:
+				spell_cards.append(hand_card)
+
+		# Check minimum requirement
+		if spell_cards.size() < card.min_spell_discard:
+			print("[COMBAT] Not enough spells to discard for: ", card.card_name)
+			return false
+
+		# Show modal for variable spell selection (Repurpose)
+		var has_enough = spell_discard_modal.show_discard_range(caster, card.min_spell_discard, card.max_spell_discard, card.card_name)
+		if not has_enough:
+			print("[COMBAT] Not enough spells to discard for: ", card.card_name)
+			return false
+
+		# Wait for player to select spells
+		var discarded = await spell_discard_modal.discard_completed
+
+		# Discard the selected spells and track count for damage bonus
+		var discard_count = discarded.size()
+		for spell in discarded:
+			caster.discard_card(spell)
+			print("[COMBAT] Discarded spell: ", spell.card_name)
+
+		# Store discard count on card for damage calculation
+		card.set_meta("spells_discarded_this_play", discard_count)
+
+	# Check if card requires fixed spell discard selection (legacy system)
+	elif card.discard_spell_requirement > 0:
 		# Find spell cards (cards with element) in hand
 		var spell_cards: Array[Card] = []
 		for hand_card in caster.hand:
@@ -905,7 +1178,7 @@ func _play_card_with_discard_check(caster: Character, card: Card, target: Charac
 			return false
 
 		if card.random_spell_discard:
-			# Randomly discard spells (Repurpose)
+			# Randomly discard spells
 			spell_cards.shuffle()
 			for i in range(card.discard_spell_requirement):
 				caster.discard_card(spell_cards[i])
@@ -926,7 +1199,8 @@ func _play_card_with_discard_check(caster: Character, card: Card, target: Charac
 				print("[COMBAT] Pre-discarded spell: ", spell.card_name)
 
 	# Check if card removes debuffs and target is an ally (player)
-	if card.remove_target_debuffs > 0 and game_manager.players.has(target):
+	# Skip for v2 choice cards - debuff selection happens AFTER v1/v2 choice in _on_card_v2_choice_needed()
+	if card.remove_target_debuffs > 0 and game_manager.players.has(target) and not card.has_v2:
 		# Use in-UI debuff selection (clickable labels in status panel)
 		var has_debuffs = player_status_panel.start_debuff_selection(target, card.remove_target_debuffs, card.card_name)
 		if has_debuffs:
@@ -1029,6 +1303,10 @@ func _on_passive_pressed():
 
 	var my_character = game_manager.players[my_index]
 
+	# Dead players cannot use passive abilities
+	if not my_character.is_alive():
+		return
+
 	# Get the passive ability
 	var ability = PassiveAbilityManager.get_ability(my_character.passive_ability_id)
 	if not ability:
@@ -1111,6 +1389,9 @@ func _process_alc_brew(character: Character, player_index: int, alc_card: Card, 
 	# Mark passive as used
 	character.passive_ability_used_this_turn = true
 
+	# Apply ON_BREW relic effects (Wooden Cauldron draws 1 card)
+	RelicRegistry.apply_on_brew(character)
+
 	# Sync state to server if multiplayer
 	if not multiplayer.is_server():
 		# Send brew info to server
@@ -1135,6 +1416,11 @@ func update_passive_button_visibility():
 		return
 
 	var my_character = game_manager.players[my_index]
+
+	# Dead players cannot use passive abilities
+	if not my_character.is_alive():
+		passive_button.visible = false
+		return
 
 	# Only show during PLAYER_TURN phase
 	if game_manager.turn_phase != game_manager.TurnPhase.PLAYER_TURN:
@@ -1462,9 +1748,9 @@ func _create_enemy_intent_debug_panel():
 	enemy_intent_debug_panel = Panel.new()
 	enemy_intent_debug_panel.name = "EnemyIntentDebugPanel"
 
-	# Position: between left ally panel and enemy (in purple content area)
-	enemy_intent_debug_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	enemy_intent_debug_panel.position = Vector2(230, 120)  # Right of ally panels, in content area
+	# Position: horizontally centered, just above player HUD, overlapping enemy panels
+	enemy_intent_debug_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	enemy_intent_debug_panel.position = Vector2(-200, 200)  # Offset: -half_width for centering, y=200 below enemy headers
 	enemy_intent_debug_panel.custom_minimum_size = Vector2(400, 200)
 	enemy_intent_debug_panel.size = Vector2(400, 200)
 
@@ -1546,10 +1832,9 @@ func _update_enemy_intent_debug_panel():
 				else:
 					line += "• [color=#000088]%s[/color]" % card.card_name
 
-				# Add damage info
+				# Add damage info (using unified damage formula from CardEffectEngine)
 				if card.damage > 0:
-					var total_dmg = card.damage + enemy.strength + enemy.damage_plus - enemy.weakness - enemy.hinder
-					total_dmg = max(0, total_dmg) * card.multi_hit
+					var total_dmg = CardEffectEngine.calculate_damage(card, enemy, null) * card.multi_hit
 					line += " [color=#CC0000]DMG: %d[/color]" % total_dmg
 
 				# Add shield info

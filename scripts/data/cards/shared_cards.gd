@@ -19,7 +19,7 @@ const CARDS = {
 	# === TOKEN CARDS ===
 	"ember": {
 		"card_name": "Ember",
-		"description": "A small flame token.",
+		"description": "Deal 4 damage. TOKEN.",
 		"card_type": "ATTACK",
 		"target_type": "SINGLE_ENEMY",
 		"stamina_cost": 0,

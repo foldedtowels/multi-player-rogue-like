@@ -2,6 +2,9 @@ extends Control
 ## Test Enemy Selection - Host selects enemies for test mode
 ## Other players see a waiting screen
 
+# Preload data classes
+const EnemiesData = preload("res://scripts/data/enemies_data.gd")
+
 var network_manager: Node
 var game_manager: Node
 var minion_db: Node
@@ -116,9 +119,8 @@ func _create_enemy_buttons():
 		enemy_container.add_child(spacer)
 
 	# Add minion buttons
-	var minions_data = preload("res://scripts/minions_data.gd").new()
-	for minion_id in minions_data.MINIONS.keys():
-		var minion_data = minions_data.MINIONS[minion_id]
+	for minion_id in EnemiesData.MINIONS.keys():
+		var minion_data = EnemiesData.MINIONS[minion_id]
 		var button = Button.new()
 		button.text = minion_data.name
 		button.custom_minimum_size = Vector2(180, 60)
@@ -140,9 +142,8 @@ func _create_enemy_buttons():
 		enemy_container.add_child(spacer)
 
 	# Add boss buttons
-	boss_db.create_boss_cards()  # Ensure boss cards exist
-	for boss_id in BossesData.BOSSES.keys():
-		var boss_data = BossesData.BOSSES[boss_id]
+	for boss_id in EnemiesData.BOSSES.keys():
+		var boss_data = EnemiesData.BOSSES[boss_id]
 		var button = Button.new()
 		button.text = boss_data.name
 		button.custom_minimum_size = Vector2(180, 60)

@@ -48,7 +48,7 @@ const ELEM_EARTH = preload("res://assets/temp cards/Earth.png")
 @onready var type_box: TextureRect = $TypeBox
 @onready var type_text: TextureRect = $TypeBox/TypeText
 @onready var name_label: Label = $NameLabel
-@onready var description_label: Label = $DescriptionLabel
+@onready var description_label: RichTextLabel = $DescriptionLabel
 
 signal card_clicked(card: Card)
 signal card_double_clicked(card: Card)
@@ -56,15 +56,117 @@ signal card_hovered(card: Card)
 signal card_drag_started(card: Card)
 signal card_drag_ended(card: Card)
 
+# Status effect emoji symbols for inline display in card descriptions
+const STATUS_SYMBOLS = {
+	"Poison": "☠️Poison",
+	"Burn": "🔥Burn",
+	"Strength": "💪Strength",
+	"Vulnerable": "💔Vulnerable",
+	"Weakness": "😵Weakness",
+	"Wet": "💧Wet",
+	"Scared": "😨Scared",
+	"Hinder": "🚫Hinder",
+	"Shield": "🛡️Shield",
+	"Armor": "🛡️Armor",
+	"Rested": "😌Rested",
+	"Invigorated": "⚡Invigorated",
+	"Fatigued": "😴Fatigued",
+	"Exhausted": "🥵Exhausted",
+	"Decay": "💀Decay",
+	"Venom": "🐍Venom"
+}
+
+func _format_description_with_symbols(description: String) -> String:
+	var result = description
+	for keyword in STATUS_SYMBOLS:
+		# Use [url] tag for hoverable meta - stores the effect name in lowercase
+		var symbol_with_meta = "[url=%s]%s[/url]" % [keyword.to_lower(), STATUS_SYMBOLS[keyword]]
+		result = result.replace(keyword, symbol_with_meta)
+	return result
+
+## Generate a human-readable tooltip description for a status effect
+func _get_effect_tooltip(effect_name: String) -> String:
+	var effect_data = StatusEffectRegistry.get_effect_data(effect_name)
+	if effect_data.is_empty():
+		return effect_name.capitalize()
+
+	var display_name = effect_data.get("display_name", effect_name.capitalize())
+	var desc_parts = []
+
+	# Describe effect based on its properties
+	if effect_data.get("deals_damage", false):
+		if effect_data.get("piercing", false):
+			desc_parts.append("Deals piercing damage equal to stacks")
+		else:
+			desc_parts.append("Deals damage equal to stacks")
+
+	if effect_data.has("attack_modifier"):
+		var mod = effect_data.attack_modifier
+		if mod > 0:
+			desc_parts.append("+%d damage per stack" % mod)
+		else:
+			desc_parts.append("%d damage per stack" % mod)
+
+	if effect_data.has("damage_reduction"):
+		desc_parts.append("-%d damage taken per stack" % effect_data.damage_reduction)
+
+	if effect_data.has("damage_taken_multiplier"):
+		var mult = effect_data.damage_taken_multiplier
+		var percent = int((mult - 1.0) * 100)
+		desc_parts.append("+%d%% damage taken" % percent)
+
+	if effect_data.has("stamina_modifier"):
+		var mod = effect_data.stamina_modifier
+		if mod > 0:
+			desc_parts.append("+%d stamina next turn" % mod)
+		else:
+			desc_parts.append("%d stamina next turn" % mod)
+
+	if effect_data.get("blocks_card_play", false):
+		desc_parts.append("Cannot play cards")
+
+	if effect_data.get("blocks_attacks", false):
+		desc_parts.append("Cannot play attack cards")
+
+	if effect_data.get("blocks_healing", false):
+		desc_parts.append("Cannot be healed")
+
+	if effect_data.get("permanent", false):
+		desc_parts.append("Cannot be removed")
+
+	# Decay info
+	var decay_type = effect_data.get("decay", StatusEffectRegistry.DecayType.NONE)
+	match decay_type:
+		StatusEffectRegistry.DecayType.PER_TURN:
+			var amount = effect_data.get("decay_amount", 1)
+			desc_parts.append("Loses %d stack(s) per turn" % amount)
+		StatusEffectRegistry.DecayType.END_OF_TURN:
+			desc_parts.append("Removed at end of turn")
+		StatusEffectRegistry.DecayType.END_OF_ENEMY_TURN:
+			desc_parts.append("Removed after enemy turn")
+
+	if desc_parts.is_empty():
+		return display_name
+
+	return display_name + ": " + ". ".join(desc_parts)
+
 func _ready():
 	mouse_entered.connect(_on_mouse_entered)
 	mouse_exited.connect(_on_mouse_exited)
 	gui_input.connect(_on_gui_input)
 
+	# Connect RichTextLabel meta hover signals for status effect tooltips
+	description_label.meta_hover_started.connect(_on_status_hover_started)
+	description_label.meta_hover_ended.connect(_on_status_hover_ended)
+
 	# Set all child elements to pass clicks through to this Control
+	# Exception: description_label needs MOUSE_FILTER_PASS for tooltips
 	for child in get_children():
 		if child is Control:
-			child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			if child == description_label:
+				child.mouse_filter = Control.MOUSE_FILTER_PASS
+			else:
+				child.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			# Also handle nested children
 			for subchild in child.get_children():
 				if subchild is Control:
@@ -100,8 +202,19 @@ func update_display():
 
 	# Stamina circle and number
 	stamina_circle.texture = STAMINA_CIRCLE
-	var cost = clampi(card_data.stamina_cost, 0, 3)
-	stamina_number.texture = STAMINA_NUMS[cost]
+	var effective_cost = card_data.stamina_cost
+	if owner_character:
+		effective_cost -= RelicRegistry.get_cost_reduction(owner_character, card_data)
+		effective_cost = max(0, effective_cost)
+
+	var display_cost = clampi(effective_cost, 0, 3)
+	stamina_number.texture = STAMINA_NUMS[display_cost]
+
+	# Tint green if cost was reduced by relic
+	if effective_cost < card_data.stamina_cost:
+		stamina_number.modulate = Color(0.5, 1.0, 0.5)
+	else:
+		stamina_number.modulate = Color.WHITE
 
 	# Aura circle and number (only show if card has aura cost)
 	if card_data.aura_cost > 0 or card_data.aura_cost_all:
@@ -136,7 +249,40 @@ func update_display():
 	# Text labels
 	name_label.text = card_data.card_name
 	# Pass owner for dynamic description (damage/heal adjusted by buffs/debuffs)
-	description_label.text = card_data.get_full_description(owner_character)
+	# Format description with status effect symbols (e.g., "Apply 4 ☠️Poison")
+	var raw_description = card_data.get_full_description(owner_character)
+
+	# Add damage modifier indicator for attack cards
+	if owner_character and card_data.card_type == Card.CardType.ATTACK and card_data.damage > 0:
+		var base_damage = card_data.damage
+		var calc_damage = CardEffectEngine.calculate_damage(card_data, owner_character, null)
+		if calc_damage > base_damage:
+			# Buffed - add green up arrow indicator
+			raw_description = raw_description.replace(
+				"Deal %d damage" % calc_damage,
+				"Deal %d▲ damage" % calc_damage
+			)
+			# Also handle multi-hit patterns
+			if card_data.multi_hit > 1:
+				raw_description = raw_description.replace(
+					"%d damage each" % calc_damage,
+					"%d▲ damage each" % calc_damage
+				)
+		elif calc_damage < base_damage:
+			# Debuffed - add red down arrow indicator
+			raw_description = raw_description.replace(
+				"Deal %d damage" % calc_damage,
+				"Deal %d▼ damage" % calc_damage
+			)
+			# Also handle multi-hit patterns
+			if card_data.multi_hit > 1:
+				raw_description = raw_description.replace(
+					"%d damage each" % calc_damage,
+					"%d▼ damage each" % calc_damage
+				)
+
+	# RichTextLabel with BBCode - wrap in [center] for horizontal centering
+	description_label.text = "[center]" + _format_description_with_symbols(raw_description) + "[/center]"
 
 	# Update visual state based on playability
 	update_card_color()
@@ -168,6 +314,13 @@ func _on_mouse_exited():
 	scale = Vector2(1.0, 1.0)
 	z_index = 0
 	update_card_color()
+
+func _on_status_hover_started(meta: Variant) -> void:
+	var effect_name = str(meta)
+	description_label.tooltip_text = _get_effect_tooltip(effect_name)
+
+func _on_status_hover_ended(_meta: Variant) -> void:
+	description_label.tooltip_text = ""
 
 func _on_gui_input(event: InputEvent):
 	if event is InputEventMouseButton:

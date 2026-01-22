@@ -121,12 +121,23 @@ func _on_effect_pressed(effect_name: String):
 	if selected_character == null:
 		return
 
-	var current = selected_character.get(effect_name)
-	if current == null:
-		current = 0
-	selected_character.set(effect_name, current + 1)
+	# Use set_effect_amount directly (Object.set() doesn't work with computed properties)
+	var current = selected_character.status_effects.get(effect_name, 0)
+	selected_character.set_effect_amount(effect_name, current + 1)
 
 	print("[BUFF/DEBUFF] +1 ", effect_name, " to ", selected_character.character_name)
+
+	# Recalculate enemy intents if damage-affecting debuff applied to enemy
+	if game_manager.enemies.has(selected_character) and effect_name in ["weakness", "hinder"]:
+		game_manager.recalculate_enemy_intents()
+
+	# Sync state to all clients in multiplayer
+	if multiplayer.is_server():
+		game_manager.broadcast_character_state(selected_character)
+
+	# Emit game_state_changed to force UI refresh on all panels
+	game_manager.game_state_changed.emit()
+
 	effects_applied.emit(selected_character)
 
 

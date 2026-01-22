@@ -23,6 +23,7 @@ enum ChoiceType {
 @export var buff_type: String = ""          ## If choice_type == BUFF (e.g., "max_stamina", "max_health")
 @export var buff_amount: int = 0            ## Amount to increase buff by
 @export var gold_amount: int = 0            ## If choice_type == GOLD
+@export var relic_id: String = ""           ## If choice_type == RELIC
 
 ## Apply this reward to the specified player
 func apply_to_player(player: Character):
@@ -36,15 +37,36 @@ func apply_to_player(player: Character):
 			player.heal(heal_amount)
 
 		ChoiceType.BUFF:
-			_apply_buff(player, buff_type, buff_amount)
+			if buff_type == "revive_all":
+				_revive_all_teammates(player)
+			else:
+				_apply_buff(player, buff_type, buff_amount)
 
 		ChoiceType.GOLD:
 			# Future: player.gold += gold_amount
 			pass
 
-		ChoiceType.RELIC, ChoiceType.REMOVE_CARD:
-			# Future features
+		ChoiceType.RELIC:
+			if relic_id != "":
+				player.add_relic(relic_id)
+				RelicRegistry.apply_on_pickup(player, relic_id)
+				print("[REWARD] ", player.character_name, " acquired relic: ", RelicRegistry.get_display_name(relic_id))
+
+		ChoiceType.REMOVE_CARD:
+			# Future feature
 			pass
+
+## Revive all dead teammates at full HP
+func _revive_all_teammates(reviver: Character):
+	var game_manager = Engine.get_main_loop().root.get_node_or_null("/root/GameManager")
+	if not game_manager:
+		push_warning("[RewardChoice] Could not find GameManager for revive")
+		return
+
+	for teammate in game_manager.players:
+		if not teammate.is_alive():
+			teammate.current_health = teammate.max_health
+			print("[REVIVE] ", reviver.character_name, " revived ", teammate.character_name, " to full HP (", teammate.max_health, ")")
 
 ## Apply a buff to the player (permanent stat increase)
 func _apply_buff(player: Character, type: String, amount: int):
@@ -72,7 +94,8 @@ func serialize() -> Dictionary:
 		"heal_amount": heal_amount,
 		"buff_type": buff_type,
 		"buff_amount": buff_amount,
-		"gold_amount": gold_amount
+		"gold_amount": gold_amount,
+		"relic_id": relic_id
 	}
 
 ## Deserialize from network data
@@ -85,6 +108,7 @@ static func deserialize(data: Dictionary) -> RewardChoice:
 	choice.buff_type = data.buff_type
 	choice.buff_amount = data.buff_amount
 	choice.gold_amount = data.gold_amount
+	choice.relic_id = data.get("relic_id", "")
 
 	if data.card_data:
 		choice.card_data = Card.deserialize(data.card_data)

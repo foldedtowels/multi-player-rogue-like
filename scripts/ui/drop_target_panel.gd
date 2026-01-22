@@ -1,6 +1,6 @@
-extends Panel
+extends Control
 
-## Panel that can accept card drops for drag-and-drop gameplay
+## Control that can accept card drops for drag-and-drop gameplay
 ## Also emits panel_clicked for click detection (used by passive ability targeting)
 
 signal card_dropped(card_data: Dictionary)

@@ -47,7 +47,7 @@ const CARDS = {
 
 	"spell_water_ball": {
 		"card_name": "Water Ball",
-		"description": "Deal 1 damage. Apply 1 Wet (+50% damage from next hit). [Water Spell]. TARGET: 1 Enemy.",
+		"description": "Deal 1 damage. Apply 1 Wet (bonus damage from Lightning Storm). [Water Spell]. TARGET: 1 Enemy.",
 		"card_type": "ATTACK",
 		"target_type": "SINGLE_ENEMY",
 		"stamina_cost": 1,
@@ -90,7 +90,7 @@ const CARDS = {
 
 	"spell_encapsulation": {
 		"card_name": "Encapsulation",
-		"description": "Discard 1 card. Search your deck for any Spell and add it to hand. [Earth Spell]. TARGET: Self.",
+		"description": "Pick 1 card in your hand to keep until played or end of next turn. [Earth Spell]. TARGET: Self.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
 		"stamina_cost": 0,
@@ -114,7 +114,7 @@ const CARDS = {
 
 	"alc_accumulation": {
 		"card_name": "Alc: Accumulation",
-		"description": "Deal 3 damage per Strength you have. Brew by discarding 1 Water + 1 Fire spell. TARGET: 1 Enemy.",
+		"description": "Discard all Spells in hand. Deal 3 damage per Spell discarded. Brew by discarding 1 Water + 1 Fire spell. TARGET: 1 Enemy.",
 		"card_type": "ATTACK",
 		"target_type": "SINGLE_ENEMY",
 		"stamina_cost": 2,
@@ -151,13 +151,14 @@ const CARDS = {
 
 	"repurpose": {
 		"card_name": "Repurpose",
-		"description": "Discard 1 Spell. Deal 2 damage +2 per Spell discarded this turn. TARGET: 1 Enemy.",
+		"description": "Discard any number of Spells. Deal 2 damage +2 per Spell discarded. TARGET: 1 Enemy.",
 		"card_type": "ATTACK",
 		"target_type": "SINGLE_ENEMY",
 		"stamina_cost": 0,
 		"damage": 2,
-		"discard_spell_requirement": 1,
-		"random_spell_discard": true
+		"min_spell_discard": 0,
+		"max_spell_discard": -1,
+		"damage_per_spell_discarded": 2
 	},
 
 	"spell_future_vision": {
@@ -205,7 +206,7 @@ const CARDS = {
 
 	"spell_ring_of_fire": {
 		"card_name": "Ring Of Fire",
-		"description": "Give target 5 Shield. When shield is hit deal 2 damage back to attacker. [Fire Spell]. TARGET: 1 Ally (including self).",
+		"description": "Give target 5 Shield. When shield is hit deal 3 damage back to attacker. [Fire Spell]. TARGET: 1 Ally (including self).",
 		"card_type": "BUFF",
 		"target_type": "SINGLE_ALLY",
 		"stamina_cost": 1,

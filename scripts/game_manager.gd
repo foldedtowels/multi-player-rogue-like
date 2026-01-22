@@ -52,6 +52,7 @@ var players: Array[Character] = []
 var enemies: Array[Character] = []  # Up to 3 enemies (minions + boss)
 var current_boss: Character  # Points to boss in enemies array
 var combat_phase: CombatPhase = CombatPhase.BOSS_PHASE_1
+var last_completed_encounter: EncounterType = EncounterType.MINION  # Track what encounter just ended for reward screen
 var boss_index: int = 0
 var current_player_index: int = 0
 var round_number: int = 1
@@ -61,6 +62,9 @@ var hero_db: Node
 var boss_db: Node
 var minion_db: Node
 var card_db: Node
+
+# Preload data classes for boss events
+const EnemiesData = preload("res://scripts/data/enemies_data.gd")
 
 # Network tracking
 var network_player_mapping: Dictionary = {}  # peer_id -> player_index
@@ -108,6 +112,11 @@ var locked_enemy_hands: Dictionary = {}  # enemy_index -> Array[Card] - hands lo
 # Tracks which player triggered the boss intent reveal (for modal display)
 var _intent_reveal_player_index: int = -1
 
+# Mid-combat minion summoning system
+const MAX_SUMMONED_MINIONS: int = 5
+var summoned_minion_count: int = 0
+var summon_cards_removed: Dictionary = {}  # enemy_idx -> Array[Card] - summon cards removed when at max
+
 # Card effect engine - handles all card effect application
 var card_effect_engine: CardEffectEngine
 
@@ -139,6 +148,7 @@ func _connect_card_effect_engine_signals():
 	card_effect_engine.boss_intent_reveal_requested.connect(_reveal_boss_intent)
 	card_effect_engine.enemy_damage_stats_changed.connect(_on_enemy_damage_stats_changed)
 	card_effect_engine.spell_search_requested.connect(_on_engine_spell_search_requested)
+	card_effect_engine.minion_summoned.connect(_on_minion_summoned)
 
 
 func _on_engine_enemy_damaged_player(enemy_name: String, card_name: String, damage: int, target_player_index: int):
@@ -289,6 +299,8 @@ func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 	enemy_intents.clear()
 	locked_card_targets.clear()
 	locked_enemy_hands.clear()
+	summoned_minion_count = 0
+	summon_cards_removed.clear()
 
 	# Initialize CCW targeting - random player gets the marker
 	var alive_players = players.filter(func(p): return p.is_alive())
@@ -351,6 +363,12 @@ func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 		player.current_aura = 0  # Aura starts at 0 each combat, gained via passive
 		player.clear_all_effects()  # Clear ALL buffs/debuffs between encounters
 
+	# Step 5.5: Apply boss start events (e.g., The Doctor distributes cards)
+	if encounter_type in [EncounterType.BOSS_PHASE_1, EncounterType.BOSS_PHASE_2]:
+		_apply_boss_start_event(boss_idx)
+
+	# Step 5.6: Apply FIGHT_START relic effects (after boss events, before state sync)
+	_apply_relic_fight_start_effects()
 
 	# Step 6: Sync state to all clients (server only)
 	if multiplayer.is_server():
@@ -373,6 +391,58 @@ func initialize_combat_encounter(encounter_type: EncounterType, boss_idx: int):
 		rpc("sync_game_seed", game_seed)
 
 	rng.seed = game_seed
+
+
+## Apply boss-specific start-of-fight events (e.g., The Doctor's card distribution)
+func _apply_boss_start_event(boss_idx: int) -> void:
+	var boss_id = EnemiesData.get_boss_id(boss_idx)
+	if boss_id == "":
+		return
+
+	var boss_data = EnemiesData.BOSSES.get(boss_id, {})
+	var event_cards = boss_data.get("start_event_cards", [])
+
+	if event_cards.size() == 0:
+		return
+
+	# Get alive players
+	var alive_players = players.filter(func(p): return p.is_alive())
+	if alive_players.size() == 0:
+		return
+
+	# Shuffle the event cards for random distribution
+	var shuffled_cards = event_cards.duplicate()
+	shuffled_cards.shuffle()
+
+	# Distribute cards - one per player, randomly assigned
+	var cards_distributed = 0
+	for i in range(min(shuffled_cards.size(), alive_players.size())):
+		var card_id = shuffled_cards[i]
+		var player = alive_players[i]
+
+		var card = card_db.get_card(card_id)
+		if card:
+			# Add card to player's deck
+			player.deck.append(card)
+			cards_distributed += 1
+			print("[BOSS EVENT] ", boss_data.name, " gives '", card.card_name, "' to ", player.character_name)
+
+	# Shuffle decks again so the new cards are mixed in
+	for player in alive_players:
+		player.deck.shuffle()
+
+	if cards_distributed > 0:
+		print("[BOSS EVENT] ", boss_data.name, " distributed ", cards_distributed, " event card(s) to players")
+
+
+## Apply FIGHT_START relic effects for all players
+func _apply_relic_fight_start_effects() -> void:
+	var typed_players: Array[Character] = []
+	for p in players:
+		typed_players.append(p)
+		# Reset active relic uses at fight start
+		p.reset_relic_uses()
+	RelicRegistry.apply_fight_start(typed_players, self)
 
 
 ## TEST MODE ENCOUNTER INITIALIZATION ##
@@ -399,6 +469,8 @@ func initialize_test_encounter(enemy_ids: Array):
 	enemy_intents.clear()
 	locked_card_targets.clear()
 	locked_enemy_hands.clear()
+	summoned_minion_count = 0
+	summon_cards_removed.clear()
 
 	# Initialize CCW targeting
 	var alive_players = players.filter(func(p): return p.is_alive())
@@ -475,6 +547,21 @@ func initialize_test_encounter(enemy_ids: Array):
 		# Reset temporary combat state
 		player.shield = 0
 		player.clear_all_effects()
+
+	# Step 4b: Detect boss for event cards (will be applied after combat scene sets up decks)
+	# Must be stored as metadata because combat.gd rebuilds decks from scratch in test mode
+	var detected_boss_idx: int = -1
+	for enemy_id in enemy_ids:
+		if str(enemy_id).begins_with("boss:"):
+			var boss_id = str(enemy_id).split(":")[1]
+			for i in range(EnemiesData.BOSS_ORDER.size()):
+				if EnemiesData.BOSS_ORDER[i] == boss_id:
+					detected_boss_idx = i
+					break
+			break
+
+	if detected_boss_idx >= 0:
+		set_meta("test_boss_idx", detected_boss_idx)
 
 	# Step 5: Sync state to all clients (server only)
 	if multiplayer.is_server():
@@ -721,8 +808,13 @@ func start_enemies_turn() -> bool:
 		enemy.current_stamina = enemy.max_stamina
 		enemy.shield = 0  # Reset shield at start of turn (persists through player turn)
 		enemy.passive_ability_used_this_turn = false
-		enemy.damage_taken_this_turn = 0
+		# NOTE: damage_taken_this_turn is reset AFTER enemy plays cards (see below)
 		enemy.apply_status_effects()  # Poison, burn damage happens here
+
+		# Apply passive abilities (like Enrique's aura generation)
+		if enemy.passive_ability_id == "enrique_aura_generation" and enemy.max_aura > 0:
+			enemy.current_aura += 1
+			print("[AURA] ", enemy.character_name, " gained 1 Aura from passive (now ", enemy.current_aura, ")")
 
 		print("[ENEMY TURN START] ", enemy.character_name, " hand: ", enemy.hand.map(func(c): return c.card_name), " HP: ", enemy.current_health)
 
@@ -742,19 +834,37 @@ func start_enemies_turn() -> bool:
 		play_enemy_turn(enemy)
 		await get_tree().create_timer(0.5).timeout
 
+		# Reset damage tracking AFTER enemy plays cards
+		# This allows cards like Angwy Punch to check damage taken during previous player turn
+		enemy.damage_taken_this_turn = 0
+
 	# All enemies finished, check victory
 	return await check_combat_victory()
 
 func check_combat_victory() -> bool:
+	# Check for summoned minion deaths and update tracking
+	for enemy in enemies:
+		if not enemy.is_alive() and enemy.was_summoned:
+			_on_summoned_minion_died(enemy)
+			enemy.was_summoned = false  # Prevent counting again
+
 	var alive_enemies = enemies.filter(func(e): return e.is_alive())
 	if alive_enemies.is_empty():
+		# Apply FIGHT_END relic effects (e.g., Restorative Locket heals)
+		var typed_players: Array[Character] = []
+		for p in players:
+			typed_players.append(p)
+		RelicRegistry.apply_fight_end(typed_players)
+
 		# Check combat phase
 		if combat_phase == CombatPhase.MINION_COMBAT:
-			# Minions defeated! Transition to buff selection
-			await transition_to_buff_phase()
+			# Minions defeated! Set encounter type and transition to reward
+			last_completed_encounter = EncounterType.MINION
+			await transition_to_reward_phase()
 			return true  # Combat transitioning to boss phase
 		else:
-			# Boss defeated!
+			# Boss defeated! Set encounter type based on phase
+			last_completed_encounter = EncounterType.BOSS_PHASE_1 if combat_phase == CombatPhase.BOSS_PHASE_1 else EncounterType.BOSS_PHASE_2
 			boss_defeated()
 			return true  # Combat ended
 
@@ -762,13 +872,12 @@ func check_combat_victory() -> bool:
 	end_boss_turn()
 	return false  # Combat continues
 
-func transition_to_buff_phase():
-
-	# Transition to buff selection scene
+func transition_to_reward_phase():
+	# Transition to reward scene (handles both minion and boss rewards)
 	if multiplayer.is_server():
-		NetworkManager.change_scene_synchronized.rpc("res://scenes/buff_selection.tscn")
+		NetworkManager.change_scene_synchronized.rpc("res://scenes/reward.tscn")
 	else:
-		get_tree().change_scene_to_file("res://scenes/buff_selection.tscn")
+		get_tree().change_scene_to_file("res://scenes/reward.tscn")
 
 ## Reset players to starting deck for a NEW RUN (LOSES earned cards!)
 ## Only use this when starting a brand new run, not between encounters
@@ -896,13 +1005,27 @@ func play_enemy_turn(enemy: Character):
 		var target: Character = null
 		if target_index == -2:  # Self-target
 			target = enemy
-		elif target_index == -1:  # AOE - play_card handles multi-target
+		elif target_index == -1:  # AOE (ALL_ENEMIES) - play_card handles multi-target
 			if players.size() > 0:
 				target = players[0]  # play_card will hit all for ALL_ENEMIES
+		elif target_index == -3:  # ALL_ALLIES (other enemies) - play_card handles multi-target
+			if enemies.size() > 0:
+				target = enemies[0]  # play_card will hit all for ALL_ALLIES
+		elif target_index <= -100:  # Ally index (other enemy)
+			var ally_idx = -100 - target_index
+			if ally_idx >= 0 and ally_idx < enemies.size():
+				target = enemies[ally_idx]
+			# Fallback if ally died
+			if target == null or not target.is_alive():
+				var alive_allies = enemies.filter(func(e): return e.is_alive() and e != enemy)
+				if alive_allies.size() > 0:
+					target = alive_allies[0]
+				else:
+					target = enemy  # Self if no allies left
 		elif target_index >= 0 and target_index < players.size():
 			target = players[target_index]
 
-		# Handle target death - find fallback
+		# Handle target death - find fallback for player targets
 		if target == null or (target_index >= 0 and not target.is_alive()):
 			var alive = players.filter(func(p): return p.is_alive())
 			if alive.size() > 0:
@@ -913,6 +1036,8 @@ func play_enemy_turn(enemy: Character):
 
 		# Calculate actual damage for logging
 		var actual_dmg = card.damage
+		if card.damage_is_d6:
+			actual_dmg = 4  # D6 average for preview
 		if card.card_type == Card.CardType.ATTACK:
 			actual_dmg += enemy.strength + enemy.damage_plus - enemy.weakness - enemy.hinder
 			actual_dmg = max(0, actual_dmg)
@@ -935,7 +1060,10 @@ func play_enemy_turn(enemy: Character):
 
 # Start a new round with selection phase
 func start_round():
-	if not multiplayer.is_server(): return
+	# Allow test mode to bypass server check (single-player local)
+	var is_test = has_meta("test_mode") and get_meta("test_mode")
+	if not multiplayer.is_server() and not is_test:
+		return
 
 	print("\n##################### ROUND ", round_number, " - FRIENDLY TURN #####################")
 
@@ -979,6 +1107,7 @@ func start_round():
 			print("[EXHAUST] Turn start: ", p.character_name, " exhausted=", p.exhausted)
 
 	# All alive players start their turn (draw cards, gain stamina)
+	# Dead players are automatically marked as "done" for the turn
 	for i in range(players.size()):
 		var player = players[i]
 		if player.is_alive():
@@ -986,6 +1115,9 @@ func start_round():
 			broadcast_character_state(player)
 			send_hand_to_owner(player)
 			queued_cards[i] = []
+		else:
+			# Dead players are automatically done for this turn
+			players_done_acting[i] = true
 
 	# Notify all clients to enter player turn phase
 	rpc("client_player_turn_started")
@@ -1107,10 +1239,52 @@ func client_remove_queued_card(player_index: int, queue_id: int):
 			game_state_changed.emit()
 			return
 
+## Fizzle (cancel) all queued cards for a player who died mid-turn
+func _fizzle_player_cards(player_index: int):
+	if not queued_cards.has(player_index) or queued_cards[player_index].is_empty():
+		return
+
+	var player = players[player_index] if player_index < players.size() else null
+	var player_name = player.character_name if player else "Player " + str(player_index)
+
+	print("[FIZZLE] ", player_name, "'s queued cards fizzled (player died)")
+	queued_cards[player_index].clear()
+
+	# Mark player as done if not already
+	if not players_done_acting.has(player_index):
+		players_done_acting[player_index] = true
+
+	# Broadcast fizzle to all clients
+	if multiplayer.is_server():
+		rpc("client_fizzle_player_cards", player_index)
+
+	game_state_changed.emit()
+
+@rpc("any_peer", "call_local", "reliable")
+func client_fizzle_player_cards(player_index: int):
+	if queued_cards.has(player_index):
+		queued_cards[player_index].clear()
+	players_done_acting[player_index] = true
+	game_state_changed.emit()
+
+## Check all players and fizzle cards for any who have died
+func _check_and_fizzle_dead_players():
+	if not multiplayer.is_server():
+		return
+
+	for i in range(players.size()):
+		var player = players[i]
+		if not player.is_alive():
+			_fizzle_player_cards(i)
+
 # Player finishes their actions (clicked Done)
 func player_done():
 	var my_index = local_player_index
 	if my_index == -1: return
+
+	# Dead players cannot mark themselves as done (they're auto-done)
+	if my_index < players.size() and not players[my_index].is_alive():
+		return
 
 	if multiplayer.is_server():
 		_server_player_done(my_index)
@@ -1240,6 +1414,15 @@ func client_enemy_turn_phase_started():
 	game_state_changed.emit()
 
 func check_combat_end() -> bool:
+	# Fizzle cards for any players who died mid-turn
+	_check_and_fizzle_dead_players()
+
+	# Check for summoned minion deaths and update tracking
+	for enemy in enemies:
+		if not enemy.is_alive() and enemy.was_summoned:
+			_on_summoned_minion_died(enemy)
+			enemy.was_summoned = false  # Prevent counting again
+
 	# Check if all enemies dead (victory)
 	var enemies_alive = false
 	for enemy in enemies:
@@ -1273,6 +1456,11 @@ func client_combat_victory():
 func client_combat_defeat():
 	combat_ended.emit(false)
 	current_state = GameState.GAME_OVER
+
+	# Transition to defeat screen after a brief delay (server initiates for all)
+	if multiplayer.is_server():
+		await get_tree().create_timer(2.0).timeout
+		NetworkManager.change_scene_synchronized.rpc("res://scenes/defeat.tscn")
 
 ## END OF NEW SIMULTANEOUS TURN SYSTEM ##
 
@@ -1449,6 +1637,11 @@ func _server_play_card_v2(caster: Character, original_card: Card, chosen_card: C
 	# V2 card play: remove ORIGINAL card from hand, but apply CHOSEN card's effects
 	# This handles the case where player chooses "Test V2" but hand contains "Test"
 
+	# Dead players cannot play cards
+	if not caster.is_alive():
+		print("[COMBAT] BLOCKED card play - ", caster.character_name, " is dead")
+		return
+
 	# Check if caster is exhausted (cannot play cards)
 	if caster.exhausted > 0:
 		print("[EXHAUST] BLOCKED card play for ", caster.character_name, " - exhausted=", caster.exhausted)
@@ -1485,6 +1678,10 @@ func _server_play_card_v2(caster: Character, original_card: Card, chosen_card: C
 				affected_targets.append(t)
 		# Consume one stack of played_twice
 		caster.played_twice -= 1
+
+	# Apply ON_CARD_PLAYED relic effects (Rage Meter - only for players)
+	if players.has(caster):
+		RelicRegistry.apply_on_card_played(caster)
 
 	# Track last played card (only for players, not enemies)
 	var player_index = players.find(caster)
@@ -1544,6 +1741,11 @@ func server_play_card(card_data: Dictionary, caster_index: int, caster_is_player
 	_server_play_card(caster, card, target)
 
 func _server_play_card(caster: Character, card: Card, target: Character):
+	# Dead players cannot play cards
+	if not caster.is_alive():
+		print("[COMBAT] BLOCKED card play - ", caster.character_name, " is dead")
+		return
+
 	# Check if caster is exhausted (cannot play cards)
 	if caster.exhausted > 0:
 		print("[EXHAUST] BLOCKED card play for ", caster.character_name, " - exhausted=", caster.exhausted)
@@ -1579,6 +1781,10 @@ func _server_play_card(caster: Character, card: Card, target: Character):
 				affected_targets.append(t)
 		# Consume one stack of played_twice
 		caster.played_twice -= 1
+
+	# Apply ON_CARD_PLAYED relic effects (Rage Meter - only for players)
+	if players.has(caster):
+		RelicRegistry.apply_on_card_played(caster)
 
 	# Sync protection state if any was set (must sync BEFORE client_card_played so UI updates)
 	if protected_by.size() > 0:
@@ -1722,6 +1928,8 @@ func _legacy_apply_card_effects(caster: Character, card: Card, target: Character
 					total_damage -= caster.weakness
 					# Apply hinder penalty (similar to weakness)
 					total_damage -= caster.hinder
+					# Apply feeble penalty (permanent reverse strength)
+					total_damage -= caster.feeble
 					# Bonus damage if target is wounded (below 50% HP)
 					if card.bonus_damage_if_wounded > 0:
 						var hp_percent = float(damage_target.current_health) / float(damage_target.max_health)
@@ -1983,9 +2191,8 @@ func recalculate_enemy_intents():
 	enemy_ai.enemies = enemies
 	enemy_ai.ccw_target_index = ccw_target_index
 
-	# Recalculate all intents with current enemy stats
-	# Uses same hands (already drawn) but recalculates damage with updated buffs/debuffs
-	enemy_intents = enemy_ai.calculate_all_intents()
+	# Recalculate damage for existing intents (preserves card selection)
+	enemy_intents = enemy_ai.recalculate_intent_damage(enemy_intents)
 
 	# Serialize and broadcast to all clients
 	var serialized_intents: Dictionary = {}
@@ -1994,6 +2201,12 @@ func recalculate_enemy_intents():
 
 	rpc("client_receive_enemy_intents", serialized_intents)
 	enemy_intents_calculated.emit(enemy_intents)
+
+	# Also recalculate next-turn intents if they exist (Hunter's Instinct)
+	if not locked_enemy_hands.is_empty():
+		var next_intents = enemy_ai.calculate_intents_from_locked(locked_enemy_hands, locked_card_targets)
+		boss_intent_revealed.emit(_intent_reveal_player_index, next_intents)
+
 	print("[INTENT] Recalculated intents after buff/debuff change")
 
 ## END ENEMY INTENT SYSTEM ##
@@ -2192,3 +2405,195 @@ func server_spell_search_completed(player_index: int, spell_names: Array):
 				break
 
 	move_spells_to_hand(player, spells_to_move)
+
+
+## Server RPC for reviving a teammate (Revive Relic)
+@rpc("any_peer", "call_remote", "reliable")
+func server_revive_teammate(caster_index: int, teammate_index: int):
+	if not multiplayer.is_server():
+		return
+
+	if caster_index < 0 or caster_index >= players.size():
+		return
+	if teammate_index < 0 or teammate_index >= players.size():
+		return
+
+	var caster = players[caster_index]
+	var teammate = players[teammate_index]
+
+	# Validate the relic can be used
+	if not caster.can_use_relic("revive_relic"):
+		print("[SERVER] Revive Relic cannot be used by ", caster.character_name)
+		return
+
+	# Use the relic
+	caster.use_relic("revive_relic")
+
+	# Revive the teammate
+	teammate.revive()
+
+	print("[SERVER] ", caster.character_name, " revived ", teammate.character_name, " with Revive Relic")
+
+	# Broadcast state changes
+	broadcast_character_state(caster)
+	broadcast_character_state(teammate)
+
+
+## ============================================================================
+## MID-COMBAT MINION SUMMONING SYSTEM
+## ============================================================================
+
+## Handle minion_summoned signal from CardEffectEngine
+func _on_minion_summoned(summoner: Character, minion_tag: String, summon_count: int) -> void:
+	if not multiplayer.is_server():
+		return
+
+	# Check if summoner is still alive
+	if not summoner.is_alive():
+		print("[SUMMON] Summoner ", summoner.character_name, " is dead, skipping summon")
+		return
+
+	var summoner_idx = enemies.find(summoner)
+	if summoner_idx == -1:
+		print("[SUMMON] Summoner not found in enemies array")
+		return
+
+	# Summon minions up to count or until max is reached
+	for i in range(summon_count):
+		if summoned_minion_count >= MAX_SUMMONED_MINIONS:
+			print("[SUMMON] Max summoned minions (", MAX_SUMMONED_MINIONS, ") reached, cannot summon more")
+			# Remove summon cards from all enemies with summon abilities
+			_remove_summon_cards_from_all_enemies()
+			break
+
+		# Create the minion
+		var minion = minion_db.create_random_summonable_minion(minion_tag, rng)
+		if minion == null:
+			print("[SUMMON] Failed to create minion with tag: ", minion_tag)
+			continue
+
+		# Add minion to enemies array
+		enemies.append(minion)
+		summoned_minion_count += 1
+		print("[SUMMON] Summoned ", minion.character_name, " (", summoned_minion_count, "/", MAX_SUMMONED_MINIONS, " summoned)")
+
+		# Sync to all clients
+		_sync_summoned_minion(minion)
+
+		# Check if we hit max after this summon
+		if summoned_minion_count >= MAX_SUMMONED_MINIONS:
+			_remove_summon_cards_from_all_enemies()
+
+	# Broadcast updated enemy states
+	for enemy in enemies:
+		broadcast_character_state(enemy)
+
+	game_state_changed.emit()
+
+
+## Remove summon cards from all enemies that have them (when at max summons)
+func _remove_summon_cards_from_all_enemies() -> void:
+	for enemy_idx in range(enemies.size()):
+		var enemy = enemies[enemy_idx]
+		_remove_summon_cards_from_enemy(enemy, enemy_idx)
+
+
+## Remove summon cards from a specific enemy's deck and special deck
+func _remove_summon_cards_from_enemy(enemy: Character, enemy_idx: int) -> void:
+	# Skip if already processed
+	if summon_cards_removed.has(enemy_idx):
+		return
+
+	var removed_cards: Array[Card] = []
+
+	# Remove from main deck
+	var deck_idx = 0
+	while deck_idx < enemy.deck.size():
+		var card = enemy.deck[deck_idx]
+		if card.summon_count > 0:
+			removed_cards.append(card)
+			enemy.deck.remove_at(deck_idx)
+		else:
+			deck_idx += 1
+
+	# Remove from special deck
+	var special_idx = 0
+	while special_idx < enemy.special_deck.size():
+		var card = enemy.special_deck[special_idx]
+		if card.summon_count > 0:
+			removed_cards.append(card)
+			enemy.special_deck.remove_at(special_idx)
+		else:
+			special_idx += 1
+
+	# Remove from hand
+	var hand_idx = 0
+	while hand_idx < enemy.hand.size():
+		var card = enemy.hand[hand_idx]
+		if card.summon_count > 0:
+			removed_cards.append(card)
+			enemy.hand.remove_at(hand_idx)
+		else:
+			hand_idx += 1
+
+	if removed_cards.size() > 0:
+		summon_cards_removed[enemy_idx] = removed_cards
+		print("[SUMMON] Removed ", removed_cards.size(), " summon cards from ", enemy.character_name)
+
+
+## Restore summon cards to all enemies (when a summoned minion dies)
+func _restore_summon_cards_to_all_enemies() -> void:
+	for enemy_idx in summon_cards_removed.keys():
+		if enemy_idx < enemies.size():
+			_restore_summon_cards_to_enemy(enemies[enemy_idx], enemy_idx)
+
+
+## Restore summon cards to a specific enemy
+func _restore_summon_cards_to_enemy(enemy: Character, enemy_idx: int) -> void:
+	if not summon_cards_removed.has(enemy_idx):
+		return
+
+	var cards_to_restore: Array = summon_cards_removed[enemy_idx]
+	for card in cards_to_restore:
+		# Add back to special deck (summon cards are typically special deck cards)
+		enemy.special_deck.append(card)
+
+	print("[SUMMON] Restored ", cards_to_restore.size(), " summon cards to ", enemy.character_name)
+	summon_cards_removed.erase(enemy_idx)
+
+
+## Called when a summoned minion dies
+func _on_summoned_minion_died(minion: Character) -> void:
+	if not minion.was_summoned:
+		return
+
+	summoned_minion_count = max(0, summoned_minion_count - 1)
+	print("[SUMMON] Summoned minion ", minion.character_name, " died (", summoned_minion_count, "/", MAX_SUMMONED_MINIONS, " remaining)")
+
+	# If we're now below max, restore summon cards
+	if summoned_minion_count < MAX_SUMMONED_MINIONS and summon_cards_removed.size() > 0:
+		_restore_summon_cards_to_all_enemies()
+
+
+## Sync a newly summoned minion to all clients
+func _sync_summoned_minion(minion: Character) -> void:
+	if not multiplayer.is_server():
+		return
+
+	var minion_state = minion.get_state_dict()
+	rpc("_client_receive_summoned_minion", minion_state)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func _client_receive_summoned_minion(minion_state: Dictionary) -> void:
+	# Server already has the minion, skip
+	if multiplayer.is_server():
+		return
+
+	# Create a new minion and apply the state
+	var minion = Character.new()
+	minion.apply_state_dict(minion_state)
+	enemies.append(minion)
+
+	print("[SUMMON] Client received summoned minion: ", minion.character_name)
+	game_state_changed.emit()

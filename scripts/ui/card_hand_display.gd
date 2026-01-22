@@ -41,6 +41,12 @@ func _get_hand_signature(character: Character) -> String:
 	parts.append("stam:" + str(character.current_stamina))
 	parts.append("scared:" + str(character.scared))
 	parts.append("exh:" + str(character.exhausted))
+	# Include damage-affecting stats for dynamic card descriptions
+	parts.append("str:" + str(character.strength))
+	parts.append("dmgplus:" + str(character.damage_plus))
+	parts.append("weak:" + str(character.weakness))
+	parts.append("hind:" + str(character.hinder))
+	parts.append("aura:" + str(character.current_aura))
 	return "|".join(parts)
 
 ## Display hand cards during PLAYER_TURN phase

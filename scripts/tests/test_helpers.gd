@@ -103,6 +103,8 @@ static func reset_character(character: Character):
 static func apply_debuff(character: Character, debuff_name: String, stacks: int = 1):
 	match debuff_name:
 		"poison": character.poison = stacks
+		"bleed": character.bleed = stacks
+		"feeble": character.feeble = stacks
 		"burn": character.burn = stacks
 		"weakness": character.weakness = stacks
 		"vulnerable": character.vulnerable = stacks
@@ -136,6 +138,8 @@ static func apply_buff(character: Character, buff_name: String, stacks: int = 1)
 static func count_debuffs(character: Character) -> int:
 	var count = 0
 	count += character.poison
+	count += character.bleed
+	count += character.feeble
 	count += character.burn
 	count += character.weakness
 	count += character.vulnerable

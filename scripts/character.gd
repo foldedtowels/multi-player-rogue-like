@@ -1,6 +1,12 @@
 extends Resource
 class_name Character
 
+# Audio signals - for AudioManager to connect to (COMMENTED OUT - not ready yet)
+#signal damage_taken(amount: int, character: Character)
+#signal healed(amount: int, character: Character)
+#signal shield_gained(amount: int, character: Character)
+#signal status_effect_applied(effect_name: String, amount: int, character: Character)
+
 @export var character_name: String
 @export var description: String
 @export var max_health: int = 100
@@ -21,10 +27,79 @@ var shield: int = 0
 var damage_taken_this_turn: int = 0  # Tracks damage taken this turn (for Jumping Strike condition)
 
 # ============================================
+# RELIC SYSTEM
+# ============================================
+# Relics provide persistent passive bonuses that trigger at various points.
+# Stored as dictionary: relic_id -> bool (true if owned)
+var relics: Dictionary = {}
+var cards_played_this_turn: int = 0  # For Rage Meter relic tracking
+var relic_uses_remaining: Dictionary = {}  # For ACTIVE_USE relics: {"revive_relic": 1, ...}
+
+## Check if character has a relic
+func has_relic(relic_id: String) -> bool:
+	return relics.get(relic_id, false)
+
+## Add a relic to character
+func add_relic(relic_id: String) -> void:
+	relics[relic_id] = true
+	# Initialize uses for active relics
+	if RelicRegistry.is_active_use_relic(relic_id):
+		relic_uses_remaining[relic_id] = RelicRegistry.get_uses_per_fight(relic_id)
+
+## Remove a relic from character
+func remove_relic(relic_id: String) -> void:
+	relics.erase(relic_id)
+	relic_uses_remaining.erase(relic_id)
+
+## Reset active relic uses at fight start
+func reset_relic_uses() -> void:
+	relic_uses_remaining.clear()
+	for relic_id in relics.keys():
+		if relics[relic_id] and RelicRegistry.is_active_use_relic(relic_id):
+			relic_uses_remaining[relic_id] = RelicRegistry.get_uses_per_fight(relic_id)
+			print("[RELIC] Reset ", relic_id, " uses to ", relic_uses_remaining[relic_id], " for ", character_name)
+
+## Check if an active relic can be used
+func can_use_relic(relic_id: String) -> bool:
+	if not has_relic(relic_id):
+		return false
+	if not RelicRegistry.is_active_use_relic(relic_id):
+		return false
+	return relic_uses_remaining.get(relic_id, 0) > 0
+
+## Use an active relic (decrement uses)
+func use_relic(relic_id: String) -> void:
+	if relic_uses_remaining.has(relic_id) and relic_uses_remaining[relic_id] > 0:
+		relic_uses_remaining[relic_id] -= 1
+		print("[RELIC] ", character_name, " used ", relic_id, " (", relic_uses_remaining[relic_id], " uses remaining)")
+
+## Get active-use relics that this character owns
+func get_active_use_relics() -> Array[String]:
+	var active_relics: Array[String] = []
+	for relic_id in relics.keys():
+		if relics[relic_id] and RelicRegistry.is_active_use_relic(relic_id):
+			active_relics.append(relic_id)
+	return active_relics
+
+# ============================================
 # MODULAR STATUS EFFECT SYSTEM
 # ============================================
 # All status effects stored in a single dictionary for easy iteration and extension.
 # Individual properties below provide backward compatibility with existing code.
+#
+# ADDING A NEW STATUS EFFECT:
+# If you add a new effect to StatusEffectRegistry, you MUST also add a property
+# accessor here following this pattern:
+#
+#   var new_effect: int:
+#       get: return get_effect_amount("new_effect")
+#       set(value): set_effect_amount("new_effect", value)
+#
+# This allows code to use character.new_effect = 5 instead of
+# character.set_effect_amount("new_effect", 5), maintaining backward compatibility.
+#
+# See StatusEffectRegistry.gd for the full checklist of files to update.
+# ============================================
 var status_effects: Dictionary = {}
 
 # Backward-compatible property accessors (read/write to status_effects dictionary)
@@ -84,6 +159,17 @@ var ring_of_fire: int:
 	get: return get_effect_amount("ring_of_fire")
 	set(value): set_effect_amount("ring_of_fire", value)
 
+# Enemy-applied status effects
+var venom: int:
+	get: return get_effect_amount("venom")
+	set(value): set_effect_amount("venom", value)
+var bleed: int:
+	get: return get_effect_amount("bleed")
+	set(value): set_effect_amount("bleed", value)
+var feeble: int:
+	get: return get_effect_amount("feeble")
+	set(value): set_effect_amount("feeble", value)
+
 # Enrique's status effects
 var played_twice: int:
 	get: return get_effect_amount("played_twice")
@@ -91,6 +177,25 @@ var played_twice: int:
 var invincible: int:
 	get: return get_effect_amount("invincible")
 	set(value): set_effect_amount("invincible", value)
+
+# New character debuffs
+var burden: int:
+	get: return get_effect_amount("burden")
+	set(value): set_effect_amount("burden", value)
+var dissolve: int:
+	get: return get_effect_amount("dissolve")
+	set(value): set_effect_amount("dissolve", value)
+
+# Mute's Doll debuffs (Boss 4)
+var doll_dissolve: int:
+	get: return get_effect_amount("doll_dissolve")
+	set(value): set_effect_amount("doll_dissolve", value)
+var doll_suffering: int:
+	get: return get_effect_amount("doll_suffering")
+	set(value): set_effect_amount("doll_suffering", value)
+var doll_burden: int:
+	get: return get_effect_amount("doll_burden")
+	set(value): set_effect_amount("doll_burden", value)
 
 # Passive ability system
 var passive_ability_id: String = ""
@@ -121,6 +226,10 @@ var satchel: Array[Card] = []
 enum CharacterRole { PLAYER, MINION, BOSS }
 var character_role: CharacterRole = CharacterRole.PLAYER
 var is_minion: bool = false
+
+# Mid-combat summoning system
+var was_summoned: bool = false  # True if this minion was summoned during combat
+var minion_id: String = ""      # ID for network sync and reference
 
 # Network ownership
 var network_owner_id: int = -1  # Which peer owns this character
@@ -192,9 +301,22 @@ func exhaust_card(card: Card):
 	else:
 		push_warning("[EXHAUST] Card not found in hand: " + card.card_name)
 
+## Calculate effective stamina cost for a card, including relic reductions
+func get_effective_stamina_cost(card: Card) -> int:
+	var base_cost = card.stamina_cost
+	var reduction = RelicRegistry.get_cost_reduction(self, card)
+	return max(0, base_cost - reduction)
+
 func play_card(card: Card):
-	if card.can_afford(current_stamina, current_aura):
-		current_stamina -= card.stamina_cost
+	var effective_cost = get_effective_stamina_cost(card)
+	# Use effective cost for can_afford check
+	var can_play = current_stamina >= effective_cost
+	if card.aura_cost_all and current_aura < 1:
+		can_play = false
+	elif card.aura_cost > 0 and current_aura < card.aura_cost:
+		can_play = false
+	if can_play:
+		current_stamina -= effective_cost
 
 		# Deduct aura cost
 		if card.aura_cost_all:
@@ -205,6 +327,16 @@ func play_card(card: Card):
 		elif card.aura_cost > 0:
 			current_aura -= card.aura_cost
 			print("[AURA] ", character_name, " spent ", card.aura_cost, " aura for ", card.card_name, " (now ", current_aura, "/", max_aura, ")")
+
+		# Dissolve: Take X damage per card played (piercing)
+		if dissolve > 0:
+			print("[DISSOLVE] ", character_name, " takes ", dissolve, " piercing damage for playing ", card.card_name)
+			take_damage(dissolve, true)  # Piercing damage
+
+		# Doll: Dissolve: Take 1 damage per stack per card played (piercing)
+		if doll_dissolve > 0:
+			print("[DOLL:DISSOLVE] ", character_name, " takes ", doll_dissolve, " piercing damage for playing ", card.card_name)
+			take_damage(doll_dissolve, true)  # Piercing damage
 
 		# CRITICAL FIX: Find and remove card by name, not by reference
 		# When card is deserialized from RPC, it's a new instance and hand.erase() won't find it
@@ -220,6 +352,10 @@ func play_card(card: Card):
 			if card_to_remove.is_alc:
 				satchel.append(card_to_remove)
 				print("[CHARACTER] ", character_name, " returned Alc '", card_to_remove.card_name, "' to satchel")
+			# Exhaust cards are removed from game (go to exhaust pile)
+			elif card_to_remove.exhausts:
+				exhaust_pile.append(card_to_remove)
+				print("[CHARACTER] ", character_name, " exhausted '", card_to_remove.card_name, "' (removed from game)")
 			else:
 				discard_pile.append(card_to_remove)
 		else:
@@ -260,6 +396,10 @@ func take_damage(amount: int, is_piercing: bool = false):
 	# Track damage for conditional effects (e.g., Jumping Strike)
 	damage_taken_this_turn += actual_damage
 
+	# Emit signal for audio hooks (COMMENTED OUT - not ready yet)
+	#if actual_damage > 0:
+	#	damage_taken.emit(actual_damage, self)
+
 	return actual_damage
 
 func heal(amount: int, decay_already_applied: bool = false):
@@ -274,15 +414,26 @@ func heal(amount: int, decay_already_applied: bool = false):
 		print("[HEAL] ", character_name, " has ", decay, " decay - healing reduced: ", amount, " -> ", actual_heal)
 	var old_health = current_health
 	current_health = min(current_health + actual_heal, max_health)
-	print("[HEAL] ", character_name, " healed: ", old_health, " -> ", current_health, " (+", current_health - old_health, ")")
+	var amount_healed = current_health - old_health
+	print("[HEAL] ", character_name, " healed: ", old_health, " -> ", current_health, " (+", amount_healed, ")")
+
+	# Emit signal for audio hooks (COMMENTED OUT - not ready yet)
+	#if amount_healed > 0:
+	#	healed.emit(amount_healed, self)
 
 func gain_shield(amount: int):
 	if amount < 0:
 		push_warning("Negative shield attempted: " + str(amount))
 		return
+	var old_shield = shield
 	shield += amount
 	# Cap shield to prevent infinite stacking exploits
 	shield = min(shield, GameConstants.SHIELD_CAP)
+	var actual_gain = shield - old_shield
+
+	# Emit signal for audio hooks (COMMENTED OUT - not ready yet)
+	#if actual_gain > 0:
+	#	shield_gained.emit(actual_gain, self)
 
 func start_turn():
 	current_stamina = max_stamina
@@ -301,8 +452,30 @@ func start_turn():
 	# Reset damage tracking for new turn (used by Jumping Strike condition)
 	damage_taken_this_turn = 0
 
+	# Reset cards played counter for relic tracking (Rage Meter)
+	cards_played_this_turn = 0
+
 	apply_status_effects()
-	draw_cards(5)
+
+	# Apply TURN_START relic effects (stamina, extra draws)
+	var game_manager = Engine.get_singleton("GameManager") if Engine.has_singleton("GameManager") else null
+	if game_manager == null:
+		# Try getting from scene tree (for when not registered as singleton)
+		var tree = Engine.get_main_loop()
+		if tree and tree.root:
+			game_manager = tree.root.get_node_or_null("/root/GameManager")
+	var round_num = 1
+	if game_manager:
+		round_num = game_manager.round_number
+	RelicRegistry.apply_turn_start(self, round_num)
+
+	# Draw cards (reduced by Doll: Burden)
+	var cards_to_draw = 5
+	print("[TURN START] ", character_name, " doll_burden=", doll_burden, " status_effects=", status_effects)
+	if doll_burden > 0:
+		cards_to_draw = max(0, 5 - doll_burden)
+		print("[DOLL:BURDEN] ", character_name, " draws ", cards_to_draw, " cards (reduced by ", doll_burden, ")")
+	draw_cards(cards_to_draw)
 
 func add_stamina(amount: int):
 	current_stamina += amount
@@ -347,12 +520,22 @@ func end_turn(current_round: int = 0):
 	# Process end-of-turn effects using registry
 	process_turn_end_effects()
 
+	# Apply TURN_END relic effects (Radiating Apple damage, Shining Feather shield)
+	RelicRegistry.apply_turn_end(self)
+
 func apply_status_effects():
 	# Process start-of-turn effects using registry
 	process_turn_start_effects()
 
 ## Registry-based turn start processing
 func process_turn_start_effects():
+	# Check for venom threshold trigger (before other processing)
+	var venom_amount = get_effect_amount("venom")
+	if venom_amount >= 3:
+		take_damage(20, true)  # 20 piercing damage
+		set_effect_amount("venom", 0)
+		print("[VENOM] ", character_name, " triggered at 3 stacks, took 20 damage")
+
 	# Get a copy of keys since we might modify the dictionary
 	var effect_names = status_effects.keys().duplicate()
 
@@ -393,6 +576,18 @@ func process_turn_start_effects():
 
 ## Registry-based turn end processing
 func process_turn_end_effects():
+	# Burden: Take 5 damage per stack at end of turn (piercing)
+	if burden > 0:
+		var burden_damage = burden * 5
+		print("[BURDEN] ", character_name, " takes ", burden_damage, " damage from ", burden, " burden stacks")
+		take_damage(burden_damage, true)  # Piercing damage
+
+	# Doll: Suffering: Take 5 damage per stack at end of turn (piercing)
+	if doll_suffering > 0:
+		var suffering_damage = doll_suffering * 5
+		print("[DOLL:SUFFERING] ", character_name, " takes ", suffering_damage, " damage from ", doll_suffering, " doll_suffering stacks")
+		take_damage(suffering_damage, true)  # Piercing damage
+
 	var effects_to_remove: Array[String] = []
 
 	for effect_name in status_effects.keys():
@@ -449,6 +644,14 @@ func is_alive() -> bool:
 	return current_health > 0
 
 
+## Revive a dead character with specified health (default: 50% max HP)
+func revive(health_amount: int = -1) -> void:
+	if health_amount < 0:
+		health_amount = max_health / 2  # Default: 50% HP
+	current_health = health_amount
+	print("[REVIVE] ", character_name, " revived with ", health_amount, " HP")
+
+
 # ============================================
 # STATUS EFFECT HELPER METHODS
 # ============================================
@@ -479,6 +682,9 @@ func apply_effect(effect_name: String, amount: int):
 
 	var current = get_effect_amount(effect_name)
 	set_effect_amount(effect_name, current + amount)
+
+	# Emit signal for audio hooks (COMMENTED OUT - not ready yet)
+	#status_effect_applied.emit(effect_name, amount, self)
 
 	# Handle immediate grants (e.g., invigorated -> damage_plus)
 	var effect_data = StatusEffectRegistry.get_effect_data(effect_name)
@@ -573,6 +779,11 @@ func reset_debuffs():
 	decay = 0
 	hinder = 0
 	wet = 0
+	venom = 0
+	# Mute's Doll debuffs
+	doll_dissolve = 0
+	doll_suffering = 0
+	doll_burden = 0
 
 func add_card_to_deck(card: Card):
 	deck.append(card)
@@ -595,6 +806,9 @@ func duplicate_character() -> Character:
 
 	# Copy passive ability
 	new_char.passive_ability_id = passive_ability_id
+
+	# Copy relics (persistent passive bonuses)
+	new_char.relics = relics.duplicate()
 
 	# Copy enemy-specific properties
 	new_char.special_chance = special_chance
@@ -636,8 +850,12 @@ func get_state_dict() -> Dictionary:
 		"max_aura": max_aura,
 		"shield": shield,
 		"damage_taken_this_turn": damage_taken_this_turn,
+		"cards_played_this_turn": cards_played_this_turn,
 		# NEW: Send all effects as single dictionary
 		"status_effects": status_effects.duplicate(),
+		# Relics (persistent passive bonuses)
+		"relics": relics.duplicate(),
+		"relic_uses_remaining": relic_uses_remaining.duplicate(),
 		# BACKWARD COMPAT: Also send individual fields for older clients
 		"poison": poison,
 		"burn": burn,
@@ -654,7 +872,9 @@ func get_state_dict() -> Dictionary:
 		"passive_ability_id": passive_ability_id,
 		"passive_ability_used_this_turn": passive_ability_used_this_turn,
 		"retained_cards": retained_cards.duplicate(),
-		"satchel": _serialize_satchel()
+		"satchel": _serialize_satchel(),
+		"was_summoned": was_summoned,
+		"minion_id": minion_id
 	}
 
 func _serialize_satchel() -> Array[Dictionary]:
@@ -674,6 +894,11 @@ func apply_state_dict(state: Dictionary):
 	max_aura = state.get("max_aura", 0)
 	shield = state.shield
 	damage_taken_this_turn = state.get("damage_taken_this_turn", 0)
+	cards_played_this_turn = state.get("cards_played_this_turn", 0)
+
+	# Load relics
+	relics = state.get("relics", {}).duplicate()
+	relic_uses_remaining = state.get("relic_uses_remaining", {}).duplicate()
 
 	# NEW: Load from status_effects dictionary if present
 	if state.has("status_effects"):
@@ -698,6 +923,8 @@ func apply_state_dict(state: Dictionary):
 	passive_ability_used_this_turn = state.get("passive_ability_used_this_turn", false)
 	retained_cards = state.get("retained_cards", {}).duplicate()
 	_deserialize_satchel(state.get("satchel", []))
+	was_summoned = state.get("was_summoned", false)
+	minion_id = state.get("minion_id", "")
 
 func _deserialize_satchel(satchel_data: Array):
 	satchel.clear()

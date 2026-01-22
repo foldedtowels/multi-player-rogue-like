@@ -25,6 +25,8 @@ MinionDatabase="*res://scripts/minion_database.gd"
 GameManager="*res://scripts/game_manager.gd"
 PassiveAbilityManager="*res://scripts/passive_ability_manager.gd"
 StatusEffectRegistry="*res://scripts/status_effect_registry.gd"
+RelicRegistry="*res://scripts/relic_registry.gd"
+;AudioManager="*res://scripts/audio_manager.gd"
 
 [display]
 

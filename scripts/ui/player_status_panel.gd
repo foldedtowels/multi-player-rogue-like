@@ -6,12 +6,18 @@ extends Node
 
 signal debuff_clicked(debuff_name: String, character: Character)
 signal debuff_selection_completed()
+signal active_relic_clicked(relic_id: String, character: Character)
 
 var game_manager: Node
-var left_player_panel: Panel
-var right_player_panel: Panel
+var left_head_image: TextureRect  # Head image is the drop target
+var left_player_labels: VBoxContainer  # Labels positioned above head
+var left_status_container: HBoxContainer  # Status effects (separate from labels)
+var right_head_image: TextureRect  # Head image is the drop target
+var right_player_labels: VBoxContainer  # Labels positioned above head
+var right_status_container: HBoxContainer  # Status effects (separate from labels)
 var your_character_panel: Panel
-var card_scene = preload("res://scenes/card_visual.tscn")
+# Card scene preload commented out - no longer showing card previews for teammates
+# var card_scene = preload("res://scenes/card_visual.tscn")
 
 # Cached enemy intents for displaying incoming attacks
 var cached_enemy_intents: Dictionary = {}
@@ -47,13 +53,32 @@ const STATUS_EFFECT_PROPERTIES: Dictionary = {
 	"scared": "scared",
 	"decay": "decay",
 	"exhausted": "exhausted",
-	"wet": "wet"
+	"wet": "wet",
+	"venom": "venom",
+	"bleed": "bleed",
+	"feeble": "feeble",
+	"doll_dissolve": "doll_dissolve",
+	"doll_suffering": "doll_suffering",
+	"doll_burden": "doll_burden",
+	"burden": "burden",
+	"dissolve": "dissolve"
 }
 
-func setup(gm: Node, left: Panel, right: Panel, your: Panel):
+# Doll debuff background colors for visual distinction
+const DOLL_COLORS: Dictionary = {
+	"doll_dissolve": Color(0.6, 0.3, 0.7),   # Purple
+	"doll_suffering": Color(0.8, 0.4, 0.2),  # Orange
+	"doll_burden": Color(0.3, 0.5, 0.8),     # Blue
+}
+
+func setup(gm: Node, left_img: TextureRect, left_labels: VBoxContainer, left_status: HBoxContainer, right_img: TextureRect, right_labels: VBoxContainer, right_status: HBoxContainer, your: Panel):
 	game_manager = gm
-	left_player_panel = left
-	right_player_panel = right
+	left_head_image = left_img
+	left_player_labels = left_labels
+	left_status_container = left_status
+	right_head_image = right_img
+	right_player_labels = right_labels
+	right_status_container = right_status
 	your_character_panel = your
 
 	# Connect click handlers for targeting
@@ -100,7 +125,8 @@ func _populate_status_container(container: HBoxContainer, character: Character, 
 	# Add labels for each active status effect
 	for effect_name in STATUS_EFFECT_PROPERTIES.keys():
 		var prop_name = STATUS_EFFECT_PROPERTIES[effect_name]
-		var amount = character.get(prop_name)
+		# Use status_effects dictionary directly (Object.get() doesn't work with computed properties)
+		var amount = character.status_effects.get(prop_name, 0)
 		if amount > 0:
 			var symbol = StatusEffectRegistry.get_symbol(effect_name)
 			var display_name = StatusEffectRegistry.get_display_name(effect_name)
@@ -166,57 +192,58 @@ func _populate_status_container(container: HBoxContainer, character: Character, 
 
 				container.add_child(debuff_button)
 			else:
-				# Regular label for non-clickable effects
-				var effect_label = Label.new()
-
-				# Non-stacking effects (scared, invincible) don't show a number
-				if effect_name in ["scared", "invincible"]:
-					effect_label.text = symbol
-				else:
+				# Check if this is a doll debuff that needs colored circle background
+				if effect_name in DOLL_COLORS:
+					# Create label with colored circle background for doll debuffs
+					var effect_label = Label.new()
 					effect_label.text = "%s%d" % [symbol, amount]
+					effect_label.tooltip_text = display_name
+					effect_label.add_theme_font_size_override("font_size", font_size)
+					effect_label.mouse_filter = Control.MOUSE_FILTER_PASS
 
-				effect_label.tooltip_text = display_name
-				effect_label.add_theme_font_size_override("font_size", font_size)
-				effect_label.mouse_filter = Control.MOUSE_FILTER_PASS  # Allow tooltip to show
+					# Add colored circular background using StyleBoxFlat
+					var bg_style = StyleBoxFlat.new()
+					bg_style.bg_color = DOLL_COLORS[effect_name]
+					bg_style.corner_radius_top_left = 12
+					bg_style.corner_radius_top_right = 12
+					bg_style.corner_radius_bottom_left = 12
+					bg_style.corner_radius_bottom_right = 12
+					bg_style.content_margin_left = 4
+					bg_style.content_margin_right = 4
+					bg_style.content_margin_top = 2
+					bg_style.content_margin_bottom = 2
+					effect_label.add_theme_stylebox_override("normal", bg_style)
 
-				# Gray out permanent debuffs during selection mode
-				if is_selection_target and is_permanent:
-					effect_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-					effect_label.tooltip_text = display_name + " (cannot be removed)"
+					container.add_child(effect_label)
+				else:
+					# Regular label for non-clickable effects
+					var effect_label = Label.new()
 
-				container.add_child(effect_label)
+					# Non-stacking effects (scared, invincible) don't show a number
+					if effect_name in ["scared", "invincible"]:
+						effect_label.text = symbol
+					else:
+						effect_label.text = "%s%d" % [symbol, amount]
+
+					effect_label.tooltip_text = display_name
+					effect_label.add_theme_font_size_override("font_size", font_size)
+					effect_label.mouse_filter = Control.MOUSE_FILTER_PASS  # Allow tooltip to show
+
+					# Gray out permanent debuffs during selection mode
+					if is_selection_target and is_permanent:
+						effect_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+						effect_label.tooltip_text = display_name + " (cannot be removed)"
+
+					container.add_child(effect_label)
 
 	# Add protected status (not in registry - it's a game state)
-	print("[PROTECTOR DEBUG] _populate_status_container called with is_protected=", is_protected, " for character: ", character.character_name)
 	if is_protected:
-		print("[PROTECTOR DEBUG] Adding protected icon 😇 to ", character.character_name)
 		var protected_label = Label.new()
 		protected_label.text = "😇"
 		protected_label.tooltip_text = "Protected by ally"
 		protected_label.add_theme_font_size_override("font_size", font_size)
 		protected_label.mouse_filter = Control.MOUSE_FILTER_PASS
 		container.add_child(protected_label)
-
-## Get or create status container for other player panels (left/right)
-func _get_or_create_other_status_container(panel: Panel) -> HBoxContainer:
-	var vbox = panel.get_node("VBoxContainer")
-	var container_name = "StatusEffectContainer"
-
-	if vbox.has_node(container_name):
-		return vbox.get_node(container_name)
-
-	# Create new container after HPLabel
-	var container = HBoxContainer.new()
-	container.name = container_name
-	container.alignment = BoxContainer.ALIGNMENT_CENTER
-	container.add_theme_constant_override("separation", 5)
-
-	# Insert after HPLabel (index 1, since NameLabel is index 0)
-	var hp_label_index = vbox.get_node("HPLabel").get_index()
-	vbox.add_child(container)
-	vbox.move_child(container, hp_label_index + 1)
-
-	return container
 
 ## Get or create status container for your character panel (bottom)
 func _get_or_create_your_status_container(panel: Panel) -> HBoxContainer:
@@ -270,13 +297,26 @@ func _get_panel_signature(character: Character, player_index: int, preview_card_
 	parts.append("wet:" + str(character.wet))
 	parts.append("played_twice:" + str(character.played_twice))
 	parts.append("invincible:" + str(character.invincible))
+	parts.append("venom:" + str(character.venom))
+	parts.append("doll_dissolve:" + str(character.doll_dissolve))
+	parts.append("doll_suffering:" + str(character.doll_suffering))
+	parts.append("doll_burden:" + str(character.doll_burden))
+	parts.append("burden:" + str(character.burden))
+	parts.append("dissolve:" + str(character.dissolve))
 	parts.append("aura:" + str(character.current_aura))
 	# Include incoming damage calculation
 	var incoming = _get_incoming_icons(player_index)
 	parts.append("incoming:" + incoming)
 	# Include protected state so UI updates when protection changes
 	parts.append("protected:" + str(game_manager.protected_by.has(player_index)))
+	# Include active relic uses so UI updates when relics are used
+	parts.append("relic_uses:" + str(character.relic_uses_remaining))
 	return "|".join(parts)
+
+## Force clear signature cache and update all panels
+func force_refresh():
+	_panel_signatures.clear()
+	update_all()
 
 ## Update all player panels
 func update_all():
@@ -301,111 +341,71 @@ func update_all():
 	# Left player (first "other")
 	if other_indices.size() > 0:
 		var left_char = game_manager.players[other_indices[0]]
-		_update_other_panel(left_player_panel, left_char, other_indices[0])
+		_update_other_panel(left_head_image, left_player_labels, left_status_container, left_char, other_indices[0])
 	else:
 		# No left player (< 2 players total)
-		left_player_panel.visible = false
+		left_head_image.visible = false
+		left_player_labels.visible = false
+		left_status_container.visible = false
 
 	# Right player (second "other")
 	if other_indices.size() > 1:
 		var right_char = game_manager.players[other_indices[1]]
-		_update_other_panel(right_player_panel, right_char, other_indices[1])
+		_update_other_panel(right_head_image, right_player_labels, right_status_container, right_char, other_indices[1])
 	else:
 		# No right player (< 3 players total)
-		right_player_panel.visible = false
+		right_head_image.visible = false
+		right_player_labels.visible = false
+		right_status_container.visible = false
 
 	# Your character (bottom)
 	_update_your_panel(my_character)
 
 ## Update other player panel (left or right)
-func _update_other_panel(panel: Panel, character: Character, player_index: int):
-	panel.visible = true
+## Now uses separate head image (drop target), labels container, and status container
+func _update_other_panel(head_image: TextureRect, labels: VBoxContainer, status_container: HBoxContainer, character: Character, player_index: int):
+	head_image.visible = true
+	labels.visible = true
+	status_container.visible = true
 
-	# Connect click handler for targeting (disconnect first to avoid duplicates)
-	if not panel.gui_input.is_connected(_on_panel_clicked):
-		panel.gui_input.connect(_on_panel_clicked.bind(character))
-
-	# Get preview/last played card names for signature
-	var preview_card_name = ""
-	var last_played_card_name = ""
-	if game_manager.card_previews.has(player_index):
-		preview_card_name = game_manager.card_previews[player_index].card_name
-	if game_manager.last_played_cards.has(player_index):
-		last_played_card_name = game_manager.last_played_cards[player_index].card_name
+	# Connect click handler for targeting on head image (disconnect first to avoid duplicates)
+	if not head_image.gui_input.is_connected(_on_panel_clicked):
+		head_image.gui_input.connect(_on_panel_clicked.bind(character))
 
 	# Check if panel state has changed (skip update if unchanged to prevent tearing)
 	var panel_key = "other_" + str(player_index)
-	var new_signature = _get_panel_signature(character, player_index, preview_card_name, last_played_card_name)
+	var new_signature = _get_panel_signature(character, player_index, "", "")
 	if _panel_signatures.get(panel_key, "") == new_signature:
 		return  # No changes, skip update
 	_panel_signatures[panel_key] = new_signature
 
-	# Update name, HP, Stamina
-	var name_label = panel.get_node("VBoxContainer/NameLabel")
-	var hp_label = panel.get_node("VBoxContainer/HPLabel")
-	var stamina_label = panel.get_node("VBoxContainer/EnergyLabel")
+	# Update name, HP (using labels container)
+	var name_label = labels.get_node("NameLabel")
+	var hp_label = labels.get_node("HPLabel")
 
 	# Name without icons
 	name_label.text = character.character_name
-	hp_label.text = "HP: %d/%d" % [character.current_health, character.max_health]
 
+	# Build HP display with shield, stamina, aura, and incoming damage
+	var hp_text = "HP: %d/%d" % [character.current_health, character.max_health]
 	if character.shield > 0:
-		hp_label.text += "\nShield: %d" % character.shield
+		hp_text += " | Shield: %d" % character.shield
 
-	# Add status effects display with individual hoverable labels
-	var status_container = _get_or_create_other_status_container(panel)
-	var is_protected = game_manager.protected_by.has(player_index)
-	print("[PROTECTOR DEBUG] _update_other_player_panel: player_index=", player_index, " protected_by=", game_manager.protected_by, " is_protected=", is_protected)
-	_populate_status_container(status_container, character, 14, is_protected)
-
-	stamina_label.text = "S: %d/%d" % [character.current_stamina, character.max_stamina]
-
-	# Show Aura for characters that have it (Enrique)
+	# Add stamina/aura inline
+	hp_text += " | S: %d/%d" % [character.current_stamina, character.max_stamina]
 	if character.max_aura > 0:
-		stamina_label.text += " | A: %d" % character.current_aura
+		hp_text += " | A: %d" % character.current_aura
 
-	# Add incoming attack icons below stamina
+	# Add incoming attack icons
 	var incoming_icons = _get_incoming_icons(player_index)
 	if incoming_icons != "":
-		stamina_label.text += "\n" + incoming_icons
+		hp_text += incoming_icons
 
-	# Update panel background color based on status (use cached StyleBoxFlat)
-	var bg_color = Color(0.2, 0.2, 0.2)
-	if not character.is_alive():
-		bg_color = Color(0.3, 0.1, 0.1)  # Red for dead
-	elif player_index == game_manager.current_player_index:
-		bg_color = Color(0.2, 0.4, 0.6)  # Blue for active
+	hp_label.text = hp_text
 
-	var style = _get_panel_style(bg_color, Color.WHITE, 2)
-	panel.add_theme_stylebox_override("panel", style)
-
-	# Update "playing card" display
-	var playing_card_container = panel.get_node("VBoxContainer/PlayingCardContainer")
-
-	# Clear existing
-	for child in playing_card_container.get_children():
-		child.queue_free()
-
-	# Priority 1: Show previewed card (if player is previewing)
-	if game_manager.card_previews.has(player_index):
-		var preview_card = game_manager.card_previews[player_index]
-		var small_card_visual = card_scene.instantiate()
-		playing_card_container.add_child(small_card_visual)
-
-		small_card_visual.set_card(preview_card)
-		small_card_visual.set_card_owner(character)  # For card background color
-		small_card_visual.set_playable(false)  # Not playable, just for display
-		small_card_visual.scale = Vector2(0.67, 0.67)  # Scale to 100x140 from 150x220
-	# Priority 2: Show last played card (if no preview)
-	elif game_manager.last_played_cards.has(player_index):
-		var last_card = game_manager.last_played_cards[player_index]
-		var small_card_visual = card_scene.instantiate()
-		playing_card_container.add_child(small_card_visual)
-
-		small_card_visual.set_card(last_card)
-		small_card_visual.set_card_owner(character)  # For card background color
-		small_card_visual.set_playable(false)  # Not playable, just for display
-		small_card_visual.scale = Vector2(0.67, 0.67)  # Scale to 100x140 from 150x220
+	# Add status effects display with individual hoverable labels (using separate container)
+	var is_protected = game_manager.protected_by.has(player_index)
+	_populate_status_container(status_container, character, 14, is_protected)
 
 ## Update your character panel (bottom)
 func _update_your_panel(character: Character):
@@ -446,8 +446,11 @@ func _update_your_panel(character: Character):
 	# Add status effects display with individual hoverable labels
 	var status_container = _get_or_create_your_status_container(your_character_panel)
 	var is_protected = game_manager.protected_by.has(my_index)
-	print("[PROTECTOR DEBUG] _update_your_panel: my_index=", my_index, " protected_by=", game_manager.protected_by, " is_protected=", is_protected)
 	_populate_status_container(status_container, character, 18, is_protected)
+
+	# Add active relic buttons
+	var active_relic_container = _get_or_create_active_relic_container(your_character_panel)
+	_populate_active_relic_container(active_relic_container, character)
 
 	# Highlight panel if it's your turn (use cached StyleBoxFlat)
 	var is_my_turn = game_manager.local_player_index == game_manager.current_player_index
@@ -549,6 +552,93 @@ func _get_incoming_icons(player_index: int) -> String:
 		result += " 🌀?"
 
 	return result
+
+## Get or create active relic container for your character panel (bottom)
+func _get_or_create_active_relic_container(panel: Panel) -> HBoxContainer:
+	var hbox = panel.get_node("HBoxContainer")
+	var container_name = "ActiveRelicContainer"
+
+	if hbox.has_node(container_name):
+		return hbox.get_node(container_name)
+
+	# Create new container after StatusEffectContainer
+	var container = HBoxContainer.new()
+	container.name = container_name
+	container.add_theme_constant_override("separation", 8)
+
+	# Insert after StatusEffectContainer
+	var status_container = _get_or_create_your_status_container(panel)
+	var status_index = status_container.get_index()
+	hbox.add_child(container)
+	hbox.move_child(container, status_index + 1)
+
+	return container
+
+## Populate active relic buttons in the UI
+func _populate_active_relic_container(container: HBoxContainer, character: Character):
+	# Clear existing children
+	for child in container.get_children():
+		child.queue_free()
+
+	# Get active-use relics owned by this character
+	var active_relics = character.get_active_use_relics()
+
+	for relic_id in active_relics:
+		var relic = RelicRegistry.get_relic(relic_id)
+		if relic.is_empty():
+			continue
+
+		var can_use = character.can_use_relic(relic_id)
+		var uses_remaining = character.relic_uses_remaining.get(relic_id, 0)
+
+		# Create button for active relic
+		var relic_button = Button.new()
+		relic_button.text = relic.get("display_name", relic_id) + " (" + str(uses_remaining) + ")"
+		relic_button.tooltip_text = relic.get("description", "")
+		relic_button.add_theme_font_size_override("font_size", 14)
+		relic_button.custom_minimum_size = Vector2(120, 30)
+
+		if can_use:
+			# Active and usable - gold styling
+			var style = StyleBoxFlat.new()
+			style.bg_color = Color(0.4, 0.3, 0.1)  # Dark gold
+			style.border_color = Color(1.0, 0.8, 0.2)  # Gold border
+			style.border_width_left = 2
+			style.border_width_right = 2
+			style.border_width_top = 2
+			style.border_width_bottom = 2
+			style.corner_radius_top_left = 4
+			style.corner_radius_top_right = 4
+			style.corner_radius_bottom_left = 4
+			style.corner_radius_bottom_right = 4
+			relic_button.add_theme_stylebox_override("normal", style)
+
+			# Hover style
+			var hover_style = StyleBoxFlat.new()
+			hover_style.bg_color = Color(0.5, 0.4, 0.15)  # Brighter gold
+			hover_style.border_color = Color(1.0, 1.0, 0.4)  # Bright gold
+			hover_style.border_width_left = 2
+			hover_style.border_width_right = 2
+			hover_style.border_width_top = 2
+			hover_style.border_width_bottom = 2
+			hover_style.corner_radius_top_left = 4
+			hover_style.corner_radius_top_right = 4
+			hover_style.corner_radius_bottom_left = 4
+			hover_style.corner_radius_bottom_right = 4
+			relic_button.add_theme_stylebox_override("hover", hover_style)
+
+			relic_button.pressed.connect(_on_active_relic_clicked.bind(relic_id, character))
+		else:
+			# Used up - grayed out
+			relic_button.disabled = true
+			relic_button.add_theme_color_override("font_disabled_color", Color(0.5, 0.5, 0.5))
+
+		container.add_child(relic_button)
+
+## Handle active relic button click
+func _on_active_relic_clicked(relic_id: String, character: Character):
+	print("[ACTIVE RELIC] ", character.character_name, " clicked ", relic_id)
+	active_relic_clicked.emit(relic_id, character)
 
 ## Start debuff selection mode - makes debuff labels clickable
 ## Returns true if target has removable debuffs, false otherwise

@@ -9,6 +9,7 @@ enum IntentType {
 	SHIELD,   # 🛡 Cyan - gaining shield/armor
 	DEBUFF,   # 🌀 Purple - applying negative effects
 	BUFF,     # 🔥 Orange - buffing themselves
+	SUMMON,   # 🕷️ Magenta - summoning minions
 	MIXED     # Multiple intent types combined
 }
 
@@ -26,6 +27,9 @@ var is_aoe: bool = false
 var debuffs: Dictionary = {}  # effect_name -> amount (e.g., {"poison": 3, "weakness": 2})
 var buffs: Dictionary = {}    # effect_name -> amount (e.g., {"strength": 2})
 
+# Summoning
+var summon_count: int = 0  # Number of minions being summoned
+
 # Which enemy this intent belongs to
 var enemy_index: int = -1
 
@@ -40,12 +44,14 @@ func calculate_intent_type() -> void:
 	var has_shield = shield_amount > 0
 	var has_debuff = not debuffs.is_empty()
 	var has_buff = not buffs.is_empty()
+	var has_summon = summon_count > 0
 
 	var count = 0
 	if has_damage: count += 1
 	if has_shield: count += 1
 	if has_debuff: count += 1
 	if has_buff: count += 1
+	if has_summon: count += 1
 
 	if count > 1:
 		intent_type = IntentType.MIXED
@@ -57,6 +63,8 @@ func calculate_intent_type() -> void:
 		intent_type = IntentType.DEBUFF
 	elif has_buff:
 		intent_type = IntentType.BUFF
+	elif has_summon:
+		intent_type = IntentType.SUMMON
 	else:
 		# Default to attack if nothing detected (shouldn't happen)
 		intent_type = IntentType.ATTACK
@@ -72,6 +80,8 @@ func get_icon() -> String:
 			return "🌀"
 		IntentType.BUFF:
 			return "🔥"
+		IntentType.SUMMON:
+			return "🕷️"
 		IntentType.MIXED:
 			return "⚔"  # Show attack icon for mixed (damage is most important to know)
 	return "?"
@@ -87,6 +97,8 @@ func get_color() -> Color:
 			return Color.PURPLE
 		IntentType.BUFF:
 			return Color.ORANGE
+		IntentType.SUMMON:
+			return Color.MAGENTA
 		IntentType.MIXED:
 			return Color.RED  # Red for mixed since damage is priority
 	return Color.WHITE
@@ -111,6 +123,7 @@ func serialize() -> Dictionary:
 		"is_aoe": is_aoe,
 		"debuffs": debuffs,
 		"buffs": buffs,
+		"summon_count": summon_count,
 		"enemy_index": enemy_index,
 		"cards_to_play": cards_data
 	}
@@ -124,6 +137,7 @@ static func deserialize(data: Dictionary) -> EnemyIntent:
 	intent.is_aoe = data.get("is_aoe", false)
 	intent.debuffs = data.get("debuffs", {})
 	intent.buffs = data.get("buffs", {})
+	intent.summon_count = data.get("summon_count", 0)
 
 	# Handle damage_per_target - keys may come as strings over network
 	var raw_damage_per_target = data.get("damage_per_target", {})
@@ -162,5 +176,7 @@ func get_debug_string() -> String:
 		parts.append("Debuffs:%s" % str(debuffs))
 	if not buffs.is_empty():
 		parts.append("Buffs:%s" % str(buffs))
+	if summon_count > 0:
+		parts.append("Summon:%d" % summon_count)
 	parts.append("Targets:%s%s" % [str(targets), " (AOE)" if is_aoe else ""])
 	return " | ".join(parts)

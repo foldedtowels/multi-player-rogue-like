@@ -1,6 +1,9 @@
 extends Control
 ## Test Mode Setup - Select players, enemies, and test settings
 
+# Preload data classes
+const EnemiesData = preload("res://scripts/data/enemies_data.gd")
+
 var hero_db: Node
 var minion_db: Node
 var boss_db: Node
@@ -59,9 +62,8 @@ func _create_hero_buttons():
 
 func _create_enemy_buttons():
 	# Add minions from all bosses (0-4)
-	var minions_data = preload("res://scripts/minions_data.gd").new()
-	for minion_id in minions_data.MINIONS.keys():
-		var minion_data = minions_data.MINIONS[minion_id]
+	for minion_id in EnemiesData.MINIONS.keys():
+		var minion_data = EnemiesData.MINIONS[minion_id]
 		var button = Button.new()
 		button.text = minion_data.name + "\n(Minion)"
 		button.custom_minimum_size = Vector2(150, 60)
@@ -72,9 +74,8 @@ func _create_enemy_buttons():
 		enemy_buttons.append(button)
 
 	# Add bosses
-	boss_db.create_boss_cards()  # Ensure boss cards are created
-	for boss_id in BossesData.BOSSES.keys():
-		var boss_data = BossesData.BOSSES[boss_id]
+	for boss_id in EnemiesData.BOSSES.keys():
+		var boss_data = EnemiesData.BOSSES[boss_id]
 		var button = Button.new()
 		button.text = boss_data.name + "\n(Boss)"
 		button.custom_minimum_size = Vector2(150, 60)
@@ -103,15 +104,14 @@ func _on_enemy_button_pressed(enemy_id: String):
 	for i in enemy_buttons.size():
 		# Find which button was pressed
 		if enemy_buttons[i].button_pressed:
-			var minions_data = preload("res://scripts/minions_data.gd").new()
-			var minion_ids = minions_data.MINIONS.keys()
+			var minion_ids = EnemiesData.MINIONS.keys()
 			if i < minion_ids.size():
 				var check_id = "minion:" + minion_ids[i]
 				if check_id == enemy_id:
 					button_idx = i
 					break
 			else:
-				var boss_ids = BossesData.BOSSES.keys()
+				var boss_ids = EnemiesData.BOSSES.keys()
 				var boss_idx = i - minion_ids.size()
 				if boss_idx < boss_ids.size():
 					var check_id = "boss:" + boss_ids[boss_idx]
@@ -130,9 +130,8 @@ func _on_enemy_button_pressed(enemy_id: String):
 	_update_ui()
 
 func _sync_enemy_buttons():
-	var minions_data = preload("res://scripts/minions_data.gd").new()
-	var minion_ids = minions_data.MINIONS.keys()
-	var boss_ids = BossesData.BOSSES.keys()
+	var minion_ids = EnemiesData.MINIONS.keys()
+	var boss_ids = EnemiesData.BOSSES.keys()
 
 	for i in enemy_buttons.size():
 		var enemy_id = ""
@@ -205,7 +204,6 @@ func _start_test_combat():
 
 	# Create enemies
 	game_manager.enemies.clear()
-	var minions_data_inst = preload("res://scripts/minions_data.gd").new()
 
 	for enemy_id in selected_enemies:
 		var parts = enemy_id.split(":")

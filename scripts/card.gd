@@ -22,7 +22,12 @@ enum TargetType {
 	ANY,
 	CCW_PLAYER,     # Targets the player with CCW marker (rotates each turn)
 	HIGHEST_HP,     # Targets the player with highest current HP
-	LOWEST_HP       # Targets the player with lowest current HP
+	LOWEST_HP,      # Targets the player with lowest current HP
+	LOWEST_HP_ALLY, # Lowest HP ally (excluding self)
+	RANDOM_ALLY,    # Random ally (excluding self)
+	MOST_WET,       # Player with most Wet stacks
+	MOST_DEBUFFS,   # Player with most total debuff stacks
+	TARGET_BY_NAME  # Target specific player by character name (uses target_player_name)
 }
 
 enum ElementType {
@@ -51,6 +56,14 @@ enum ElementType {
 var v2_card: Card = null  # Local reference (not serialized over network)
 
 # Status effects
+# IMPORTANT: These "apply_X" properties MUST match StatusEffectRegistry effect names exactly.
+# Example: Registry has "poison" -> Card needs "apply_poison"
+# If you add a new effect to the registry, you MUST also:
+#   1. Add the @export var apply_<effect_name> here
+#   2. Add it to serialize() method below
+#   3. Add it to deserialize() method below
+# Missing any of these causes SILENT FAILURES - the effect won't apply but no error shown.
+# See StatusEffectRegistry.gd for full instructions.
 @export var apply_poison: int = 0
 @export var apply_burn: int = 0
 @export var apply_weakness: int = 0
@@ -67,6 +80,18 @@ var v2_card: Card = null  # Local reference (not serialized over network)
 @export var apply_decay: int = 0          # Debuff: Cannot heal this turn
 @export var apply_hinder: int = 0         # Debuff: -X strength until next attack turn
 @export var apply_scared: int = 0         # Debuff: Cannot play attacks next turn
+@export var apply_venom: int = 0          # Debuff: At 3 stacks, deal 20 damage and reset
+@export var apply_bleed: int = 0          # DOT: Deal X damage per turn, decay by 1
+@export var apply_feeble: int = 0         # Debuff: Permanent -1 damage per stack (reverse strength)
+@export var apply_burden: int = 0         # Debuff: Draw X fewer cards at turn start
+@export var apply_dissolve: int = 0       # Debuff: Take X damage per card played
+
+# Mute's Doll debuffs (Boss 4)
+@export var apply_doll_dissolve: int = 0  # Debuff: Take 1 damage per stack per card played
+@export var apply_doll_suffering: int = 0 # Debuff: Take 5 damage per stack at end of turn
+@export var apply_doll_burden: int = 0    # Debuff: Draw 1 less card per stack
+@export var apply_random_doll: int = 0    # Apply random Doll debuff (Instantiation)
+@export var exhaust_target_deck: int = 0  # Exhaust X cards from target's deck (Hex: Acquisition)
 
 # Special mechanics
 @export var piercing: bool = false  # Ignores armor
@@ -119,7 +144,9 @@ var v2_card: Card = null  # Local reference (not serialized over network)
 @export var apply_ring_of_fire: int = 0  # Apply Ring of Fire buff (reflects damage)
 
 # Spell discard mechanics (Kevin)
-@export var discard_spell_requirement: int = 0  # Must discard X spells to play this card
+@export var discard_spell_requirement: int = 0  # Must discard X spells to play this card (fixed count)
+@export var min_spell_discard: int = 0  # Minimum spells to discard (0 = optional)
+@export var max_spell_discard: int = 0  # Maximum spells to discard (-1 = unlimited, 0 = use discard_spell_requirement)
 @export var discard_all_spells: bool = false  # Discard all spell cards in hand
 @export var damage_per_spell_discarded: int = 0  # Bonus damage per spell discarded
 @export var random_spell_discard: bool = false  # If true, randomly discard spells instead of showing modal
@@ -152,12 +179,52 @@ var v2_card: Card = null  # Local reference (not serialized over network)
 # All players draw cards (Guy with Beard)
 @export var all_players_draw: int = 0  # All players draw X cards
 
+# Summoning system (Spider-Queen, etc.)
+@export var summon_minion_tag: String = ""  # Tag to filter summonable minions (e.g., "spiderling")
+@export var summon_count: int = 0           # Number of minions to summon
+
+# Target by name system (for TARGET_BY_NAME target type)
+@export var target_player_name: String = ""  # Character name to target (e.g., "Fabio")
+
+# Enemy ally targeting effects
+@export var all_allies_shield: int = 0       # Grant X shield to all allies (enemy-side Giant Shield)
+@export var remove_self_debuffs: bool = false # Remove all debuffs from caster (Fighter's Spirit)
+@export var remove_target_buffs: bool = false # Remove all buffs from target (Corrupted Incense)
+
+# Self-applied debuffs (cost/downside of powerful cards)
+@export var caster_bleed: int = 0            # Apply bleed to caster
+@export var caster_feeble: int = 0           # Apply feeble to caster
+
+# Exhaust mechanic - card removed from game after use
+@export var exhausts: bool = false           # Card is removed from deck after playing (doesn't go to discard)
+
 # Runtime-only unique ID for queued card instances (invisible to player, not saved to disk)
 # Used to distinguish between identical cards in the queue (e.g., two Fire Strike cards)
 var queue_instance_id: int = 0
 
-func get_full_description(_caster = null) -> String:
-	return description
+## Get description with dynamic damage values based on caster's buffs/debuffs
+## Used for card display to show actual damage that will be dealt
+func get_full_description(caster = null) -> String:
+	if caster == null or card_type != CardType.ATTACK or damage <= 0:
+		return description
+
+	var calculated_damage = CardEffectEngine.calculate_damage(self, caster, null)
+	var result = description
+
+	# Replace base damage with calculated damage in description
+	# Handle "Deal X damage" pattern
+	result = result.replace("Deal %d damage" % damage, "Deal %d damage" % calculated_damage)
+
+	# Handle multi-hit: "X damage each" or "X damage X times"
+	if multi_hit > 1:
+		result = result.replace("%d damage each" % damage, "%d damage each" % calculated_damage)
+		result = result.replace("%d damage %d times" % [damage, multi_hit], "%d damage %d times" % [calculated_damage, multi_hit])
+		# Handle "(X total)" pattern for multi-hit cards
+		var base_total = damage * multi_hit
+		var calculated_total = calculated_damage * multi_hit
+		result = result.replace("(%d total)" % base_total, "(%d total)" % calculated_total)
+
+	return result
 
 func can_afford(current_stamina: int, current_aura: int = 0) -> bool:
 	# Check stamina
@@ -203,6 +270,16 @@ func serialize() -> Dictionary:
 		"apply_decay": apply_decay,
 		"apply_hinder": apply_hinder,
 		"apply_scared": apply_scared,
+		"apply_venom": apply_venom,
+		"apply_bleed": apply_bleed,
+		"apply_feeble": apply_feeble,
+		"apply_burden": apply_burden,
+		"apply_dissolve": apply_dissolve,
+		"apply_doll_dissolve": apply_doll_dissolve,
+		"apply_doll_suffering": apply_doll_suffering,
+		"apply_doll_burden": apply_doll_burden,
+		"apply_random_doll": apply_random_doll,
+		"exhaust_target_deck": exhaust_target_deck,
 		"piercing": piercing,
 		"lifesteal": lifesteal,
 		"multi_hit": multi_hit,
@@ -234,6 +311,8 @@ func serialize() -> Dictionary:
 		"remove_all_wet": remove_all_wet,
 		"apply_ring_of_fire": apply_ring_of_fire,
 		"discard_spell_requirement": discard_spell_requirement,
+		"min_spell_discard": min_spell_discard,
+		"max_spell_discard": max_spell_discard,
 		"discard_all_spells": discard_all_spells,
 		"damage_per_spell_discarded": damage_per_spell_discarded,
 		"random_spell_discard": random_spell_discard,
@@ -248,7 +327,16 @@ func serialize() -> Dictionary:
 		"grants_played_twice": grants_played_twice,
 		"grants_invincible": grants_invincible,
 		"damage_is_d6": damage_is_d6,
-		"all_players_draw": all_players_draw
+		"all_players_draw": all_players_draw,
+		"summon_minion_tag": summon_minion_tag,
+		"summon_count": summon_count,
+		"target_player_name": target_player_name,
+		"all_allies_shield": all_allies_shield,
+		"remove_self_debuffs": remove_self_debuffs,
+		"remove_target_buffs": remove_target_buffs,
+		"caster_bleed": caster_bleed,
+		"caster_feeble": caster_feeble,
+		"exhausts": exhausts
 	}
 
 static func deserialize(data: Dictionary) -> Card:
@@ -278,6 +366,16 @@ static func deserialize(data: Dictionary) -> Card:
 	card.apply_decay = data.get("apply_decay", 0)
 	card.apply_hinder = data.get("apply_hinder", 0)
 	card.apply_scared = data.get("apply_scared", 0)
+	card.apply_venom = data.get("apply_venom", 0)
+	card.apply_bleed = data.get("apply_bleed", 0)
+	card.apply_feeble = data.get("apply_feeble", 0)
+	card.apply_burden = data.get("apply_burden", 0)
+	card.apply_dissolve = data.get("apply_dissolve", 0)
+	card.apply_doll_dissolve = data.get("apply_doll_dissolve", 0)
+	card.apply_doll_suffering = data.get("apply_doll_suffering", 0)
+	card.apply_doll_burden = data.get("apply_doll_burden", 0)
+	card.apply_random_doll = data.get("apply_random_doll", 0)
+	card.exhaust_target_deck = data.get("exhaust_target_deck", 0)
 	card.piercing = data.piercing
 	card.lifesteal = data.lifesteal
 	card.multi_hit = data.multi_hit
@@ -309,6 +407,8 @@ static func deserialize(data: Dictionary) -> Card:
 	card.remove_all_wet = data.get("remove_all_wet", false)
 	card.apply_ring_of_fire = data.get("apply_ring_of_fire", 0)
 	card.discard_spell_requirement = data.get("discard_spell_requirement", 0)
+	card.min_spell_discard = data.get("min_spell_discard", 0)
+	card.max_spell_discard = data.get("max_spell_discard", 0)
 	card.discard_all_spells = data.get("discard_all_spells", false)
 	card.damage_per_spell_discarded = data.get("damage_per_spell_discarded", 0)
 	card.random_spell_discard = data.get("random_spell_discard", false)
@@ -324,4 +424,13 @@ static func deserialize(data: Dictionary) -> Card:
 	card.grants_invincible = data.get("grants_invincible", false)
 	card.damage_is_d6 = data.get("damage_is_d6", false)
 	card.all_players_draw = data.get("all_players_draw", 0)
+	card.summon_minion_tag = data.get("summon_minion_tag", "")
+	card.summon_count = data.get("summon_count", 0)
+	card.target_player_name = data.get("target_player_name", "")
+	card.all_allies_shield = data.get("all_allies_shield", 0)
+	card.remove_self_debuffs = data.get("remove_self_debuffs", false)
+	card.remove_target_buffs = data.get("remove_target_buffs", false)
+	card.caster_bleed = data.get("caster_bleed", 0)
+	card.caster_feeble = data.get("caster_feeble", 0)
+	card.exhausts = data.get("exhausts", false)
 	return card

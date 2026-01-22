@@ -31,6 +31,50 @@ func calculate_all_intents() -> Dictionary:
 	return intents
 
 
+## Recalculate damage values for existing intents without changing card selection
+## Used when buffs/debuffs change mid-turn
+func recalculate_intent_damage(existing_intents: Dictionary) -> Dictionary:
+	for enemy_idx in existing_intents:
+		if enemy_idx >= enemies.size():
+			continue
+		var enemy = enemies[enemy_idx]
+		if not enemy.is_alive():
+			continue
+
+		var intent: EnemyIntent = existing_intents[enemy_idx]
+
+		# Reset damage totals
+		intent.damage_amount = 0
+		intent.damage_per_target.clear()
+
+		# Recalculate damage for each card using current enemy stats
+		for card_info in intent.cards_to_play:
+			var card: Card = card_info.card
+			var target_index: int = card_info.target_index
+
+			if card.damage > 0 or card.damage_is_d6:
+				var total_damage = CardEffectEngine.calculate_damage(card, enemy, null)
+				total_damage *= card.multi_hit
+				intent.damage_amount += total_damage
+
+				# Update per-target damage
+				if target_index == -2:
+					pass  # Self-target - no damage to players
+				elif target_index == -1:
+					# AOE - add damage to all alive players
+					for i in range(players.size()):
+						if players[i].is_alive():
+							if not intent.damage_per_target.has(i):
+								intent.damage_per_target[i] = 0
+							intent.damage_per_target[i] += total_damage
+				elif target_index >= 0:
+					if not intent.damage_per_target.has(target_index):
+						intent.damage_per_target[target_index] = 0
+					intent.damage_per_target[target_index] += total_damage
+
+	return existing_intents
+
+
 ## Calculate intents using locked hands/targets (for Hunter's Instinct follow-up)
 func calculate_intents_from_locked(locked_enemy_hands: Dictionary, locked_card_targets: Dictionary) -> Dictionary:
 	var intents: Dictionary = {}
@@ -226,14 +270,17 @@ func calculate_intent_with_hand(enemy: Character, enemy_idx: int, hand: Array[Ca
 
 
 ## Determine target index for enemy card (pre-selection at round start)
-## Returns: -2 = self, -1 = AOE, 0+ = player index
+## Returns: -2 = self, -1 = AOE (players), -3 = AOE allies (enemies), -100-X = ally index X
 func determine_card_target(enemy: Character, card: Card) -> int:
 	match card.target_type:
 		Card.TargetType.SELF:
 			return -2  # Special marker for self-target
 
 		Card.TargetType.ALL_ENEMIES:
-			return -1  # Special marker for AOE
+			return -1  # Special marker for AOE (targets players)
+
+		Card.TargetType.ALL_ALLIES:
+			return -3  # Special marker for AOE allies (targets other enemies)
 
 		Card.TargetType.CCW_PLAYER:
 			var alive = players.filter(func(p): return p.is_alive())
@@ -260,6 +307,50 @@ func determine_card_target(enemy: Character, card: Card) -> int:
 			if alive.size() > 0:
 				var target = alive[rng.randi() % alive.size()]
 				return players.find(target)
+			return 0
+
+		Card.TargetType.LOWEST_HP_ALLY:
+			# Find lowest HP ally (other enemy) excluding self
+			var allies = enemies.filter(func(e): return e.is_alive() and e != enemy)
+			if allies.size() > 0:
+				allies.sort_custom(func(a, b): return a.current_health < b.current_health)
+				return -100 - enemies.find(allies[0])  # Negative offset for allies
+			return -2  # Self if no allies
+
+		Card.TargetType.RANDOM_ALLY:
+			# Random ally (other enemy) excluding self
+			var allies = enemies.filter(func(e): return e.is_alive() and e != enemy)
+			if allies.size() > 0:
+				var target = allies[rng.randi() % allies.size()]
+				return -100 - enemies.find(target)  # Negative offset for allies
+			return -2  # Self if no allies
+
+		Card.TargetType.MOST_WET:
+			# Player with most Wet stacks
+			var alive = players.filter(func(p): return p.is_alive())
+			if alive.size() > 0:
+				alive.sort_custom(func(a, b): return a.wet > b.wet)
+				return players.find(alive[0])
+			return 0
+
+		Card.TargetType.MOST_DEBUFFS:
+			# Player with most total debuff stacks
+			var alive = players.filter(func(p): return p.is_alive())
+			if alive.size() > 0:
+				alive.sort_custom(func(a, b): return a.get_total_debuff_stacks() > b.get_total_debuff_stacks())
+				return players.find(alive[0])
+			return 0
+
+		Card.TargetType.TARGET_BY_NAME:
+			# Target player by character name (for "dark hero" minions)
+			var name_to_find = card.target_player_name
+			for i in range(players.size()):
+				if players[i].is_alive() and players[i].character_name == name_to_find:
+					return i
+			# Fallback to random if character not in game
+			var alive = players.filter(func(p): return p.is_alive())
+			if alive.size() > 0:
+				return players.find(alive[rng.randi() % alive.size()])
 			return 0
 
 		_:
@@ -414,19 +505,30 @@ func _aggregate_card_effects(intent: EnemyIntent, card: Card, enemy: Character, 
 		for i in range(players.size()):
 			if players[i].is_alive() and i not in intent.targets:
 				intent.targets.append(i)
+	elif target_index == -3:
+		pass  # ALL_ALLIES (other enemies) - don't add to player targets
+	elif target_index <= -100:
+		pass  # Ally target (other enemy) - don't add to player targets
 	elif target_index >= 0:
 		if target_index not in intent.targets:
 			intent.targets.append(target_index)
 
 	# Calculate damage using unified formula
-	if card.damage > 0:
+	if card.damage > 0 or card.damage_is_d6:
 		var total_damage = CardEffectEngine.calculate_damage(card, enemy, null)
 		total_damage *= card.multi_hit
-		intent.damage_amount += total_damage
+
+		# Only add to intent.damage_amount for player targets
+		if target_index >= 0 or target_index == -1:
+			intent.damage_amount += total_damage
 
 		# Track per-target damage for accurate UI display
 		if target_index == -2:
 			pass  # Self-target - no damage to players
+		elif target_index == -3:
+			pass  # ALL_ALLIES (other enemies) - no damage to players
+		elif target_index <= -100:
+			pass  # Ally target (other enemy) - no damage to players
 		elif target_index == -1:
 			# AOE - add damage to all alive players
 			for i in range(players.size()):
@@ -458,9 +560,15 @@ func _aggregate_card_effects(intent: EnemyIntent, card: Card, enemy: Character, 
 		intent.debuffs["hinder"] = intent.debuffs.get("hinder", 0) + card.apply_hinder
 	if card.apply_scared > 0:
 		intent.debuffs["scared"] = intent.debuffs.get("scared", 0) + card.apply_scared
+	if card.apply_venom > 0:
+		intent.debuffs["venom"] = intent.debuffs.get("venom", 0) + card.apply_venom
 
 	# Buffs (self-applied by enemy)
 	if card.apply_strength > 0:
 		intent.buffs["strength"] = intent.buffs.get("strength", 0) + card.apply_strength
 	if card.apply_armor > 0:
 		intent.buffs["armor"] = intent.buffs.get("armor", 0) + card.apply_armor
+
+	# Summoning
+	if card.summon_count > 0:
+		intent.summon_count += card.summon_count

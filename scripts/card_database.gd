@@ -18,6 +18,9 @@ extends Node
 ##
 ## See scripts/data/cards/*.gd for all card definitions.
 
+# Preload data classes
+const EnemyCardsData = preload("res://scripts/data/cards/enemy_cards.gd")
+
 var all_cards = {}
 
 ## If true, CSV loading is enabled (for backwards compatibility/override)
@@ -51,7 +54,11 @@ const TARGET_TYPE_MAP: Dictionary = {
 	"ANY": Card.TargetType.ANY,
 	"CCW_PLAYER": Card.TargetType.CCW_PLAYER,
 	"HIGHEST_HP": Card.TargetType.HIGHEST_HP,
-	"LOWEST_HP": Card.TargetType.LOWEST_HP
+	"LOWEST_HP": Card.TargetType.LOWEST_HP,
+	"LOWEST_HP_ALLY": Card.TargetType.LOWEST_HP_ALLY,
+	"RANDOM_ALLY": Card.TargetType.RANDOM_ALLY,
+	"MOST_WET": Card.TargetType.MOST_WET,
+	"TARGET_BY_NAME": Card.TargetType.TARGET_BY_NAME
 }
 
 const ELEMENT_TYPE_MAP: Dictionary = {
@@ -85,11 +92,8 @@ func _load_all_card_definitions():
 	# Load generic reward cards
 	total_loaded += _load_cards_from_data(RewardCardsData.CARDS, "Rewards")
 
-	# Load minion cards
-	total_loaded += _load_cards_from_data(MinionCardsData.CARDS, "Minions")
-
-	# Load boss cards
-	total_loaded += _load_cards_from_data(BossesData.BOSS_CARDS, "Bosses")
+	# Load enemy cards (bosses + minions)
+	total_loaded += _load_cards_from_data(EnemyCardsData.CARDS, "Enemies")
 
 	if verbose_loading:
 		print("[CardDatabase] Loaded " + str(total_loaded) + " cards from GDScript data files")
@@ -154,6 +158,9 @@ func _create_card_from_dict(data: Dictionary) -> Card:
 	card.apply_hinder = data.get("apply_hinder", 0)
 	card.apply_scared = data.get("apply_scared", 0)
 	card.apply_decay = data.get("apply_decay", 0)
+	card.apply_venom = data.get("apply_venom", 0)
+	card.apply_bleed = data.get("apply_bleed", 0)
+	card.apply_feeble = data.get("apply_feeble", 0)
 
 	# Status effects - buffs
 	card.apply_strength = data.get("apply_strength", 0)
@@ -187,6 +194,10 @@ func _create_card_from_dict(data: Dictionary) -> Card:
 	card.damage_threshold_modifier = data.get("damage_threshold_modifier", 0)
 	card.stamina_gain = data.get("stamina_gain", 0)
 	card.scry_amount = data.get("scry_amount", 0)
+
+	# Mute boss card properties
+	card.apply_random_doll = data.get("apply_random_doll", 0)
+	card.exhaust_target_deck = data.get("exhaust_target_deck", 0)
 
 	# Card generation
 	var gen_cards = data.get("generate_cards", [])
@@ -228,6 +239,8 @@ func _create_card_from_dict(data: Dictionary) -> Card:
 
 	# Spell discard mechanics (Kevin)
 	card.discard_spell_requirement = data.get("discard_spell_requirement", 0)
+	card.min_spell_discard = data.get("min_spell_discard", 0)
+	card.max_spell_discard = data.get("max_spell_discard", 0)
 	card.discard_all_spells = data.get("discard_all_spells", false)
 	card.damage_per_spell_discarded = data.get("damage_per_spell_discarded", 0)
 	card.random_spell_discard = data.get("random_spell_discard", false)
@@ -257,6 +270,25 @@ func _create_card_from_dict(data: Dictionary) -> Card:
 
 	# All players draw cards (Guy with Beard)
 	card.all_players_draw = data.get("all_players_draw", 0)
+
+	# Summoning system (Spider-Queen, etc.)
+	card.summon_minion_tag = data.get("summon_minion_tag", "")
+	card.summon_count = data.get("summon_count", 0)
+
+	# Target by name system (for TARGET_BY_NAME target type)
+	card.target_player_name = data.get("target_player_name", "")
+
+	# Enemy ally targeting effects
+	card.all_allies_shield = data.get("all_allies_shield", 0)
+	card.remove_self_debuffs = data.get("remove_self_debuffs", false)
+	card.remove_target_buffs = data.get("remove_target_buffs", false)
+
+	# Self-applied debuffs
+	card.caster_bleed = data.get("caster_bleed", 0)
+	card.caster_feeble = data.get("caster_feeble", 0)
+
+	# Exhaust mechanic
+	card.exhausts = data.get("exhausts", false)
 
 	return card
 
@@ -322,8 +354,7 @@ func _generate_card_documentation() -> void:
 		"Enrique (Cleric)": EnriqueCardsData.CARDS.keys(),
 		"Generic Rewards": RewardCardsData.CARDS.keys(),
 		"Shared/Token Cards": SharedCardsData.CARDS.keys(),
-		"Minion Cards": MinionCardsData.CARDS.keys(),
-		"Boss Cards": BossesData.BOSS_CARDS.keys()
+		"Enemy Cards": EnemyCardsData.CARDS.keys()
 	}
 
 	for section_name in sections:

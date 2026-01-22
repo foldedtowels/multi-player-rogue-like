@@ -44,6 +44,8 @@ func _display_choices():
 				_create_card_visual(choice, i)
 			RewardChoice.ChoiceType.HEAL, RewardChoice.ChoiceType.BUFF:
 				_create_button_visual(choice, i)
+			RewardChoice.ChoiceType.RELIC:
+				_create_relic_visual(choice, i)
 
 ## Create a card visual for card-type rewards
 func _create_card_visual(choice: RewardChoice, index: int):
@@ -62,6 +64,39 @@ func _create_button_visual(choice: RewardChoice, index: int):
 	button.text = "%s\n%s" % [choice.display_name, choice.description]
 	button.custom_minimum_size = Vector2(150, 100)
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+	choices_container.add_child(button)
+
+	button.pressed.connect(func(): choice_selected.emit(choice))
+
+## Create a relic visual with distinctive gold styling
+func _create_relic_visual(choice: RewardChoice, index: int):
+	var button = Button.new()
+	button.text = "%s\n%s" % [choice.display_name, choice.description]
+	button.custom_minimum_size = Vector2(180, 120)
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+	# Add gold-themed styling for relics
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.15, 0.12, 0.05)  # Dark gold/brown background
+	style.border_color = Color(0.9, 0.7, 0.2)  # Gold border
+	style.border_width_left = 3
+	style.border_width_right = 3
+	style.border_width_top = 3
+	style.border_width_bottom = 3
+	style.corner_radius_top_left = 8
+	style.corner_radius_top_right = 8
+	style.corner_radius_bottom_left = 8
+	style.corner_radius_bottom_right = 8
+	button.add_theme_stylebox_override("normal", style)
+
+	# Hover style
+	var hover_style = style.duplicate()
+	hover_style.bg_color = Color(0.25, 0.2, 0.08)  # Lighter on hover
+	button.add_theme_stylebox_override("hover", hover_style)
+
+	# Text color
+	button.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5))  # Gold text
 
 	choices_container.add_child(button)
 

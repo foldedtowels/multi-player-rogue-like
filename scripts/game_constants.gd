@@ -86,6 +86,12 @@ const REWARD_RARE_CARD_CHOICES: int = 3
 ## Number of common card choices offered to each player
 const REWARD_COMMON_CARD_CHOICES: int = 3
 
+## Percentage of max HP restored by minion fight heal reward (30%)
+const MINION_REWARD_HEAL_PERCENTAGE: float = 0.30
+
+## Number of relic choices offered to each player after boss fights
+const REWARD_RELIC_CHOICES: int = 3
+
 # =============================================================================
 # COMBAT TIMING
 # =============================================================================

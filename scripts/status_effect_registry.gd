@@ -4,6 +4,35 @@ extends Node
 ## Defines metadata for each effect: display name, decay behavior, modifiers, etc.
 ## Used by Character, GameManager, and UI to handle effects consistently.
 ##
+## ============================================
+## HOW TO ADD A NEW STATUS EFFECT
+## ============================================
+## Adding a new effect requires changes in 3-4 files IN SYNC. Missing any step
+## causes SILENT FAILURES - the effect won't apply but no error is shown.
+##
+## STEP 1: Add effect to EFFECTS dictionary below
+##   - Define display_name, symbol, type (BUFF/DEBUFF/DOT), decay behavior
+##   - Set self_applicable: true if cards apply this to the caster (like exhausted)
+##
+## STEP 2: Add @export property to Card class (scripts/card.gd)
+##   - Add: @export var apply_<effect_name>: int = 0
+##   - MUST match registry name exactly! "poison" -> "apply_poison"
+##   - Also add to serialize() and deserialize() methods
+##
+## STEP 3: Add property accessor to Character class (scripts/character.gd)
+##   - Add getter/setter that reads from status_effects dictionary
+##   - See existing examples like "var poison: int" around line 31
+##   - This provides backward compatibility with direct property access
+##
+## STEP 4 (if needed): Add special handling in CardEffectEngine
+##   - Only needed for effects with side effects (like invigorated -> damage_plus)
+##   - See _apply_buffs() around line 444 for example
+##
+## VERIFICATION: After adding, grep for "apply_<effect_name>" across codebase
+##   - Should appear in: this file, card.gd, character.gd, and card_effect_engine.gd
+##
+## ============================================
+##
 ## REFACTORING STATUS (Phase 2) - COMPLETED
 ## [x] Added get_debuff_effect_names() -> Array[String]
 ## [x] Added get_buff_effect_names() -> Array[String]
@@ -22,6 +51,16 @@ const EFFECTS: Dictionary = {
 		"display_name": "Poison",
 		"short_name": "Psn",
 		"symbol": "☠️",
+		"type": EffectType.DOT,
+		"decay": DecayType.PER_TURN,
+		"decay_amount": 1,
+		"deals_damage": true,
+		"piercing": true
+	},
+	"bleed": {
+		"display_name": "Bleed",
+		"short_name": "Bld",
+		"symbol": "🩸",
 		"type": EffectType.DOT,
 		"decay": DecayType.PER_TURN,
 		"decay_amount": 1,
@@ -56,6 +95,14 @@ const EFFECTS: Dictionary = {
 		"type": EffectType.BUFF,
 		"decay": DecayType.NONE,
 		"damage_reduction": 1  # -1 damage taken per stack
+	},
+	"feeble": {
+		"display_name": "Feeble",
+		"short_name": "Fbl",
+		"symbol": "🦴",
+		"type": EffectType.DEBUFF,
+		"decay": DecayType.NONE,  # Permanent - must be removed by cards
+		"attack_modifier": -1  # -1 damage per stack (reverse strength)
 	},
 
 	# ============================================
@@ -161,6 +208,16 @@ const EFFECTS: Dictionary = {
 		"permanent": true,  # Flag to prevent removal by cards
 		"self_applicable": true  # Cards apply this to caster, not enemies
 	},
+	"venom": {
+		"display_name": "Venom",
+		"short_name": "Ven",
+		"symbol": "🐍",
+		"type": EffectType.DEBUFF,
+		"decay": DecayType.NONE,  # Doesn't decay - triggers at 3 stacks
+		"stackable": true,
+		"threshold_trigger": 3,  # At 3 stacks, deals damage and resets
+		"threshold_damage": 20  # Damage dealt when threshold is reached
+	},
 
 	# ============================================
 	# KEVIN'S ALCHEMY EFFECTS
@@ -200,6 +257,57 @@ const EFFECTS: Dictionary = {
 		"type": EffectType.BUFF,
 		"decay": DecayType.END_OF_ENEMY_TURN,  # Lasts until enemy turn ends (like Ring of Fire)
 		"prevents_damage": true
+	},
+
+	# ============================================
+	# NEW CHARACTER DEBUFFS
+	# ============================================
+	"burden": {
+		"display_name": "Burden",
+		"short_name": "Brd",
+		"symbol": "⚓",
+		"type": EffectType.DEBUFF,
+		"decay": DecayType.NONE,  # Must be removed by cards
+		"end_of_turn_damage": 5  # 5 damage per stack at end of turn
+	},
+	"dissolve": {
+		"display_name": "Dissolve",
+		"short_name": "Dslv",
+		"symbol": "🧪",
+		"type": EffectType.DEBUFF,
+		"decay": DecayType.NONE,  # Must be removed by cards
+		"damage_on_card_play": true  # Take X damage per card played
+	},
+
+	# ============================================
+	# MUTE'S DOLL DEBUFFS (Boss 4)
+	# ============================================
+	"doll_dissolve": {
+		"display_name": "Doll: Dissolve",
+		"description": "Take 1 damage per card played",
+		"short_name": "D:Dslv",
+		"symbol": "🎭",
+		"type": EffectType.DEBUFF,
+		"decay": DecayType.NONE,  # Permanent until removed
+		"damage_on_card_play": 1  # Take 1 damage per stack per card played
+	},
+	"doll_suffering": {
+		"display_name": "Doll: Suffering",
+		"description": "Take 5 damage at end of turn",
+		"short_name": "D:Suf",
+		"symbol": "🎭",
+		"type": EffectType.DEBUFF,
+		"decay": DecayType.NONE,  # Permanent until removed
+		"end_of_turn_damage": 5  # Take 5 damage per stack at end of turn
+	},
+	"doll_burden": {
+		"display_name": "Doll: Burden",
+		"description": "Draw 1 less card",
+		"short_name": "D:Brd",
+		"symbol": "🎭",
+		"type": EffectType.DEBUFF,
+		"decay": DecayType.NONE,  # Permanent until removed
+		"reduces_draw": 1  # Draw 1 less card per stack
 	}
 }
 
@@ -219,6 +327,10 @@ static func get_short_name(effect_name: String) -> String:
 
 static func get_symbol(effect_name: String) -> String:
 	return EFFECTS.get(effect_name, {}).get("symbol", "?")
+
+static func get_description(effect_name: String) -> String:
+	var data = EFFECTS.get(effect_name, {})
+	return data.get("description", data.get("display_name", effect_name.capitalize()))
 
 static func get_all_effect_names() -> Array:
 	return EFFECTS.keys()

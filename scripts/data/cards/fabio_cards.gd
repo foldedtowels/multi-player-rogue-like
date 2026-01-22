@@ -36,7 +36,7 @@ const CARDS = {
 
 	"rest": {
 		"card_name": "Rest",
-		"description": "Gain Rested (draw 1 extra card next turn). TARGET: Self.",
+		"description": "Gain Rested (+1 stamina next turn). TARGET: Self.",
 		"card_type": "BUFF",
 		"target_type": "SELF",
 		"stamina_cost": 1,
@@ -166,7 +166,7 @@ const CARDS = {
 
 	"medkit": {
 		"card_name": "Medkit",
-		"description": "Heal 10 HP. Gain 1 Decay (-1 max HP permanently). TARGET: Self.",
+		"description": "Heal 10 HP. Gain 1 Decay (-5 healing per stack, permanent). TARGET: Self.",
 		"card_type": "HEAL",
 		"target_type": "SELF",
 		"stamina_cost": 2,
