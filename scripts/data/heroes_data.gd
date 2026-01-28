@@ -38,7 +38,6 @@ const HEROES = {
 		"starting_stamina": 2,
 		"passive_ability_id": "fabio_warrior_choice",
 		"deck": [
-			# === BASE DECK (keep these) ===
 			"slash",
 			"big_smack",
 			"duel_purpose",
@@ -47,22 +46,8 @@ const HEROES = {
 			"dig_a_hole",
 			"protector",
 			"protective_footwear",
-			"hunters_instinct",
-			"medkit",
-			# === REWARD CARDS (move back to reward_deck after testing) ===
-			"dual_wield",
-			"circular_strike",
-			"cursed_dagger",
-			"jumping_strike",
-			"execution",
-			"frenzy",
-			"weak_point",
-			"energy",
-			"fighters_spirit",
-			"sacrifice",
-			"leader"
+			"hunters_instinct"
 		],
-		# Reward deck: cards offered after defeating bosses
 		"reward_deck": [
 			"dual_wield",
 			"circular_strike",
@@ -71,7 +56,7 @@ const HEROES = {
 			"execution",
 			"frenzy",
 			"weak_point",
-			"energy",
+			"medkit",
 			"fighters_spirit",
 			"sacrifice",
 			"leader"
@@ -118,17 +103,14 @@ const HEROES = {
 		]
 	},
 
-	# Enrique: The Cleric - Uses Aura as a second resource
 	"enrique": {
 		"name": "Enrique, The Cleric",
 		"description": "Divine healer who channels Aura to protect and restore allies.",
 		"max_health": 30,
 		"starting_stamina": 2,
-		"starting_aura": 5,  # Second resource: Aura (gains 1 per turn from passive)
+		"starting_aura": 5,
 		"passive_ability_id": "enrique_aura_generation",
-		# Base deck: 10 cards
 		"deck": [
-			# === BASE DECK (keep these) ===
 			"expulsion",
 			"focused_purge",
 			"holy_plight",
@@ -138,19 +120,8 @@ const HEROES = {
 			"healing_aura",
 			"magical_purge",
 			"story_of_jacob",
-			"protection",
-			# === REWARD CARDS (move back to reward_deck after testing) ===
-			"divine_force",
-			"purging_water",
-			"divine_barrier",
-			"refuge",
-			"gift",
-			"divine_gift",
-			"guy_with_beard",
-			"energy",
-			"meditate"
+			"protection"
 		],
-		# Reward deck: cards offered after defeating bosses
 		"reward_deck": [
 			"divine_force",
 			"purging_water",
@@ -158,9 +129,7 @@ const HEROES = {
 			"refuge",
 			"gift",
 			"divine_gift",
-			"guy_with_beard",
-			"energy",  # From shared pool
-			"meditate"  # From shared pool
+			"guy_with_beard"
 		]
 	}
 }

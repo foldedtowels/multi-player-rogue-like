@@ -33,6 +33,7 @@ var debuff_selection_active: bool = false
 var debuff_selection_target: Character = null
 var debuff_selection_remaining: int = 0
 var debuff_selection_card_name: String = ""
+var selected_debuff_names: Array[String] = []  # Track which debuffs were selected for server sync
 
 # Status effect name to property mapping (for looking up values on Character)
 const STATUS_EFFECT_PROPERTIES: Dictionary = {
@@ -479,7 +480,16 @@ func _calculate_incoming_damage(player_index: int) -> Dictionary:
 		"debuffs": []
 	}
 
+	# Get fresh predicted dead enemies
+	var predicted_dead: Array[int] = []
+	if game_manager and game_manager.has_method("get_predicted_dead_enemies"):
+		predicted_dead = game_manager.get_predicted_dead_enemies()
+
 	for enemy_idx in cached_enemy_intents:
+		# Skip enemies that are predicted to die from queued player attacks
+		if enemy_idx in predicted_dead:
+			continue
+
 		var intent: EnemyIntent = cached_enemy_intents[enemy_idx]
 
 		# Check if this player is targeted
@@ -515,7 +525,16 @@ func _get_incoming_icons(player_index: int) -> String:
 	var confirmed_debuffs = false  # Will definitely receive debuffs (AOE)
 	var random_debuffs = false     # Might receive debuffs (random target)
 
+	# Get fresh predicted dead enemies (recalculates based on current queued cards)
+	var predicted_dead: Array[int] = []
+	if game_manager and game_manager.has_method("get_predicted_dead_enemies"):
+		predicted_dead = game_manager.get_predicted_dead_enemies()
+
 	for enemy_idx in cached_enemy_intents:
+		# Skip enemies that are predicted to die from queued player attacks
+		if enemy_idx in predicted_dead:
+			continue
+
 		var intent: EnemyIntent = cached_enemy_intents[enemy_idx]
 
 		# Use per-target damage for accurate display
@@ -653,6 +672,7 @@ func start_debuff_selection(target: Character, count: int, card_name: String) ->
 	debuff_selection_target = target
 	debuff_selection_remaining = min(count, removable)  # Can't remove more than exist
 	debuff_selection_card_name = card_name
+	selected_debuff_names.clear()
 
 	print("[DEBUFF SELECT] Started selection for ", target.character_name, " - can remove ", debuff_selection_remaining, " debuffs")
 
@@ -679,8 +699,9 @@ func end_debuff_selection():
 func _count_removable_debuffs(character: Character) -> int:
 	var count = 0
 	for debuff_name in StatusEffectRegistry.get_debuff_effect_names():
-		var current_value = character.get(debuff_name)
-		if current_value != null and current_value > 0:
+		# Use status_effects dictionary directly (Object.get() doesn't work with computed properties)
+		var current_value = character.status_effects.get(debuff_name, 0)
+		if current_value > 0:
 			var effect_data = StatusEffectRegistry.get_effect_data(debuff_name)
 			if not effect_data.get("permanent", false):
 				count += 1
@@ -700,9 +721,10 @@ func _on_debuff_label_clicked(debuff_name: String, character: Character):
 	if effect_data.get("permanent", false):
 		return
 
-	# Remove the debuff
+	# Remove the debuff locally (visual feedback - server will confirm via broadcast)
 	character.set(debuff_name, 0)
 	debuff_selection_remaining -= 1
+	selected_debuff_names.append(debuff_name)
 	print("[DEBUFF SELECT] Removed ", debuff_name, " from ", character.character_name, " - ", debuff_selection_remaining, " remaining")
 
 	debuff_clicked.emit(debuff_name, character)

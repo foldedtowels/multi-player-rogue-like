@@ -137,6 +137,21 @@ func _ready():
 	if game_manager.current_state == game_manager.GameState.COMBAT:
 		game_manager.start_round()
 
+# TODO: TEMPORARY dev shortcut - remove before release
+func _unhandled_key_input(event: InputEvent):
+	if event is InputEventKey and event.pressed and event.keycode == KEY_N:
+		if multiplayer.is_server():
+			_dev_set_enemies_to_one_hp.rpc()
+
+# TODO: TEMPORARY - remove before release
+@rpc("authority", "call_local", "reliable")
+func _dev_set_enemies_to_one_hp():
+	print("[DEV] Setting all enemies to 1 HP")
+	for enemy in game_manager.enemies:
+		if enemy.is_alive():
+			enemy.current_health = 1
+	update_all_displays()
+
 	# Update displays AFTER round is properly initialized
 	update_all_displays()
 
@@ -504,19 +519,16 @@ func _on_revive_teammate_selected(teammate: Character):
 		print("[COMBAT] Revive Relic can no longer be used")
 		return
 
-	# Use the relic (decrement uses)
-	caster.use_relic("revive_relic")
+	var teammate_index = game_manager.players.find(teammate)
 
-	# Revive the teammate
-	teammate.revive()
-
-	# Sync state in multiplayer
 	if multiplayer.is_server():
+		# Host: apply directly and broadcast
+		caster.use_relic("revive_relic")
+		teammate.revive()
 		game_manager.broadcast_character_state(caster)
 		game_manager.broadcast_character_state(teammate)
 	else:
-		# Send to server to sync
-		var teammate_index = game_manager.players.find(teammate)
+		# Client: send to server only, don't pre-apply locally
 		game_manager.rpc_id(1, "server_revive_teammate", my_index, teammate_index)
 
 	# Force UI refresh
@@ -1136,10 +1148,10 @@ func _on_card_dropped_on_character_face(card_data_dict: Dictionary):
 func _play_card_with_discard_check(caster: Character, card: Card, target: Character) -> bool:
 	# Check if card uses variable spell discard (min/max range)
 	if card.max_spell_discard != 0:  # -1 = unlimited, >0 = fixed max
-		# Find spell cards (cards with element) in hand
+		# Find spell cards (cards with element) in hand, excluding card being played
 		var spell_cards: Array[Card] = []
 		for hand_card in caster.hand:
-			if hand_card.element != Card.ElementType.NONE:
+			if hand_card.element != Card.ElementType.NONE and hand_card.card_name != card.card_name:
 				spell_cards.append(hand_card)
 
 		# Check minimum requirement
@@ -1147,45 +1159,14 @@ func _play_card_with_discard_check(caster: Character, card: Card, target: Charac
 			print("[COMBAT] Not enough spells to discard for: ", card.card_name)
 			return false
 
-		# Show modal for variable spell selection (Repurpose)
-		var has_enough = spell_discard_modal.show_discard_range(caster, card.min_spell_discard, card.max_spell_discard, card.card_name)
-		if not has_enough:
-			print("[COMBAT] Not enough spells to discard for: ", card.card_name)
-			return false
-
-		# Wait for player to select spells
-		var discarded = await spell_discard_modal.discard_completed
-
-		# Discard the selected spells and track count for damage bonus
-		var discard_count = discarded.size()
-		for spell in discarded:
-			caster.discard_card(spell)
-			print("[COMBAT] Discarded spell: ", spell.card_name)
-
-		# Store discard count on card for damage calculation
-		card.set_meta("spells_discarded_this_play", discard_count)
-
-	# Check if card requires fixed spell discard selection (legacy system)
-	elif card.discard_spell_requirement > 0:
-		# Find spell cards (cards with element) in hand
-		var spell_cards: Array[Card] = []
-		for hand_card in caster.hand:
-			if hand_card.element != Card.ElementType.NONE:
-				spell_cards.append(hand_card)
-
-		if spell_cards.size() < card.discard_spell_requirement:
-			print("[COMBAT] Not enough spells to discard for: ", card.card_name)
-			return false
-
-		if card.random_spell_discard:
-			# Randomly discard spells
-			spell_cards.shuffle()
-			for i in range(card.discard_spell_requirement):
-				caster.discard_card(spell_cards[i])
-				print("[COMBAT] Randomly discarded spell: ", spell_cards[i].card_name)
+		# Skip modal if no spells available and discard is optional (min=0)
+		if spell_cards.is_empty() and card.min_spell_discard == 0:
+			print("[COMBAT] No spells in hand, skipping optional discard for: ", card.card_name)
+			card.set_meta("spells_discarded_this_play", 0)
 		else:
-			# Show modal for player selection (Reformulate, Accretion)
-			var has_enough = spell_discard_modal.show_discard(caster, card.discard_spell_requirement, card.card_name)
+			# Show modal for variable spell selection (Repurpose)
+			# Pass card name to exclude the card being played from discard options
+			var has_enough = spell_discard_modal.show_discard_range(caster, card.min_spell_discard, card.max_spell_discard, card.card_name, card.card_name)
 			if not has_enough:
 				print("[COMBAT] Not enough spells to discard for: ", card.card_name)
 				return false
@@ -1193,10 +1174,61 @@ func _play_card_with_discard_check(caster: Character, card: Card, target: Charac
 			# Wait for player to select spells
 			var discarded = await spell_discard_modal.discard_completed
 
-			# Discard the selected spells
+			# Discard the selected spells and track count for damage bonus
+			var discard_count = discarded.size()
+			var discarded_names: Array[String] = []
 			for spell in discarded:
 				caster.discard_card(spell)
+				discarded_names.append(spell.card_name)
+				print("[COMBAT] Discarded spell: ", spell.card_name)
+
+			# Store discard count on card for damage calculation
+			card.set_meta("spells_discarded_this_play", discard_count)
+
+			# Sync discards to server so it can update its hand copy
+			if not multiplayer.is_server():
+				game_manager.rpc_id(1, "server_pre_discard_spells", game_manager.players.find(caster), discarded_names, discard_count)
+
+	# Check if card requires fixed spell discard selection (legacy system)
+	elif card.discard_spell_requirement > 0:
+		# Find spell cards (cards with element) in hand
+		var fixed_spell_cards: Array[Card] = []
+		for hand_card in caster.hand:
+			if hand_card.element != Card.ElementType.NONE:
+				fixed_spell_cards.append(hand_card)
+
+		if fixed_spell_cards.size() < card.discard_spell_requirement:
+			print("[COMBAT] Not enough spells to discard for: ", card.card_name)
+			return false
+
+		var fixed_discarded_names: Array[String] = []
+		if card.random_spell_discard:
+			# Randomly discard spells
+			fixed_spell_cards.shuffle()
+			for i in range(card.discard_spell_requirement):
+				caster.discard_card(fixed_spell_cards[i])
+				fixed_discarded_names.append(fixed_spell_cards[i].card_name)
+				print("[COMBAT] Randomly discarded spell: ", fixed_spell_cards[i].card_name)
+		else:
+			# Show modal for player selection (Reformulate, Accretion)
+			# Pass card name to exclude the card being played from discard options
+			var fixed_has_enough = spell_discard_modal.show_discard(caster, card.discard_spell_requirement, card.card_name, card.card_name)
+			if not fixed_has_enough:
+				print("[COMBAT] Not enough spells to discard for: ", card.card_name)
+				return false
+
+			# Wait for player to select spells
+			var fixed_discarded = await spell_discard_modal.discard_completed
+
+			# Discard the selected spells
+			for spell in fixed_discarded:
+				caster.discard_card(spell)
+				fixed_discarded_names.append(spell.card_name)
 				print("[COMBAT] Pre-discarded spell: ", spell.card_name)
+
+		# Sync discards to server
+		if not multiplayer.is_server():
+			game_manager.rpc_id(1, "server_pre_discard_spells", game_manager.players.find(caster), fixed_discarded_names, card.discard_spell_requirement)
 
 	# Check if card removes debuffs and target is an ally (player)
 	# Skip for v2 choice cards - debuff selection happens AFTER v1/v2 choice in _on_card_v2_choice_needed()
@@ -1207,9 +1239,15 @@ func _play_card_with_discard_check(caster: Character, card: Card, target: Charac
 			# Wait for debuff selection to complete
 			await player_status_panel.debuff_selection_completed
 			print("[COMBAT] Debuff selection completed for: ", card.card_name)
-			# BUGFIX: Clear remove_target_debuffs so card_effect_engine doesn't also remove debuffs
-			# (The UI already removed them when the player clicked on them)
+			# Clear remove_target_debuffs so card_effect_engine doesn't also remove debuffs
 			card.remove_target_debuffs = 0
+			# Sync selected debuffs to server (on host, local removal IS the server)
+			if not multiplayer.is_server():
+				var target_index = game_manager.players.find(target)
+				var debuff_names: Array = []
+				for name in player_status_panel.selected_debuff_names:
+					debuff_names.append(name)
+				game_manager.rpc_id(1, "server_remove_selected_debuffs", target_index, debuff_names)
 
 	# Now play the card
 	game_manager.play_card(caster, card, target)
@@ -1294,7 +1332,8 @@ func _on_view_deck_pressed():
 		return
 
 	var my_character = game_manager.players[my_index]
-	deck_view_modal.show_deck(my_character)
+	# Randomize draw pile order during combat to prevent card counting
+	deck_view_modal.show_deck(my_character, true)
 
 func _on_passive_pressed():
 	var my_index = game_manager.local_player_index
@@ -1363,9 +1402,10 @@ func _on_passive_pressed():
 		print("[COMBAT] Passive ability trigger type not yet supported: ", ability.trigger_type)
 
 ## Wait for brew result (either brew_completed or brew_cancelled)
-## Uses direct signal await instead of polling loop (more reliable in Godot 4)
+## Returns [alc_card, discarded_spells] on success, null on cancel
 func _wait_for_brew_result():
-	# Await the brew_completed signal directly - returns array of signal args
+	# Use a simple signal await - the satchel removal check in _process_alc_brew
+	# will prevent duplicates if this somehow gets called multiple times
 	var args = await satchel_brew_modal.brew_completed
 
 	# args is an array: [alc_card, discarded_spells]
@@ -1376,33 +1416,42 @@ func _wait_for_brew_result():
 
 ## Process an Alc brew (discard spells, add Alc to hand, mark passive used)
 func _process_alc_brew(character: Character, player_index: int, alc_card: Card, discarded_spells: Array[Card]):
-	print("[COMBAT] ", character.character_name, " brewing ", alc_card.card_name)
+	print("[BREW DEBUG] ========== BREW START ==========")
+	print("[BREW DEBUG] Character: ", character.character_name, " brewing: ", alc_card.card_name)
 
-	# Discard the spell cards used as ingredients
+	var spell_names: Array[String] = []
 	for spell in discarded_spells:
-		character.discard_card(spell)
+		spell_names.append(spell.card_name)
 
-	# Remove the Alc from satchel and add to hand
-	character.remove_from_satchel(alc_card)
-	character.hand.append(alc_card)
+	if multiplayer.is_server():
+		# Host: apply locally (this IS the server) and broadcast
+		var removed = character.remove_from_satchel(alc_card)
+		if not removed:
+			print("[BREW DEBUG] ABORTED - Card not in satchel (duplicate brew call)")
+			return
 
-	# Mark passive as used
-	character.passive_ability_used_this_turn = true
-
-	# Apply ON_BREW relic effects (Wooden Cauldron draws 1 card)
-	RelicRegistry.apply_on_brew(character)
-
-	# Sync state to server if multiplayer
-	if not multiplayer.is_server():
-		# Send brew info to server
-		var spell_names: Array[String] = []
 		for spell in discarded_spells:
-			spell_names.append(spell.card_name)
-		game_manager.rpc_id(1, "server_process_alc_brew", player_index, alc_card.card_name, spell_names)
-	else:
-		# Host: broadcast state update
+			character.discard_card(spell)
+
+		character.hand.append(alc_card)
+		character.passive_ability_used_this_turn = true
+		RelicRegistry.apply_on_brew(character)
+
 		game_manager.broadcast_character_state(character)
 		game_manager.send_hand_to_owner(character)
+	else:
+		# Client: send to server only, don't pre-apply locally
+		# Server will process and broadcast state back
+		game_manager.rpc_id(1, "server_process_alc_brew", player_index, alc_card.card_name, spell_names)
+
+	print("[BREW DEBUG] ========== BREW END ==========")
+
+## Helper to get card names for debug printing
+func _get_card_names(cards: Array) -> String:
+	var names: Array[String] = []
+	for card in cards:
+		names.append(card.card_name)
+	return str(names)
 
 func _on_passive_awaiting_target(choice_index: int, valid_targets: Array[Character]):
 	# Update turn label to instruct player
@@ -1456,8 +1505,14 @@ func _on_card_v2_choice_needed(caster: Character, v1_card: Card, v2_card: Card, 
 		if has_debuffs:
 			await player_status_panel.debuff_selection_completed
 			print("[COMBAT] Debuff selection completed for choice card: ", chosen_card.card_name)
-			# BUGFIX: Clear so card_effect_engine doesn't also remove debuffs
 			chosen_card.remove_target_debuffs = 0
+			# Sync selected debuffs to server
+			if not multiplayer.is_server():
+				var target_index = game_manager.players.find(target)
+				var debuff_names: Array = []
+				for name in player_status_panel.selected_debuff_names:
+					debuff_names.append(name)
+				game_manager.rpc_id(1, "server_remove_selected_debuffs", target_index, debuff_names)
 
 	# Play the chosen version, but remove the ORIGINAL card from hand
 	# The original v1_card is what's actually in the hand
@@ -1470,10 +1525,10 @@ func _on_card_retain_choice_needed(player_index: int, expires_after_round: int):
 
 	var player = game_manager.players[player_index]
 
-	# Get cards that can be retained (exclude Dig a Hole itself since it was just played)
+	# Get cards that can be retained (exclude the retain card itself)
 	var retainable_cards: Array[Card] = []
 	for card in player.hand:
-		if card.card_name != "Dig a Hole":
+		if not card.grants_card_retain:
 			retainable_cards.append(card)
 
 	if retainable_cards.is_empty():

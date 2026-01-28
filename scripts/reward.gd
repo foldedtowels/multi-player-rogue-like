@@ -16,6 +16,7 @@ var reward_manager: RewardManager
 var reward_phase: int = 0  ## 0 = card/heal phase, 1 = relic phase (boss only)
 var encounter_type: int = 0  ## Tracks whether this was a minion or boss encounter
 var chosen_player_index: int = 0
+var _current_choices: Dictionary = {}  ## player_index -> Array[RewardChoice], cached for skip button
 
 # UI Elements
 @onready var wizard_container: Control = $WizardContainer
@@ -23,6 +24,9 @@ var chosen_player_index: int = 0
 var main_panel: RewardDisplayPanel  # For heal/card/revive choices
 var relic_panel: RewardDisplayPanel  # For relic choices (boss only)
 var skip_button: Button
+var player_info_container: HBoxContainer  # Shows all players' HP
+var view_deck_button: Button
+var deck_view_modal: Control
 
 func _ready():
 	game_manager = get_node("/root/GameManager")
@@ -40,6 +44,11 @@ func _ready():
 			break
 	if not any_alive:
 		print("[REWARD] All players dead - transitioning to defeat screen")
+		if multiplayer.is_server():
+			var nm = get_node_or_null("/root/NetworkManager")
+			if nm:
+				nm.change_scene_synchronized.rpc("res://scenes/defeat.tscn")
+				return
 		get_tree().change_scene_to_file("res://scenes/defeat.tscn")
 		return
 
@@ -71,6 +80,25 @@ func _ready():
 	skip_button.visible = false
 	skip_button.pressed.connect(_on_skip_pressed)
 	add_child(skip_button)
+
+	# Create player info display at the top
+	_create_player_info_display()
+
+	# Create view deck button
+	view_deck_button = Button.new()
+	view_deck_button.text = "View Deck"
+	view_deck_button.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	view_deck_button.position = Vector2(20, -60)
+	view_deck_button.custom_minimum_size = Vector2(120, 40)
+	view_deck_button.pressed.connect(_on_view_deck_pressed)
+	add_child(view_deck_button)
+
+	# Create deck view modal
+	var DeckViewModalScript = load("res://scripts/ui/deck_view_modal.gd")
+	deck_view_modal = Control.new()
+	deck_view_modal.set_script(DeckViewModalScript)
+	deck_view_modal.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(deck_view_modal)
 
 	# Create wizard visual
 	wizard = Node2D.new()
@@ -111,6 +139,7 @@ func start_minion_reward():
 	await get_tree().create_timer(GameConstants.WIZARD_COMMON_CHOICE_DELAY).timeout
 
 	var choices_per_player = _generate_minion_choices()
+	_current_choices = choices_per_player
 	reward_manager.show_private_rewards(choices_per_player, main_panel)
 	skip_button.visible = true
 
@@ -167,6 +196,7 @@ func start_boss_reward():
 	await get_tree().create_timer(GameConstants.WIZARD_COMMON_CHOICE_DELAY).timeout
 
 	var choices_per_player = _generate_boss_card_choices()
+	_current_choices = choices_per_player
 	reward_manager.show_private_rewards(choices_per_player, main_panel)
 	skip_button.visible = true
 
@@ -211,6 +241,7 @@ func _generate_boss_card_choices() -> Dictionary:
 
 func start_relic_reward():
 	reward_phase = 1
+	reward_manager.reset()  # Clear ready state from card/heal phase
 	wizard.say("Now, claim your artifact! Choose wisely...")
 
 	await get_tree().create_timer(2.0).timeout
@@ -223,6 +254,7 @@ func start_relic_reward():
 		_show_continue_button()
 		return
 
+	_current_choices = choices_per_player
 	reward_manager.show_private_rewards(choices_per_player, relic_panel)
 	skip_button.visible = true
 
@@ -261,6 +293,82 @@ func _generate_relic_choices() -> Dictionary:
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
+func _create_player_info_display():
+	# Create a container at the top of the screen for player HP
+	player_info_container = HBoxContainer.new()
+	player_info_container.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	player_info_container.offset_top = 10
+	player_info_container.offset_bottom = 60
+	player_info_container.offset_left = 20
+	player_info_container.offset_right = -20
+	player_info_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	player_info_container.add_theme_constant_override("separation", 40)
+	add_child(player_info_container)
+
+	_update_player_info()
+
+func _update_player_info():
+	# Clear existing labels
+	for child in player_info_container.get_children():
+		child.queue_free()
+
+	# Create a panel for each player
+	for player in game_manager.players:
+		var panel = PanelContainer.new()
+
+		var style = StyleBoxFlat.new()
+		if player.is_alive():
+			style.bg_color = Color(0.15, 0.2, 0.25, 0.9)
+			style.border_color = Color(0.4, 0.6, 0.8)
+		else:
+			style.bg_color = Color(0.2, 0.1, 0.1, 0.9)
+			style.border_color = Color(0.6, 0.2, 0.2)
+		style.border_width_left = 2
+		style.border_width_right = 2
+		style.border_width_top = 2
+		style.border_width_bottom = 2
+		style.corner_radius_top_left = 6
+		style.corner_radius_top_right = 6
+		style.corner_radius_bottom_left = 6
+		style.corner_radius_bottom_right = 6
+		style.content_margin_left = 15
+		style.content_margin_right = 15
+		style.content_margin_top = 8
+		style.content_margin_bottom = 8
+		panel.add_theme_stylebox_override("panel", style)
+
+		var vbox = VBoxContainer.new()
+		vbox.add_theme_constant_override("separation", 2)
+		panel.add_child(vbox)
+
+		var name_label = Label.new()
+		name_label.text = player.character_name
+		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_label.add_theme_font_size_override("font_size", 16)
+		if not player.is_alive():
+			name_label.add_theme_color_override("font_color", Color(0.6, 0.3, 0.3))
+		vbox.add_child(name_label)
+
+		var hp_label = Label.new()
+		if player.is_alive():
+			hp_label.text = "HP: %d / %d" % [player.current_health, player.max_health]
+			# Color based on health percentage
+			var hp_percent = float(player.current_health) / float(player.max_health)
+			if hp_percent > 0.6:
+				hp_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4))
+			elif hp_percent > 0.3:
+				hp_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.3))
+			else:
+				hp_label.add_theme_color_override("font_color", Color(0.9, 0.4, 0.4))
+		else:
+			hp_label.text = "DEAD"
+			hp_label.add_theme_color_override("font_color", Color(0.6, 0.2, 0.2))
+		hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hp_label.add_theme_font_size_override("font_size", 14)
+		vbox.add_child(hp_label)
+
+		player_info_container.add_child(panel)
 
 func _get_card_pool_for_player(player: Character) -> Array[Card]:
 	var card_pool: Array[Card] = []
@@ -365,6 +473,17 @@ func _apply_and_check_private_choice(player_index: int, choice: RewardChoice):
 	# Apply the choice
 	reward_manager.apply_private_choice(player_index, choice)
 
+	# Sync all player states to clients (handles heals, revives, buffs, etc.)
+	for player in game_manager.players:
+		game_manager.broadcast_character_state(player)
+
+	# Sync deck to clients if a card was added
+	if choice.choice_type == RewardChoice.ChoiceType.CARD:
+		game_manager.broadcast_player_deck(player_index)
+
+	# Update player info display (HP may have changed from heal/revive)
+	rpc("client_update_player_info")
+
 	# Broadcast updated ready status to all clients
 	var ready_indices = Array(reward_manager._players_ready.keys())
 	rpc("client_update_ready_status", ready_indices)
@@ -378,6 +497,10 @@ func client_update_ready_status(ready_indices: Array):
 	reward_manager.update_ready_status(ready_indices)
 
 @rpc("any_peer", "call_local", "reliable")
+func client_update_player_info():
+	_update_player_info()
+
+@rpc("any_peer", "call_local", "reliable")
 func client_all_players_ready():
 	reward_manager.notify_all_players_ready()
 
@@ -387,13 +510,19 @@ func _on_continue_pressed():
 
 	var boss_idx = game_manager.boss_index
 
-	# Initialize next combat encounter
-	if boss_idx < 5:
-		game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.MINION, boss_idx)
-	else:
+	if boss_idx >= 5:
 		print("[REWARD] All bosses defeated! Victory!")
-		# TODO: Transition to victory screen
+		var network_manager = get_node_or_null("/root/NetworkManager")
+		if network_manager:
+			network_manager.change_scene_synchronized.rpc("res://scenes/victory.tscn")
 		return
+
+	# After minion reward -> boss fight (same boss_index)
+	# After boss reward -> minion fight (boss_index already incremented by boss_defeated())
+	if encounter_type == GameManager.EncounterType.MINION:
+		game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.BOSS_PHASE_1, boss_idx)
+	else:
+		game_manager.initialize_combat_encounter.rpc(GameManager.EncounterType.MINION, boss_idx)
 
 	await get_tree().create_timer(0.5).timeout
 
@@ -401,22 +530,19 @@ func _on_continue_pressed():
 	if network_manager:
 		network_manager.change_scene_synchronized.rpc("res://scenes/combat.tscn")
 
+func _on_view_deck_pressed():
+	var my_index = game_manager.local_player_index
+	if my_index == -1 or my_index >= game_manager.players.size():
+		return
+
+	var my_character = game_manager.players[my_index]
+	# Don't randomize during rewards - player can see their full deck in order
+	deck_view_modal.show_deck(my_character, false)
+
 func _on_skip_pressed():
 	skip_button.visible = false
 	var my_index = game_manager.local_player_index
 
-	if reward_phase == 0:
-		# Card/heal/revive phase
-		var choices: Dictionary
-		if encounter_type == GameManager.EncounterType.MINION:
-			choices = _generate_minion_choices()
-		else:
-			choices = _generate_boss_card_choices()
-
-		if choices.has(my_index) and choices[my_index].size() > 0:
-			_on_private_choice_made(my_index, choices[my_index][0])
-	else:
-		# Relic phase
-		var choices = _generate_relic_choices()
-		if choices.has(my_index) and choices[my_index].size() > 0:
-			_on_private_choice_made(my_index, choices[my_index][0])
+	# Use cached choices to avoid re-randomization
+	if _current_choices.has(my_index) and _current_choices[my_index].size() > 0:
+		_on_private_choice_made(my_index, _current_choices[my_index][0])

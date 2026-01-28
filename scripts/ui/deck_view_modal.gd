@@ -114,7 +114,9 @@ func _create_scroll_tab(tab_name: String) -> ScrollContainer:
 	return scroll
 
 ## Show the modal with the player's cards
-func show_deck(player: Character):
+## If randomize_draw_pile is true, the draw pile will be shown in random order (for combat)
+## If false, cards are shown in actual order (for reward screen / out of combat)
+func show_deck(player: Character, randomize_draw_pile: bool = false):
 	title_label.text = "%s's Deck" % player.character_name
 
 	# Clear existing cards
@@ -123,8 +125,11 @@ func show_deck(player: Character):
 	_clear_grid(discard_grid)
 	_clear_grid(exhaust_grid)
 
-	# Populate grids
-	_populate_grid(deck_grid, player.deck, "Draw Pile (%d)", player)
+	# Populate grids - randomize draw pile if requested (prevents card counting during combat)
+	var deck_cards = player.deck.duplicate()
+	if randomize_draw_pile:
+		deck_cards.shuffle()
+	_populate_grid(deck_grid, deck_cards, "Draw Pile (%d)", player)
 	_populate_grid(hand_grid, player.hand, "Hand (%d)", player)
 	_populate_grid(discard_grid, player.discard_pile, "Discard (%d)", player)
 	_populate_grid(exhaust_grid, player.exhaust_pile, "Exhausted (%d)", player)

@@ -3,6 +3,8 @@ class_name EnemyCardsData
 ##
 ## Cards used by all enemy types (bosses and minions).
 ## Organized by enemy type.
+##
+## TODO: When adding or modifying cards here, update docs/CARDS_REFERENCE.md
 
 const CARDS = {
 	# =============================================================================

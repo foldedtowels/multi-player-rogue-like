@@ -745,14 +745,16 @@ func add_to_satchel(card: Card):
 	print("[SATCHEL] ", character_name, " added ", card.card_name, " to satchel")
 
 ## Remove a card from the satchel (when brewing)
-func remove_from_satchel(card: Card):
+## Returns true if card was found and removed, false otherwise
+func remove_from_satchel(card: Card) -> bool:
 	# Find by name since it might be a different instance
 	for i in range(satchel.size()):
 		if satchel[i].card_name == card.card_name:
 			satchel.remove_at(i)
 			print("[SATCHEL] ", character_name, " removed ", card.card_name, " from satchel")
-			return
+			return true
 	push_warning("[SATCHEL] Card not found in satchel: " + card.card_name)
+	return false
 
 ## Return an Alc card to the satchel (after being played or at end of turn)
 func return_to_satchel(card: Card):
@@ -874,7 +876,10 @@ func get_state_dict() -> Dictionary:
 		"retained_cards": retained_cards.duplicate(),
 		"satchel": _serialize_satchel(),
 		"was_summoned": was_summoned,
-		"minion_id": minion_id
+		"minion_id": minion_id,
+		"deck_size": deck.size(),
+		"discard_pile_size": discard_pile.size(),
+		"exhaust_pile_size": exhaust_pile.size()
 	}
 
 func _serialize_satchel() -> Array[Dictionary]:
@@ -926,6 +931,14 @@ func apply_state_dict(state: Dictionary):
 	was_summoned = state.get("was_summoned", false)
 	minion_id = state.get("minion_id", "")
 
+	# Sync pile sizes for client display (actual contents only matter on server)
+	if state.has("deck_size"):
+		deck.resize(state.deck_size)
+	if state.has("discard_pile_size"):
+		discard_pile.resize(state.discard_pile_size)
+	if state.has("exhaust_pile_size"):
+		exhaust_pile.resize(state.exhaust_pile_size)
+
 func _deserialize_satchel(satchel_data: Array):
 	satchel.clear()
 	for card_dict in satchel_data:
@@ -938,6 +951,11 @@ func get_hand_dict() -> Array[Dictionary]:
 	return hand_data
 
 func apply_hand_dict(hand_data: Array):
+	print("[HAND SYNC DEBUG] ", character_name, " apply_hand_dict called with ", hand_data.size(), " cards")
+	print("[HAND SYNC DEBUG] BEFORE clear - hand size: ", hand.size())
 	hand.clear()
 	for card_dict in hand_data:
-		hand.append(Card.deserialize(card_dict))
+		var card = Card.deserialize(card_dict)
+		hand.append(card)
+		print("[HAND SYNC DEBUG] Added card: ", card.card_name)
+	print("[HAND SYNC DEBUG] AFTER - hand size: ", hand.size())

@@ -5,6 +5,8 @@ extends Node
 ## Relics provide persistent passive bonuses that trigger at various points.
 ## Follows the StatusEffectRegistry pattern for consistency.
 ##
+## TODO: When adding or modifying relics here, update docs/RELICS_REFERENCE.md
+##
 ## ============================================
 ## RELIC TRIGGER TYPES
 ## ============================================

@@ -73,15 +73,22 @@ func _setup_ui():
 		spacer3.custom_minimum_size = Vector2(0, 30)
 		container.add_child(spacer3)
 
-	# Return to menu button
+	# Return to menu button (host-only to ensure synchronized transition)
 	var button = Button.new()
 	button.name = "ReturnButton"
-	button.text = "Return to Main Menu"
 	button.custom_minimum_size = Vector2(250, 50)
 	button.pressed.connect(_on_return_pressed)
+	if multiplayer.is_server():
+		button.text = "Return to Main Menu"
+	else:
+		button.text = "Waiting for host..."
+		button.disabled = true
 	container.add_child(button)
 
 func _on_return_pressed():
+	if not multiplayer.is_server():
+		return
+
 	# Reset game state
 	if game_manager:
 		game_manager.current_state = game_manager.GameState.CHARACTER_SELECTION
@@ -90,5 +97,8 @@ func _on_return_pressed():
 		game_manager.players.clear()
 		game_manager.enemies.clear()
 
-	# Return to main menu
-	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+	var network_manager = get_node_or_null("/root/NetworkManager")
+	if network_manager:
+		network_manager.change_scene_synchronized.rpc("res://scenes/main_menu.tscn")
+	else:
+		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")

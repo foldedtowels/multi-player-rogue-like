@@ -132,11 +132,16 @@ func apply_effects(caster: Character, card: Card, target: Character, aura_spent:
 		var is_enemy = _is_enemy(caster, t)
 
 		# Apply effect categories
-		_apply_damage(caster, card, t, is_enemy, spells_discarded_count, aura_spent)
+		# Track redirected targets for sync (protection mechanic)
+		var damage_redirect = _apply_damage(caster, card, t, is_enemy, spells_discarded_count, aura_spent)
+		if damage_redirect != null and not affected.has(damage_redirect):
+			affected.append(damage_redirect)
 		_apply_delayed_damage(caster, card, t, is_enemy)
 		_apply_healing(caster, card, t, is_ally)
 		_apply_shield(caster, card, t, is_ally, is_enemy)
-		_apply_debuffs(caster, card, t, is_enemy)
+		var debuff_redirect = _apply_debuffs(caster, card, t, is_enemy)
+		if debuff_redirect != null and not affected.has(debuff_redirect):
+			affected.append(debuff_redirect)
 		_apply_remove_target_buffs(caster, card, t, is_enemy)  # Corrupted Incense
 		_apply_buffs(caster, card, t, is_ally)
 		_apply_enrique_buffs(caster, card, t, is_ally)  # Enrique's played_twice and invincible
@@ -159,8 +164,14 @@ func apply_effects(caster: Character, card: Card, target: Character, aura_spent:
 	_apply_caster_discard(caster, card)
 	_apply_stamina_gain(caster, card)
 	_apply_aura_gain(caster, card)  # Enrique's aura gain
-	_apply_all_players_shield(caster, card)
-	_apply_all_allies_shield(caster, card)  # Enemy ally shield (Giant Shield)
+	var all_shield_affected = _apply_all_players_shield(caster, card)
+	for p in all_shield_affected:
+		if not affected.has(p):
+			affected.append(p)
+	var all_allies_shield_affected = _apply_all_allies_shield(caster, card)  # Enemy ally shield
+	for a in all_allies_shield_affected:
+		if not affected.has(a):
+			affected.append(a)
 	_apply_remove_self_debuffs(caster, card)  # Fighter's Spirit
 	_apply_caster_self_debuffs(caster, card)  # Self-applied debuffs (bleed, feeble)
 	var all_draw_affected = _apply_all_players_draw(caster, card)  # Enrique's Guy with Beard
@@ -300,16 +311,19 @@ func process_delayed_effects() -> Array[Character]:
 # EFFECT APPLICATION METHODS
 # =============================================================================
 
-func _apply_damage(caster: Character, card: Card, target: Character, is_enemy: bool, spells_discarded: int = 0, aura_spent: int = 0) -> void:
+## Returns the actual damage target if it was redirected (for sync), or null if no redirect
+func _apply_damage(caster: Character, card: Card, target: Character, is_enemy: bool, spells_discarded: int = 0, aura_spent: int = 0) -> Character:
 	# Allow cards with damage_per_spell_discarded, damage_per_aura_spent, or bonus_damage_per_wet even if base damage is 0
 	var has_conditional_damage = card.damage_per_spell_discarded > 0 or card.damage_per_aura_spent > 0 or card.bonus_damage_per_wet > 0
 	if (card.damage <= 0 and not has_conditional_damage and not card.damage_is_d6) or not is_enemy:
-		return
+		return null
 
 	# Protection redirect: enemy attacking protected player
 	var damage_target = target
+	var was_redirected = false
 	if enemies.has(caster) and players.has(target):
 		damage_target = get_redirected_target(target)
+		was_redirected = (damage_target != target)
 
 	# Calculate multi-hit count including Copying Machine relic bonus
 	var total_hits = card.multi_hit
@@ -388,6 +402,9 @@ func _apply_damage(caster: Character, card: Card, target: Character, is_enemy: b
 		if players.has(caster) and enemies.has(damage_target) and damage_dealt > 0:
 			RelicRegistry.apply_on_damage_dealt(caster, damage_dealt)
 
+	# Return redirected target for sync (if damage was redirected to protector)
+	return damage_target if was_redirected else null
+
 
 func _apply_delayed_damage(caster: Character, card: Card, target: Character, is_enemy: bool) -> void:
 	if not card.is_delayed_damage or card.delayed_damage_amount <= 0 or not is_enemy:
@@ -461,14 +478,17 @@ func _apply_shield(caster: Character, card: Card, target: Character, is_ally: bo
 		target.gain_shield(card.shield_amount)
 
 
-func _apply_debuffs(caster: Character, card: Card, target: Character, is_enemy: bool) -> void:
+## Returns the actual debuff target if it was redirected (for sync), or null if no redirect
+func _apply_debuffs(caster: Character, card: Card, target: Character, is_enemy: bool) -> Character:
 	if not is_enemy:
-		return
+		return null
 
 	# Protection redirect for debuffs
 	var debuff_target = target
+	var was_redirected = false
 	if enemies.has(caster) and players.has(target):
 		debuff_target = get_redirected_target(target)
+		was_redirected = (debuff_target != target)
 
 	# Track if we applied damage-affecting debuffs to an enemy
 	var applied_damage_debuff_to_enemy = false
@@ -487,15 +507,14 @@ func _apply_debuffs(caster: Character, card: Card, target: Character, is_enemy: 
 				var extra = RelicRegistry.apply_on_debuff_applied(caster, effect_name, amount)
 				amount += extra
 
-			# Direct property access for debuffs (they're stored as properties)
-			var current = debuff_target.get(effect_name)
-			if current != null:
-				debuff_target.set(effect_name, current + amount)
+			# Use status_effects dictionary directly (Object.get() doesn't work with computed properties)
+			var current = debuff_target.status_effects.get(effect_name, 0)
+			debuff_target.set(effect_name, current + amount)
 
-				# Check if player applied damage-affecting debuff to enemy
-				if players.has(caster) and enemies.has(debuff_target):
-					if effect_name in ["weakness", "hinder"]:
-						applied_damage_debuff_to_enemy = true
+			# Check if player applied damage-affecting debuff to enemy
+			if players.has(caster) and enemies.has(debuff_target):
+				if effect_name in ["weakness", "hinder"]:
+					applied_damage_debuff_to_enemy = true
 
 	# Random Doll debuff (Mute's Instantiation)
 	if card.apply_random_doll > 0:
@@ -513,6 +532,9 @@ func _apply_debuffs(caster: Character, card: Card, target: Character, is_enemy: 
 	if applied_damage_debuff_to_enemy:
 		enemy_damage_stats_changed.emit()
 
+	# Return redirected target for sync (if debuffs were redirected to protector)
+	return debuff_target if was_redirected else null
+
 
 func _apply_buffs(caster: Character, card: Card, target: Character, is_ally: bool) -> void:
 	if not is_ally:
@@ -522,14 +544,14 @@ func _apply_buffs(caster: Character, card: Card, target: Character, is_ally: boo
 	for effect_name in StatusEffectRegistry.get_buff_effect_names():
 		var amount = card.get("apply_" + effect_name)
 		if amount != null and amount > 0:
-			var current = target.get(effect_name)
+			# Use status_effects dictionary directly (Object.get() doesn't work with computed properties)
+			var current = target.status_effects.get(effect_name, 0)
 			print("[BUFF APPLY] ", target.character_name, " ", effect_name, ": ", current, " + ", amount)
-			if current != null:
-				target.set(effect_name, current + amount)
+			target.set(effect_name, current + amount)
 
-				# Special case: invigorated grants damage_plus
-				if effect_name == "invigorated":
-					target.damage_plus += amount * 2
+			# Special case: invigorated grants damage_plus
+			if effect_name == "invigorated":
+				target.damage_plus += amount * 2
 
 
 func _apply_self_debuffs(caster: Character, card: Card) -> void:
@@ -537,13 +559,13 @@ func _apply_self_debuffs(caster: Character, card: Card) -> void:
 	for effect_name in StatusEffectRegistry.get_self_debuff_effect_names():
 		var amount = card.get("apply_" + effect_name)
 		if amount != null and amount > 0:
-			var current = caster.get(effect_name)
-			if current != null:
-				caster.set(effect_name, current + amount)
-				if effect_name == "exhausted":
-					print("[EXHAUST] Applied ", amount, " to ", caster.character_name, " (total: ", caster.exhausted, ")")
-				elif effect_name == "decay":
-					print("[DECAY] ", caster.character_name, " gained ", amount, " decay (total: ", caster.decay, ")")
+			# Use status_effects dictionary directly (Object.get() doesn't work with computed properties)
+			var current = caster.status_effects.get(effect_name, 0)
+			caster.set(effect_name, current + amount)
+			if effect_name == "exhausted":
+				print("[EXHAUST] Applied ", amount, " to ", caster.character_name, " (total: ", caster.exhausted, ")")
+			elif effect_name == "decay":
+				print("[DECAY] ", caster.character_name, " gained ", amount, " decay (total: ", caster.decay, ")")
 
 
 func _apply_card_draw(card: Card, target: Character) -> void:
@@ -608,23 +630,28 @@ func _apply_stamina_gain(caster: Character, card: Card) -> void:
 		caster.current_stamina += card.stamina_gain
 
 
-func _apply_all_players_shield(caster: Character, card: Card) -> void:
+func _apply_all_players_shield(caster: Character, card: Card) -> Array[Character]:
+	var shield_affected: Array[Character] = []
 	if card.all_players_shield <= 0:
-		return
+		return shield_affected
 
 	# Only apply if caster is a player
 	if not players.has(caster):
-		return
+		return shield_affected
 
 	for player in players:
 		if player.is_alive():
 			player.gain_shield(card.all_players_shield)
+			shield_affected.append(player)
 			print("[SHIELD] All players shield: ", player.character_name, " gains ", card.all_players_shield, " shield")
 
+	return shield_affected
 
-func _apply_all_allies_shield(caster: Character, card: Card) -> void:
+
+func _apply_all_allies_shield(caster: Character, card: Card) -> Array[Character]:
+	var allies_affected: Array[Character] = []
 	if card.all_allies_shield <= 0:
-		return
+		return allies_affected
 
 	# Get caster's allies (enemies if caster is enemy, players if caster is player)
 	var allies: Array[Character] = []
@@ -635,7 +662,10 @@ func _apply_all_allies_shield(caster: Character, card: Card) -> void:
 
 	for ally in allies:
 		ally.gain_shield(card.all_allies_shield)
+		allies_affected.append(ally)
 		print("[SHIELD] All allies shield: ", ally.character_name, " gains ", card.all_allies_shield, " shield")
+
+	return allies_affected
 
 
 func _apply_remove_self_debuffs(caster: Character, card: Card) -> void:
@@ -644,8 +674,9 @@ func _apply_remove_self_debuffs(caster: Character, card: Card) -> void:
 
 	var debuffs_removed = 0
 	for effect_name in StatusEffectRegistry.get_debuff_effect_names():
-		var current_value = caster.get(effect_name)
-		if current_value != null and current_value > 0:
+		# Use status_effects dictionary directly (Object.get() doesn't work with computed properties)
+		var current_value = caster.status_effects.get(effect_name, 0)
+		if current_value > 0:
 			# Check if this is a permanent debuff
 			var effect_data = StatusEffectRegistry.get_effect_data(effect_name)
 			if effect_data.get("permanent", false):
@@ -665,8 +696,9 @@ func _apply_remove_target_buffs(caster: Character, card: Card, target: Character
 
 	var buffs_removed = 0
 	for effect_name in StatusEffectRegistry.get_buff_effect_names():
-		var current_value = target.get(effect_name)
-		if current_value != null and current_value > 0:
+		# Use status_effects dictionary directly (Object.get() doesn't work with computed properties)
+		var current_value = target.status_effects.get(effect_name, 0)
+		if current_value > 0:
 			target.set(effect_name, 0)
 			buffs_removed += 1
 			print("[BUFF STRIP] Removed ", effect_name, " from ", target.character_name)
@@ -706,8 +738,9 @@ func _apply_remove_target_debuffs(card: Card, target: Character, is_ally: bool) 
 		if removed_count >= card.remove_target_debuffs:
 			break
 
-		var current_value = target.get(debuff)
-		if current_value != null and current_value > 0:
+		# Use status_effects dictionary directly (Object.get() doesn't work with computed properties)
+		var current_value = target.status_effects.get(debuff, 0)
+		if current_value > 0:
 			# Check if this is a permanent debuff (like decay)
 			var effect_data = StatusEffectRegistry.get_effect_data(debuff)
 			if effect_data.get("permanent", false):

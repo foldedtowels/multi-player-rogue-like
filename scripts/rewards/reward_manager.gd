@@ -17,6 +17,7 @@ enum RewardMode {
 
 var _game_manager: Node
 var _players_ready: Dictionary = {}  ## player_index -> bool
+var _eligible_players: Array = []  ## player indices that were given choices this phase
 
 func _ready():
 	_game_manager = get_node("/root/GameManager")
@@ -69,11 +70,14 @@ func notify_spectator_complete():
 ## @param choices_per_player: Dictionary {player_index: Array[RewardChoice]}
 ## @param panel: The RewardDisplayPanel to use for display
 func show_private_rewards(choices_per_player: Dictionary, panel):
+	# Track which players were given choices (server populates, used in ready check)
+	_eligible_players = choices_per_player.keys()
+
 	var my_index = _game_manager.local_player_index
 
-	# Only show THIS player's choices
+	# Only show THIS player's choices (dead/revived players may not have choices)
 	if not choices_per_player.has(my_index):
-		push_error("[RewardManager] No choices for player %d" % my_index)
+		print("[WIZARD] No choices for player %d (dead or not eligible this phase)" % my_index)
 		return
 
 	var my_choices = choices_per_player[my_index]
@@ -117,14 +121,11 @@ func update_ready_status(ready_indices: Array):
 	print("[WIZARD] Ready status updated: ", _players_ready.size(), " players ready")
 
 ## Check if all players are ready (called from reward.gd on server only)
+## Only checks players who were given choices this phase (not revived players)
 func check_all_players_ready() -> bool:
-	var alive_count = 0
-	for player in _game_manager.players:
-		if player.is_alive():
-			alive_count += 1
-
-	var all_ready = _players_ready.size() >= alive_count
-	print("[WIZARD] Checking ready status: ", _players_ready.size(), "/", alive_count, " - all ready: ", all_ready)
+	var expected_count = _eligible_players.size()
+	var all_ready = _players_ready.size() >= expected_count
+	print("[WIZARD] Checking ready status: ", _players_ready.size(), "/", expected_count, " eligible - all ready: ", all_ready)
 	return all_ready
 
 ## Notify that all players are ready (called from reward.gd after RPC)
@@ -135,3 +136,4 @@ func notify_all_players_ready():
 ## Reset ready state for next reward phase
 func reset():
 	_players_ready.clear()
+	_eligible_players.clear()

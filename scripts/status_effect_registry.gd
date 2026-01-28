@@ -4,6 +4,8 @@ extends Node
 ## Defines metadata for each effect: display name, decay behavior, modifiers, etc.
 ## Used by Character, GameManager, and UI to handle effects consistently.
 ##
+## TODO: When adding or modifying status effects here, update docs/STATUS_EFFECTS_REFERENCE.md
+##
 ## ============================================
 ## HOW TO ADD A NEW STATUS EFFECT
 ## ============================================

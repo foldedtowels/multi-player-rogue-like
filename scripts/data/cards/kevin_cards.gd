@@ -4,6 +4,8 @@ class_name KevinCardsData
 ## An elemental spellcaster who brews powerful Alc cards.
 ## Uses Fire, Water, and Earth spells to create combinations.
 ## Alc cards go to the Satchel and return after being played.
+##
+## TODO: When adding or modifying cards here, update docs/CARDS_REFERENCE.md
 
 const CARDS = {
 	# === BASE DECK CARDS ===

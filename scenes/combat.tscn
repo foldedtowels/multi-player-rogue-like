@@ -9,6 +9,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/spell_discard_modal.tscn" id="7"]
 [ext_resource type="Texture2D" path="res://assets/Teammate Icons/back of head left.png" id="8"]
 [ext_resource type="Texture2D" path="res://assets/Teammate Icons/back of head right.png" id="9"]
+[ext_resource type="Texture2D" path="res://assets/backgrounds/the-school-of-athens-0.jpg" id="10"]
 
 [node name="Combat" type="Control"]
 layout_mode = 3
@@ -19,16 +20,19 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1")
 
-[node name="ColorRect" type="ColorRect" parent="."]
+[node name="BackgroundImage" type="TextureRect" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.15, 0.1, 0.2, 1)
+mouse_filter = 2
+texture = ExtResource("10")
+expand_mode = 1
+stretch_mode = 6
 
-[node name="TopBar" type="Panel" parent="."]
+[node name="TopBar" type="Control" parent="."]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0

@@ -3,6 +3,8 @@ class_name EnriqueCardsData
 ##
 ## A support character who builds and spends Aura for powerful effects.
 ## Uses Aura as a secondary resource alongside Stamina.
+##
+## TODO: When adding or modifying cards here, update docs/CARDS_REFERENCE.md
 
 const CARDS = {
 	# === BASE DECK CARDS ===

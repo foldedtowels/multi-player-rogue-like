@@ -3,6 +3,8 @@ class_name FabioCardsData
 ##
 ## A balanced fighter with attack and defense options.
 ## Uses Rested, Invigorated, and Fatigued mechanics.
+##
+## TODO: When adding or modifying cards here, update docs/CARDS_REFERENCE.md
 
 const CARDS = {
 	# === BASE DECK CARDS (9) ===

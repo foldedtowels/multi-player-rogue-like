@@ -89,6 +89,10 @@ var players_done_acting: Dictionary = {}  # player_index -> bool (who clicked "E
 # Each entry: {caster_idx: int, target_idx: int, damage: int, condition: String, source_card: String}
 var delayed_effects: Array = []
 
+# Pending spell discards from clients (sent before card play RPC)
+# Maps player_index -> {spell_names: Array, count: int}
+var _pending_spell_discards: Dictionary = {}
+
 # Protection system (e.g., Protector)
 # Maps protected_player_idx -> protector_player_idx
 # When enemy targets a protected player, attack redirects to protector
@@ -691,6 +695,29 @@ func broadcast_character_state(character: Character):
 	if char_index >= 0:
 		rpc("sync_character_state", char_index, is_player, character.get_state_dict())
 
+func broadcast_player_deck(player_index: int):
+	if not multiplayer.is_server(): return
+	if player_index < 0 or player_index >= players.size(): return
+	var player = players[player_index]
+	var deck_data: Array = []
+	for card in player.deck:
+		deck_data.append(card.serialize())
+	var starting_data: Array = []
+	for card in player.starting_deck:
+		starting_data.append(card.serialize())
+	rpc("sync_player_deck", player_index, deck_data, starting_data)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sync_player_deck(player_index: int, deck_data: Array, starting_data: Array):
+	if player_index < 0 or player_index >= players.size(): return
+	var player = players[player_index]
+	player.deck.clear()
+	for card_dict in deck_data:
+		player.deck.append(Card.deserialize(card_dict))
+	player.starting_deck.clear()
+	for card_dict in starting_data:
+		player.starting_deck.append(Card.deserialize(card_dict))
+
 func send_hand_to_owner(character: Character):
 	if not multiplayer.is_server(): return
 
@@ -860,17 +887,41 @@ func check_combat_victory() -> bool:
 		if combat_phase == CombatPhase.MINION_COMBAT:
 			# Minions defeated! Set encounter type and transition to reward
 			last_completed_encounter = EncounterType.MINION
+			rpc("client_set_last_completed_encounter", EncounterType.MINION)
 			await transition_to_reward_phase()
 			return true  # Combat transitioning to boss phase
 		else:
 			# Boss defeated! Set encounter type based on phase
 			last_completed_encounter = EncounterType.BOSS_PHASE_1 if combat_phase == CombatPhase.BOSS_PHASE_1 else EncounterType.BOSS_PHASE_2
+			rpc("client_set_last_completed_encounter", last_completed_encounter)
 			boss_defeated()
 			return true  # Combat ended
 
 	# Continue to next round
 	end_boss_turn()
 	return false  # Combat continues
+
+@rpc("authority", "call_remote", "reliable")
+func client_set_last_completed_encounter(encounter: int):
+	last_completed_encounter = encounter as EncounterType
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_pre_discard_spells(player_index: int, spell_names: Array, discard_count: int):
+	if not multiplayer.is_server():
+		return
+	_pending_spell_discards[player_index] = {"spell_names": spell_names, "count": discard_count}
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_remove_selected_debuffs(target_index: int, debuff_names: Array):
+	if not multiplayer.is_server():
+		return
+	if target_index < 0 or target_index >= players.size():
+		return
+	var target = players[target_index]
+	for debuff_name in debuff_names:
+		target.set(debuff_name, 0)
+		print("[DEBUFF] Server removed ", debuff_name, " from ", target.character_name)
+	broadcast_character_state(target)
 
 func transition_to_reward_phase():
 	# Transition to reward scene (handles both minion and boss rewards)
@@ -916,17 +967,17 @@ func sync_boss_enemy():
 	if not multiplayer.is_server(): return
 
 	var boss_state = current_boss.get_state_dict()
-	rpc("client_receive_boss_enemy", boss_state)
+	rpc("client_receive_boss_enemy", boss_state, combat_phase)
 
 @rpc("any_peer", "call_local", "reliable")
-func client_receive_boss_enemy(boss_state: Dictionary):
+func client_receive_boss_enemy(boss_state: Dictionary, phase: int = CombatPhase.BOSS_PHASE_1):
 	# Clear enemies and add the boss
 	enemies.clear()
 	enemies.append(current_boss)
 
 	# Apply the state to the boss
 	current_boss.apply_state_dict(boss_state)
-	combat_phase = CombatPhase.BOSS_PHASE_1
+	combat_phase = phase as CombatPhase
 
 	# Emit state change so UI updates
 	game_state_changed.emit()
@@ -1126,6 +1177,10 @@ func start_round():
 func client_player_turn_started():
 	turn_phase = TurnPhase.PLAYER_TURN
 	game_state_changed.emit()
+
+@rpc("authority", "call_remote", "reliable")
+func client_sync_round_number(num: int):
+	round_number = num
 
 ## Process delayed effects from previous turn (e.g., Jumping Strike)
 func _process_delayed_effects():
@@ -1406,6 +1461,7 @@ func start_enemy_turn_phase():
 
 	# Start next round
 	round_number += 1
+	rpc("client_sync_round_number", round_number)
 	start_round()
 
 @rpc("any_peer", "call_local", "reliable")
@@ -1517,14 +1573,8 @@ func _get_redirected_target(target: Character) -> Character:
 	return card_effect_engine.get_redirected_target(target)
 
 func end_boss_turn():
-	# Apply boss end-of-turn effects (status decay, etc.)
-	# Note: In test mode or minion combat, current_boss may be null
-	# Enemies already have end_turn() called in _server_process_enemy_turn()
-	if current_boss != null:
-		current_boss.end_turn(round_number)
-
-	# NOTE: round_number increment removed - handled by start_enemy_turn_phase()
-	# NOTE: start_player_turn() removed - using new simultaneous turn system via start_round()
+	# NOTE: Do NOT call end_turn() here - enemies already have end_turn()
+	# called in _server_process_enemy_turn(). Calling it again would double-decay status effects.
 
 	# Check if all players are dead
 	var alive_count = 0
@@ -1550,7 +1600,7 @@ func play_card(caster: Character, card: Card, target: Character):
 				v2 = card_db.get_card(card.v2_card_id)
 			if v2 != null:
 				# Need to show modal on correct client (may be remote peer)
-				var caster_index = players.find(caster)
+				var v2_caster_index = players.find(caster)
 				var target_index = _get_character_index(target)
 				var target_is_player = players.has(target)
 				var peer_id = caster.network_owner_id
@@ -1559,7 +1609,7 @@ func play_card(caster: Character, card: Card, target: Character):
 					card_v2_choice_needed.emit(caster, card, v2, target)
 				else:
 					# Remote player - send RPC to show modal on their client
-					rpc_id(peer_id, "client_show_card_v2_choice_modal", caster_index, card.serialize(), v2.serialize(), target_index, target_is_player)
+					rpc_id(peer_id, "client_show_card_v2_choice_modal", v2_caster_index, card.serialize(), v2.serialize(), target_index, target_is_player)
 				return
 
 	# Server validates and processes
@@ -1741,6 +1791,20 @@ func server_play_card(card_data: Dictionary, caster_index: int, caster_is_player
 	_server_play_card(caster, card, target)
 
 func _server_play_card(caster: Character, card: Card, target: Character):
+	# Apply pending spell discards from client (sent before this card play)
+	var caster_index = players.find(caster)
+	if caster_index >= 0 and _pending_spell_discards.has(caster_index):
+		var info = _pending_spell_discards[caster_index]
+		for spell_name in info.spell_names:
+			for hand_card in caster.hand:
+				if hand_card.card_name == spell_name:
+					caster.discard_card(hand_card)
+					print("[SPELL DISCARD] Server discarded: ", spell_name)
+					break
+		# Set meta so effect engine knows the discard count for bonus damage
+		card.set_meta("spells_discarded_this_play", info.count)
+		_pending_spell_discards.erase(caster_index)
+
 	# Dead players cannot play cards
 	if not caster.is_alive():
 		print("[COMBAT] BLOCKED card play - ", caster.character_name, " is dead")
@@ -1814,12 +1878,12 @@ func _server_play_card(caster: Character, card: Card, target: Character):
 				send_hand_to_owner(t)
 
 	# Notify all clients
-	var caster_index = -1
+	var notify_caster_index = -1
 	var caster_is_player = players.has(caster)
 	if caster_is_player:
-		caster_index = players.find(caster)
+		notify_caster_index = players.find(caster)
 	else:
-		caster_index = enemies.find(caster)
+		notify_caster_index = enemies.find(caster)
 
 	var target_index = -1
 	var target_is_player = players.has(target)
@@ -1828,7 +1892,7 @@ func _server_play_card(caster: Character, card: Card, target: Character):
 	else:
 		target_index = enemies.find(target)
 
-	rpc("client_card_played", card.serialize(), caster_index, caster_is_player, target_index, target_is_player)
+	rpc("client_card_played", card.serialize(), notify_caster_index, caster_is_player, target_index, target_is_player)
 
 @rpc("any_peer", "call_local", "reliable")
 func client_card_played(card_data: Dictionary, caster_index: int, caster_is_player: bool, target_index: int, target_is_player: bool):
@@ -2209,11 +2273,54 @@ func recalculate_enemy_intents():
 
 	print("[INTENT] Recalculated intents after buff/debuff change")
 
+
+## Calculate predicted HP for each enemy after queued player attacks resolve
+## Returns Dictionary: enemy_index -> predicted_hp
+func get_predicted_enemy_hp() -> Dictionary:
+	var predicted_hp: Dictionary = {}
+
+	# Initialize with current HP
+	for i in range(enemies.size()):
+		if enemies[i].is_alive():
+			predicted_hp[i] = enemies[i].current_health + enemies[i].shield
+
+	# Calculate damage from all queued player cards
+	for player_index in queued_cards:
+		var player = players[player_index] if player_index < players.size() else null
+		if player == null:
+			continue
+
+		for card in queued_cards[player_index]:
+			# Only count AOE attacks - we can't predict single-target selection
+			if card.target_type == Card.TargetType.ALL_ENEMIES and card.damage > 0:
+				var damage = CardEffectEngine.calculate_damage(card, player, null)
+				var hits = card.multi_hit if card.multi_hit > 0 else 1
+				var total_damage = damage * hits
+
+				# Apply to all enemies
+				for enemy_idx in predicted_hp:
+					predicted_hp[enemy_idx] -= total_damage
+
+	return predicted_hp
+
+
+## Get list of enemy indices that are predicted to die from queued player attacks
+func get_predicted_dead_enemies() -> Array[int]:
+	var dead_enemies: Array[int] = []
+	var predicted_hp = get_predicted_enemy_hp()
+
+	for enemy_idx in predicted_hp:
+		if predicted_hp[enemy_idx] <= 0:
+			dead_enemies.append(enemy_idx)
+
+	return dead_enemies
+
 ## END ENEMY INTENT SYSTEM ##
 
 func boss_defeated():
 	current_state = GameState.REWARD
 	boss_index += 1
+	rpc("client_sync_boss_index", boss_index)
 
 	await get_tree().create_timer(2.0).timeout
 
@@ -2226,15 +2333,33 @@ func boss_defeated():
 		else:
 			get_tree().change_scene_to_file("res://scenes/reward.tscn")
 
+@rpc("authority", "call_remote", "reliable")
+func client_sync_boss_index(idx: int):
+	boss_index = idx
+
 func game_over():
 	current_state = GameState.GAME_OVER
+	rpc("client_sync_game_state", current_state)
 	combat_ended.emit(false)
+	game_state_changed.emit()
+
+@rpc("authority", "call_remote", "reliable")
+func client_sync_game_state(state: int):
+	current_state = state as GameState
 	game_state_changed.emit()
 
 func victory():
 	current_state = GameState.VICTORY
+	rpc("client_sync_game_state", current_state)
 	combat_ended.emit(true)
 	game_state_changed.emit()
+
+	await get_tree().create_timer(2.0).timeout
+
+	if multiplayer.is_server():
+		NetworkManager.change_scene_synchronized.rpc("res://scenes/victory.tscn")
+	else:
+		get_tree().change_scene_to_file("res://scenes/victory.tscn")
 
 # Passive Ability Helper Functions
 func get_character_network_id(character: Character) -> int:
@@ -2315,6 +2440,12 @@ func apply_passive_ability(character: Character, ability: PassiveAbility, choice
 	if target and target != character:
 		broadcast_character_state(target)
 
+	# Check if passive ability killed the last enemy (server only)
+	if multiplayer.is_server() and target and not target.is_alive():
+		var alive_enemies = enemies.filter(func(e): return e.is_alive())
+		if alive_enemies.is_empty():
+			await check_combat_victory()
+
 ## Server RPC to process Kevin's Alc brewing (for multiplayer sync)
 @rpc("any_peer", "call_remote", "reliable")
 func server_process_alc_brew(player_index: int, alc_card_name: String, spell_names: Array):
@@ -2327,6 +2458,12 @@ func server_process_alc_brew(player_index: int, alc_card_name: String, spell_nam
 
 	var character = players[player_index]
 
+	print("[SERVER BREW DEBUG] ========== SERVER BREW START ==========")
+	print("[SERVER BREW DEBUG] Processing brew for: ", character.character_name, " card: ", alc_card_name)
+	print("[SERVER BREW DEBUG] BEFORE - Satchel size: ", character.satchel.size(), " Hand size: ", character.hand.size())
+	print("[SERVER BREW DEBUG] BEFORE - Satchel: ", _get_satchel_names(character))
+	print("[SERVER BREW DEBUG] BEFORE - Hand: ", _get_hand_names(character))
+
 	# Find the alc card in satchel by name
 	var alc_card: Card = null
 	for card in character.satchel:
@@ -2335,7 +2472,15 @@ func server_process_alc_brew(player_index: int, alc_card_name: String, spell_nam
 			break
 
 	if not alc_card:
-		print("[GameManager] Alc card not found in satchel: ", alc_card_name)
+		print("[GameManager] Alc card not found in satchel: ", alc_card_name, " (duplicate RPC?)")
+		print("[SERVER BREW DEBUG] ========== SERVER BREW END (ABORTED) ==========")
+		return
+
+	# Remove from satchel first - if fails, abort (safety check)
+	var removed = character.remove_from_satchel(alc_card)
+	if not removed:
+		print("[GameManager] Failed to remove alc from satchel: ", alc_card_name)
+		print("[SERVER BREW DEBUG] ========== SERVER BREW END (ABORTED) ==========")
 		return
 
 	# Find and discard the spell cards by name
@@ -2346,18 +2491,37 @@ func server_process_alc_brew(player_index: int, alc_card_name: String, spell_nam
 				print("[GameManager] Server discarded spell: ", spell_name)
 				break
 
-	# Move Alc from satchel to hand
-	character.remove_from_satchel(alc_card)
+	# Add Alc to hand (only if removal succeeded)
 	character.hand.append(alc_card)
 	print("[GameManager] Server moved ", alc_card_name, " from satchel to hand")
 
+	print("[SERVER BREW DEBUG] AFTER - Satchel size: ", character.satchel.size(), " Hand size: ", character.hand.size())
+	print("[SERVER BREW DEBUG] AFTER - Satchel: ", _get_satchel_names(character))
+	print("[SERVER BREW DEBUG] AFTER - Hand: ", _get_hand_names(character))
+	print("[SERVER BREW DEBUG] ========== SERVER BREW END ==========")
+
 	# Mark passive as used
 	character.passive_ability_used_this_turn = true
+
+	# Apply ON_BREW relic effects (e.g., Wooden Cauldron draws 1 card)
+	RelicRegistry.apply_on_brew(character)
 
 	# Broadcast updated state
 	broadcast_character_state(character)
 	send_hand_to_owner(character)
 	game_state_changed.emit()
+
+func _get_satchel_names(character: Character) -> String:
+	var names: Array[String] = []
+	for card in character.satchel:
+		names.append(card.card_name)
+	return str(names)
+
+func _get_hand_names(character: Character) -> String:
+	var names: Array[String] = []
+	for card in character.hand:
+		names.append(card.card_name)
+	return str(names)
 
 
 ## Move selected spell cards from deck to hand (for Reformulate-style effects)

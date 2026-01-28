@@ -3,6 +3,8 @@ class_name RewardCardsData
 ##
 ## These cards are available as rewards for any character.
 ## Split into RARE (powerful) and COMMON (decent) pools.
+##
+## TODO: When adding or modifying cards here, update docs/CARDS_REFERENCE.md
 
 const CARDS = {
 	# === RARE CARDS (Powerful rewards) ===
@@ -241,36 +243,10 @@ const CARDS = {
 }
 
 ## Rare card IDs for reward selection
-const RARE_CARDS = [
-	"apocalypse",
-	"divine_intervention",
-	"berserker_rage",
-	"meteor_swarm",
-	"time_stop",
-	"life_drain",
-	"annihilation",
-	"omnipotence"
-]
+const RARE_CARDS = []
 
 ## Common card IDs for reward selection
-const COMMON_CARDS = [
-	"steel_strike",
-	"healing_potion",
-	"fortify",
-	"power_strike",
-	"battle_focus",
-	"cleave",
-	"rejuvenation",
-	"iron_will",
-	"quick_strike",
-	"tactical_advantage"
-]
+const COMMON_CARDS = []
 
 ## Demonstration cards (for testing composability)
-const DEMO_CARDS = [
-	"vampiric_strike",
-	"toxic_cloud",
-	"dark_pact",
-	"blazing_fury",
-	"pyroclasm"
-]
+const DEMO_CARDS = []

@@ -114,6 +114,7 @@ const SFX_PATHS: Dictionary = {
 	"element_fire": "sfx/special/element_fire.wav",
 	"element_water": "sfx/special/element_water.wav",
 	"element_earth": "sfx/special/element_earth.wav",
+	"toilet_flush": "sfx/special/toilet_flush.wav",
 }
 
 ## Map SFX names to placeholder types for fallback (initialized in _ready)
@@ -490,7 +491,7 @@ func _on_boss_turn_started():
 func _on_combat_ended(victory: bool):
 	if victory:
 		play_music("victory", false)
-	else:
+	else:5
 		play_music("defeat", false)
 
 

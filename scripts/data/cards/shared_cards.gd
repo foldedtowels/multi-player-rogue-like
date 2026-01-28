@@ -3,6 +3,8 @@ class_name SharedCardsData
 ##
 ## These cards can appear in multiple character decks or are generated
 ## as tokens during gameplay.
+##
+## TODO: When adding or modifying cards here, update docs/CARDS_REFERENCE.md
 
 const CARDS = {
 	# === SHARED REWARD/UTILITY CARDS ===

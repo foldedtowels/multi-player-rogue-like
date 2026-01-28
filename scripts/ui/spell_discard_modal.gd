@@ -13,6 +13,7 @@ var max_count: int = -1  # -1 = unlimited
 var selected_spells: Array[Card] = []
 var available_spells: Array[Card] = []
 var spell_buttons: Array[Button] = []
+var exclude_card_name: String = ""  # Card being played (shouldn't be discarded for itself)
 
 @onready var title_label: Label = $Panel/VBoxContainer/TitleLabel
 @onready var instructions_label: Label = $Panel/VBoxContainer/InstructionsLabel
@@ -20,33 +21,48 @@ var spell_buttons: Array[Button] = []
 @onready var confirm_button: Button = $Panel/VBoxContainer/ButtonContainer/ConfirmButton
 @onready var cancel_button: Button = $Panel/VBoxContainer/ButtonContainer/CancelButton
 
+var bg_overlay: ColorRect
+
 func _ready():
+	# Add dark overlay to block clicks to combat UI
+	bg_overlay = ColorRect.new()
+	bg_overlay.color = Color(0, 0, 0, 0.6)
+	bg_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(bg_overlay)
+	move_child(bg_overlay, 0)  # Put behind the Panel
+
 	confirm_button.pressed.connect(_on_confirm_pressed)
 	cancel_button.pressed.connect(_on_cancel_pressed)
 	hide()
 
 
 ## Show the modal to select spells to discard (fixed count mode)
+## exclude_name: name of card being played (shouldn't appear as discard option)
 ## Returns true if player has enough spells, false otherwise
-func show_discard(player: Character, count: int, card_name: String) -> bool:
-	return show_discard_range(player, count, count, card_name)
+func show_discard(player: Character, count: int, card_name: String, exclude_name: String = "") -> bool:
+	return show_discard_range(player, count, count, card_name, exclude_name)
 
 
 ## Show the modal to select spells to discard (variable range mode)
 ## min_discard: minimum spells required (0 = optional)
 ## max_discard: maximum spells allowed (-1 = unlimited)
+## exclude_name: name of card being played (shouldn't appear as discard option)
 ## Returns true if player has at least min_discard spells, false otherwise
-func show_discard_range(player: Character, min_discard: int, max_discard: int, card_name: String) -> bool:
+func show_discard_range(player: Character, min_discard: int, max_discard: int, card_name: String, exclude_name: String = "") -> bool:
 	min_count = min_discard
 	max_count = max_discard
+	exclude_card_name = exclude_name
 	selected_spells.clear()
 	available_spells.clear()
 
 	# Find all spell cards in the player's hand
 	# Note: Kevin's "spells" are cards with an element (FIRE, WATER, EARTH), not card_type SPELL
+	# Exclude the card being played (can't discard a card to pay for itself)
 	for card in player.hand:
 		if card.element != Card.ElementType.NONE:
-			available_spells.append(card)
+			if exclude_card_name == "" or card.card_name != exclude_card_name:
+				available_spells.append(card)
 
 	# Check if player has enough spells for minimum requirement
 	if available_spells.size() < min_count:
@@ -57,6 +73,9 @@ func show_discard_range(player: Character, min_discard: int, max_discard: int, c
 	_update_instructions()
 	_create_spell_buttons()
 	_update_confirm_button()
+
+	# Hide cancel button if discard is required (min_count > 0)
+	cancel_button.visible = (min_count == 0)
 
 	show()
 	return true
@@ -113,6 +132,32 @@ func _create_spell_buttons():
 			style.corner_radius_bottom_right = 5
 			button.add_theme_stylebox_override("normal", style)
 
+			# Pressed (toggled-on) style — full brightness + white border
+			var pressed_style = StyleBoxFlat.new()
+			pressed_style.bg_color = element_colors[spell.element]
+			pressed_style.border_color = Color(1, 1, 1, 0.9)
+			pressed_style.border_width_left = 2
+			pressed_style.border_width_right = 2
+			pressed_style.border_width_top = 2
+			pressed_style.border_width_bottom = 2
+			pressed_style.corner_radius_top_left = 5
+			pressed_style.corner_radius_top_right = 5
+			pressed_style.corner_radius_bottom_left = 5
+			pressed_style.corner_radius_bottom_right = 5
+			button.add_theme_stylebox_override("pressed", pressed_style)
+
+			# Hover style — slightly lighter than normal
+			var hover_style = StyleBoxFlat.new()
+			hover_style.bg_color = element_colors[spell.element].darkened(0.15)
+			hover_style.corner_radius_top_left = 5
+			hover_style.corner_radius_top_right = 5
+			hover_style.corner_radius_bottom_left = 5
+			hover_style.corner_radius_bottom_right = 5
+			button.add_theme_stylebox_override("hover", hover_style)
+
+			# Hover while pressed — bright + border (same as pressed)
+			button.add_theme_stylebox_override("hover_pressed", pressed_style)
+
 		spell_grid.add_child(button)
 		spell_buttons.append(button)
 
@@ -151,4 +196,18 @@ func _on_confirm_pressed():
 
 func _on_cancel_pressed():
 	hide()
-	discard_cancelled.emit()
+	# For optional discards (min_count == 0), emit empty array so await completes
+	# The calling code can check if the array is empty
+	if min_count == 0:
+		var empty_result: Array[Card] = []
+		discard_completed.emit(empty_result)
+	else:
+		discard_cancelled.emit()
+
+
+func _input(event: InputEvent):
+	if visible and event is InputEventKey:
+		if event.pressed and event.keycode == KEY_ESCAPE:
+			if min_count == 0:
+				_on_cancel_pressed()
+			get_viewport().set_input_as_handled()
